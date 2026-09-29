@@ -50,8 +50,11 @@ Windows build uses `main/idf_component.yml` instead.
   tiles. The code was removed after use; re-add it when a screen looks wrong.
 - **Headless browser test of the settings page:** Playwright + a tiny Python mock server (mock `/api/*`, mock
   geolocation, route the geocoding APIs). It proved the page's JS was fine, which pointed at the device.
-- **Always check file transfers:** `md5sum` the firmware on the PC against the build output. Once, a commit to the PC
-  silently delivered an older copy of the file.
+- **Always check file transfers:** `md5sum` the firmware on the PC against the build output. **Twice**, pushing a
+  rebuilt file from the *same* staging path delivered the *previous* version. Use a fresh staging directory for every
+  push and compare checksums before writing `flash.request`.
+- **Flash helper feedback:** read `flash.status`, then `flash.done` (it includes error, warning and reset counts),
+  then grep `serial_log.txt`. A plain-text `flash_log.txt` shows exactly what esptool wrote.
 
 ## Bugs hit, and their fixes (don't repeat these)
 
@@ -74,7 +77,9 @@ Windows build uses `main/idf_component.yml` instead.
    the live clock, with the radar time in a sub-label.
 9. **Reading the BOOT button:** holding BOOT while pressing RESET enters download mode. The firmware checks BOOT
    about 1 s *after* boot.
-10. **Git on the PC folder from the Linux VM** needs delete permission (index.lock, temporary objects). Set
+10. **Task watchdog (IDLE0) warnings:** caused by one big `esp_partition_erase_range` of the map cache. Erase and
+    write sector by sector with `vTaskDelay(1)` in between.
+11. **Git on the PC folder from the Linux VM** needs delete permission (index.lock, temporary objects). Set
     `core.fileMode false` and `core.autocrlf false`.
 
 ## Useful facts

@@ -43,10 +43,17 @@ https://github.com/espressif/esptool/releases (`esptool-v4.8.1-win64.zip`) and a
   - `flash.bat`: interactive, logs for 40 s, then waits for a key press.
   - `flash.bat auto 90`: no pause at the end (for scripts or Claude Code), logs for 90 s.
 - `monitor.ps1 -Port COM5 -Seconds 60`: serial log only.
-- `start_flash_helper.bat`: starts a minimized background watcher (`flash_helper.ps1`). Whenever a file named
-  `flash.request` appears in this folder, it runs `flash.bat auto <seconds>`, using the number of seconds in the file,
-  and writes `flash.done` when finished. This lets tools that can only write files (like the Claude desktop app)
-  trigger a flash. Close its window to stop it.
+- `start_flash_helper.bat`: opens the **flash helper** window (`flash_helper.ps1`). Whenever a file named
+  `flash.request` appears in this folder, it flashes `firmware\*.bin` and logs serial output for the number of seconds
+  written in the file (default 60). This lets tools that can only write files (like the Claude desktop app) trigger a
+  flash. The window shows each step live: the request, the esptool upload, **FLASH OK on COMx in N s** (with a beep)
+  or **FLASH FAILED** with the last esptool lines, the board's serial output, and a summary (errors, warnings,
+  resets). It also writes:
+  - `flash.status`: `idle`, `flashing`, `logging` or `flash_failed`.
+  - `flash.done`: exit code, port, timings and counts.
+  - `flash_helper.log`: a running history.
+
+  Close the window to stop it.
 
 Flash layout: bootloader at `0x0`, partition table at `0x8000`, app at `0x10000`. Flash settings: DIO, 80 MHz, 16 MB.
 

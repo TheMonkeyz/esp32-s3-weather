@@ -88,9 +88,9 @@ allocates internal DMA bounce buffers, and that failed mid-response, which trunc
 
 ## Known issues / TODO
 
-- **Task watchdog warnings:** long loops on core 0 (radar decode/compose, software AES) can starve IDLE0 and log
-  `task_wdt` warnings. They don't cause a reset (the watchdog doesn't panic), but those loops should yield every few
-  rows.
+- ~~Task watchdog warnings~~ (fixed): writing the 450 KB basemap cache in one flash erase blocked core 0 for
+  seconds. `cache_save()` now erases and writes one 4 KB sector at a time with `vTaskDelay(1)` in between, and the
+  palette, compose and tile-copy loops yield every 32–64 rows. Keep new long loops on core 0 yielding.
 - GeoMet sometimes resets keep-alive connections; each request retries once.
 - The frame count is fixed at 15 and the radar layer is rain rate only (`RADAR_1KM_RRAI`). `Radar_1km_SfcPrecipType`
   would colour snow and rain separately.
