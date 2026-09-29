@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Weather display</title>
+<style>
+:root{--bg:#0f1115;--card:#1a1d23;--line:#2a2f37;--text:#eef1f5;--dim:#8b95a1;--acc:#4f9dff}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:16px/1.4 system-ui,sans-serif;padding:16px;max-width:460px;margin:auto}
+h1{font-size:20px;margin:4px 0 16px}h2{font-size:15px;color:var(--dim);font-weight:600;margin:0 0 10px;text-transform:uppercase;letter-spacing:.04em}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:16px}
+label{display:block;font-size:13px;color:var(--dim);margin:10px 0 4px}
+input{width:100%;padding:11px 12px;border-radius:10px;border:1px solid var(--line);background:#0c0e12;color:var(--text);font-size:16px}
+button{width:100%;padding:12px;border:0;border-radius:10px;font-size:16px;font-weight:600;margin-top:12px;background:var(--acc);color:#fff}
+button.sec{background:#2a2f37}.row{display:flex;gap:10px}.row>div{flex:1}
+.cur{font-size:18px;font-weight:600}.muted{color:var(--dim);font-size:13px}
+#results div{padding:10px;border-bottom:1px solid var(--line);cursor:pointer}#results div:active{background:#232830}
+#msg{min-height:20px;margin-top:10px;font-size:14px}.ok{color:#6fd08c}.err{color:#ff7a7a}
+</style></head><body>
+<h1>Weather display</h1>
+
+<div class="card">
+  <h2>Location</h2>
+  <div class="cur" id="curName">…</div>
+  <div class="muted" id="curCoord"></div>
+  <button id="gps">📍 Use my phone's location</button>
+  <label for="q">Or search for a city</label>
+  <input id="q" placeholder="e.g. Thunder Bay" autocomplete="off">
+  <div id="results"></div>
+  <div class="row">
+    <div><label for="lat">Latitude</label><input id="lat" inputmode="decimal"></div>
+    <div><label for="lon">Longitude</label><input id="lon" inputmode="decimal"></div>
+  </div>
+  <label for="name">Name shown on screen</label>
+  <input id="name" maxlength="40">
+  <button id="saveLoc">Save location</button>
+  <div id="msg"></div>
+</div>
+
+<div class="card">
+  <h2>Wi-Fi</h2>
+  <div class="muted">Connected to: <span id="curSsid">–</span></div>
+  <label for="ssid">Network</label>
+  <input id="ssid" list="nets" autocomplete="off"><datalist id="nets"></datalist>
+  <label for="pass">Password</label>
+  <input id="pass" type="password">
+  <button class="sec" id="saveWifi">Save Wi-Fi &amp; restart</button>
+  <div id="wmsg"></div>
+</div>
+
+<script>
+window.onerror = (m, src, line) => { const e = document.getElementById('msg'); if (e) { e.textContent = 'Page error: ' + m + ' (line ' + line + ')'; e.className = 'err'; } };
+const $ = id => document.getElementById(id);
+function say(el, text, ok){ el.textContent = text; el.className = ok ? 'ok' : 'err'; }
+
+async function load(){
+  try{
+    const c = await (await fetch('/api/config')).json();
+    $('curName').textContent = c.name; $('curCoord').textContent = c.lat.toFixed(4)+', '+c.lon.toFixed(4);
+    $('name').value = c.name; $('lat').value = c.lat.toFixed(4); $('lon').value = c.lon.toFixed(4);
+    $('curSsid').textContent = c.ssid || '–';
+  }catch(e){ say($('msg'), 'Could not read settings from the display', false); }
+}
+let scanned = false;
+async function scan(){
+  if (scanned) return; scanned = true;
+  try{
+    const nets = await (await fetch('/api/scan')).json();
+    $('nets').innerHTML = nets.map(n => `<option value="${n.replace(/"/g,'&quot;')}">`).join('');
+  }catch(e){ scanned = false; }
+}
+$('ssid').onfocus = scan;
+
+async function nameFor(lat, lon){
+  try{
+    const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&zoom=10&lat=${lat}&lon=${lon}`);
+    const j = await r.json(); const a = j.address || {};
+    return a.city || a.town || a.village || a.municipality || a.county || 'My location';
+  }catch(e){ return 'My location'; }
+}
+
+$('gps').onclick = () => {
+  if (!window.isSecureContext || !navigator.geolocation){ say($('msg'), 'This browser blocked location access on this page.', false); return; }
+  say($('msg'), 'Getting your location…', true);
+  navigator.geolocation.getCurrentPosition(async p => {
+    const lat = p.coords.latitude, lon = p.coords.longitude;
+    $('lat').value = lat.toFixed(4); $('lon').value = lon.toFixed(4);
+    $('name').value = await nameFor(lat, lon);
+    say($('msg'), 'Got it — tap Save location.', true);
+  }, err => say($('msg'), 'Location unavailable: ' + err.message, false), {enableHighAccuracy:false, timeout:15000});
+};
+
+let t;
+$('q').oninput = () => {
+  clearTimeout(t);
+  const q = $('q').value.trim();
+  if (q.length < 2){ $('results').innerHTML=''; return; }
+  t = setTimeout(async () => {
+    try{
+      const j = await (await fetch('https://geocoding-api.open-meteo.com/v1/search?count=6&language=en&name='+encodeURIComponent(q))).json();
+      $('results').innerHTML = '';
+      (j.results||[]).forEach(r => {
+        const d = document.createElement('div');
+        d.textContent = [r.name, r.admin1, r.country].filter(Boolean).join(', ');
+        d.onclick = () => { $('lat').value = r.latitude.toFixed(4); $('lon').value = r.longitude.toFixed(4);
+                            $('name').value = r.name; $('results').innerHTML=''; $('q').value='';
+                            say($('msg'), 'Selected ' + r.name + ' — tap Save location.', true); };
+        $('results').appendChild(d);
+      });
+    }catch(e){ say($('msg'), 'City search needs internet on this phone.', false); }
+  }, 350);
+};
+
+$('saveLoc').onclick = async () => {
+  const body = {name: $('name').value.trim() || 'My location', lat: parseFloat($('lat').value), lon: parseFloat($('lon').value)};
+  if (!isFinite(body.lat) || !isFinite(body.lon)){ say($('msg'), 'Enter a valid latitude and longitude.', false); return; }
+  try{
+    const r = await fetch('/api/location', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    if (!r.ok) throw 0;
+    say($('msg'), 'Saved. The display is updating.', true); load();
+  }catch(e){ say($('msg'), 'Save failed.', false); }
+};
+
+$('saveWifi').onclick = async () => {
+  const body = {ssid: $('ssid').value, pass: $('pass').value};
+  if (!body.ssid){ say($('wmsg'), 'Choose a network.', false); return; }
+  try{
+    await fetch('/api/wifi', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    say($('wmsg'), 'Saved. The display is restarting.', true);
+  }catch(e){ say($('wmsg'), 'Save failed.', false); }
+};
+load();
+say($('msg'), '', true);
+</script>
+</body></html>

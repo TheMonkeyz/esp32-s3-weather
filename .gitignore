@@ -1,0 +1,22 @@
+# ESP-IDF build output
+build/
+sdkconfig
+sdkconfig.old
+managed_components/
+dependencies.lock
+
+# Prebuilt firmware produced by the build (flash.bat reads these)
+firmware/*.bin
+firmware/*.elf
+
+# Downloaded tool (esptool v4.8.1 standalone, see README)
+tools/esptool.exe
+tools/LICENSE
+
+# Runtime / log files from flashing
+flash_log.txt
+serial_log.txt
+flash_helper_output.txt
+flash.request
+flash.running
+flash.done
