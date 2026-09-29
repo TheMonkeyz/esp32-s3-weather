@@ -93,7 +93,7 @@ static bool http_fetch(esp_http_client_handle_t *hp, const char *url, dl_t *d)
 /* ---------------- basemap cache in flash ("mapcache" partition) ---------------- */
 
 typedef struct { uint32_t magic; int32_t zoom, x, y; } cache_hdr_t;
-#define CACHE_MAGIC 0x4D415033  // "MAP3" (OSM basemap)
+#define CACHE_MAGIC 0x4D415034  // "MAP4" (OSM basemap, chunked write)
 
 static const esp_partition_t *cache_part(void)
 {
@@ -113,12 +113,23 @@ static void cache_save(void)
 {
     const esp_partition_t *p = cache_part();
     if (!p) return;
-    size_t len = (sizeof(cache_hdr_t) + W * H * 2 + 4095) & ~4095;
-    cache_hdr_t h = { CACHE_MAGIC, ZOOM, (int)view_x, (int)view_y };
-    if (esp_partition_erase_range(p, 0, len) == ESP_OK &&
-        esp_partition_write(p, sizeof(h), base565, W * H * 2) == ESP_OK &&
-        esp_partition_write(p, 0, &h, sizeof(h)) == ESP_OK)
-        ESP_LOGI(TAG, "Basemap cached to flash");
+    const size_t SECT = 4096;
+    size_t len = (sizeof(cache_hdr_t) + W * H * 2 + SECT - 1) & ~(SECT - 1);
+    // Erase and write one sector at a time with a short pause in between, so the idle task
+    // (and the task watchdog) get to run: a single 450 KB erase blocks this core for seconds.
+    for (size_t off = 0; off < len; off += SECT) {
+        if (esp_partition_erase_range(p, off, SECT) != ESP_OK) return;
+        vTaskDelay(1);
+    }
+    const uint8_t *src = (const uint8_t *)base565;
+    size_t total = W * H * 2;
+    for (size_t off = 0; off < total; off += SECT) {
+        size_t n = total - off < SECT ? total - off : SECT;
+        if (esp_partition_write(p, sizeof(cache_hdr_t) + off, src + off, n) != ESP_OK) return;
+        vTaskDelay(1);
+    }
+    cache_hdr_t h = { CACHE_MAGIC, ZOOM, (int)view_x, (int)view_y };   // header last = valid only when complete
+    if (esp_partition_write(p, 0, &h, sizeof(h)) == ESP_OK) ESP_LOGI(TAG, "Basemap cached to flash");
 }
 
 static void set_status(const char *title, const char *status);
@@ -176,6 +187,7 @@ static bool load_basemap(void)
             uint32_t stride = db->header.stride;
             int ox = tx * 256 - (int)view_x, oy = ty * 256 - (int)view_y;
             for (int y = 0; y < (int)th; y++) {
+                if ((y & 63) == 63) vTaskDelay(1);
                 int sy = oy + y;
                 if (sy < 0 || sy >= H) continue;
                 for (int x = 0; x < (int)tw; x++) {
@@ -284,6 +296,7 @@ static bool fetch_frame(time_t t, frame_t *f)
     const uint8_t *px = db->data;
     uint32_t stride = db->header.stride;
     for (int y = 0; y < H; y++) {
+        if ((y & 31) == 31) vTaskDelay(1);        // let other tasks / idle run
         const uint8_t *row = px + y * stride;
         uint8_t *o = f->idx + y * W;
         for (int x = 0; x < W; x++) {
@@ -317,6 +330,7 @@ static void compose(const frame_t *f)
 {
     if (!f || !f->ok) { memcpy(out565, base565, W * H * 2); return; }
     for (int i = 0; i < W * H; i++) {
+        if (i % (W * 64) == W * 64 - 1) vTaskDelay(1);   // yield every 64 rows
         uint8_t ix = f->idx[i];
         uint16_t b = base565[i];
         if (!ix) { out565[i] = b; continue; }
