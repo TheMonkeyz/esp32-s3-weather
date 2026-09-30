@@ -1,3 +1,4 @@
+#include <string.h>
 // CO5300 466x466 AMOLED over QSPI (Waveshare ESP32-S3-Touch-AMOLED-1.75) + LVGL v9 port
 #include "display.h"
 #include "freertos/FreeRTOS.h"
@@ -9,6 +10,12 @@
 #include "esp_heap_caps.h"
 #include "esp_timer.h"
 #include "esp_log.h"
+
+/* ---- diagnostics: lock contention and frame timing (read by diag.c) ---- */
+static display_stats_t st;
+static TaskHandle_t lvgl_th;
+static int lock_depth;                 // only touched by the mutex owner
+static int64_t lock_t0, render_t0, last_render;
 
 static const char *TAG = "display";
 
@@ -54,14 +61,20 @@ static bool on_trans_done(esp_lcd_panel_io_handle_t h, esp_lcd_panel_io_event_da
     return false;
 }
 
+static bool bench_no_panel;          // diag bench: render only, don't send to the panel
+
+void display_bench_no_panel(bool on) { bench_no_panel = on; }
+
 static void flush_cb(lv_display_t *disp, const lv_area_t *a, uint8_t *px)
 {
+    if (bench_no_panel) { lv_display_flush_ready(disp); return; }
     int x1 = a->x1 + X_GAP, x2 = a->x2 + X_GAP;
     uint8_t col[4] = {x1 >> 8, x1 & 0xFF, x2 >> 8, x2 & 0xFF};
     uint8_t row[4] = {a->y1 >> 8, a->y1 & 0xFF, a->y2 >> 8, a->y2 & 0xFF};
     lcd_cmd(0x2A, col, 4);
     lcd_cmd(0x2B, row, 4);
     uint32_t n = lv_area_get_size(a);
+    st.pixels += n;
     lv_draw_sw_rgb565_swap(px, n);
     esp_lcd_panel_io_tx_color(io, PIXELS, px, n * 2);
 }
@@ -76,11 +89,56 @@ static void rounder_cb(lv_event_t *e)
 
 static uint32_t tick_cb(void) { return (uint32_t)(esp_timer_get_time() / 1000); }
 
+
 bool display_lock(int timeout_ms)
 {
-    return xSemaphoreTakeRecursive(lvgl_mux, timeout_ms < 0 ? portMAX_DELAY : pdMS_TO_TICKS(timeout_ms)) == pdTRUE;
+    int64_t t0 = esp_timer_get_time();
+    bool ok = xSemaphoreTakeRecursive(lvgl_mux, timeout_ms < 0 ? portMAX_DELAY : pdMS_TO_TICKS(timeout_ms)) == pdTRUE;
+    if (ok && ++lock_depth == 1) {
+        lock_t0 = esp_timer_get_time();
+        if (xTaskGetCurrentTaskHandle() == lvgl_th && lock_t0 - t0 > st.lvgl_wait_max_us)
+            st.lvgl_wait_max_us = lock_t0 - t0;          // LVGL blocked by another task
+    }
+    return ok;
 }
-void display_unlock(void) { xSemaphoreGiveRecursive(lvgl_mux); }
+
+void display_unlock(void)
+{
+    if (--lock_depth == 0 && xTaskGetCurrentTaskHandle() != lvgl_th) {
+        int64_t held = esp_timer_get_time() - lock_t0;
+        if (held > st.hold_max_us) {
+            st.hold_max_us = held;
+            strlcpy(st.hold_task, pcTaskGetName(NULL), sizeof(st.hold_task));
+        }
+    }
+    xSemaphoreGiveRecursive(lvgl_mux);
+}
+
+static void render_evt(lv_event_t *e)
+{
+    int64_t now = esp_timer_get_time();
+    if (lv_event_get_code(e) == LV_EVENT_RENDER_START) {
+        if (last_render && now - last_render < 250000) {     // back-to-back frames = animation
+            st.anim_frames++;
+            st.anim_us += now - last_render;
+            if (now - last_render > st.anim_gap_max_us) st.anim_gap_max_us = now - last_render;
+        }
+        last_render = render_t0 = now;
+    } else {
+        uint32_t us = now - render_t0;
+        st.frames++;
+        st.render_us += us;
+        if (us > st.render_max_us) st.render_max_us = us;
+    }
+}
+
+void display_get_stats(display_stats_t *out, bool reset)
+{
+    display_lock(-1);
+    *out = st;
+    if (reset) memset(&st, 0, sizeof(st));
+    display_unlock();
+}
 
 static void lvgl_task(void *arg)
 {
@@ -136,8 +194,11 @@ void display_init(void)
     lv_display_set_flush_cb(disp, flush_cb);
     lv_display_add_event_cb(disp, rounder_cb, LV_EVENT_INVALIDATE_AREA, NULL);
 
+    lv_display_add_event_cb(disp, render_evt, LV_EVENT_RENDER_START, NULL);
+    lv_display_add_event_cb(disp, render_evt, LV_EVENT_RENDER_READY, NULL);
+
     lvgl_mux = xSemaphoreCreateRecursiveMutex();
-    xTaskCreatePinnedToCore(lvgl_task, "lvgl", 8192, NULL, 4, NULL, 1);
+    xTaskCreatePinnedToCore(lvgl_task, "lvgl", 8192, NULL, 4, &lvgl_th, 1);
     ESP_LOGI(TAG, "Display ready (%dx%d)", DISP_W, DISP_H);
 }
 

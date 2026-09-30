@@ -155,6 +155,7 @@ LVGL timer and event callbacks already run inside the lock.
 | Item | Where | Size |
 |---|---|---|
 | LVGL draw buffers | internal DMA | 2 × 30 KB |
+| LVGL heap (objects, styles, glyph cache) | PSRAM (`lvgl_mem.c`, `LV_USE_CUSTOM_MALLOC`) | ~40–50 KB |
 | Basemap + composed screen | PSRAM | 2 × 434 KB |
 | 15 radar frames | PSRAM | 3.3 MB |
 | PNG decode (466×466 ARGB) | PSRAM (transient) | ~0.9 MB + zlib |
@@ -163,7 +164,12 @@ LVGL timer and event callbacks already run inside the lock.
 Build: `CONFIG_COMPILER_OPTIMIZATION_PERF=y` (debug `-Og` made LVGL rendering noticeably slow) and
 `CONFIG_LV_DEF_REFR_PERIOD=15`.
 
-Internal DMA-capable RAM is the scarce resource. `CONFIG_MBEDTLS_HARDWARE_AES` is **off**: the AES peripheral
+Measured: internal RAM ~69 KB free steady, 30 KB min; PSRAM ~4 MB free, 1.7 MB min. See `docs/DIAGNOSTICS.md` for
+how to measure again (`reboot.request` + `tools/diag_summary.py`) and the reference numbers.
+
+Internal DMA-capable RAM is the scarce resource. Everything under 16 KB that goes through plain `malloc` lands
+there first (`CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL`), which is why LVGL has its own PSRAM allocator. Fonts use
+`LV_FONT_KERNING_NONE`: kerning lookups were 71% of the rendering time. `CONFIG_MBEDTLS_HARDWARE_AES` is **off**: the AES peripheral
 allocates internal DMA bounce buffers, and that failed mid-response, which truncated the settings page.
 
 ## Known issues / TODO

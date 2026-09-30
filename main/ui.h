@@ -1,8 +1,11 @@
 #pragma once
 #include "weather.h"
+#include "lvgl.h"
 
 void ui_init(void);
 void ui_message(const char *title, const char *body);
 void ui_weather(const weather_t *w);
 void ui_message_qr(const char *title, const char *body, const char *qr);
 void ui_set_city(const char *name);
+int ui_bench_screens(lv_obj_t **scr, const char **name, int max);   // diag bench
+lv_obj_t *ui_main_screen(void);

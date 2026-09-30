@@ -281,7 +281,7 @@ void web_start(web_location_cb_t on_location_changed)
     conf.prvtkey_pem = key_start;
     conf.prvtkey_len = key_end - key_start;
     conf.httpd.max_uri_handlers = 12;
-    conf.httpd.stack_size = 10240;
+    conf.httpd.stack_size = 7168;      // measured peak ~3.3 KB (TLS handshake)
     conf.httpd.max_open_sockets = 5;
     conf.httpd.lru_purge_enable = true;
     httpd_handle_t s = NULL;
@@ -303,7 +303,7 @@ void web_start(web_location_cb_t on_location_changed)
     hc.max_uri_handlers = 12;
     hc.max_open_sockets = 6;
     hc.lru_purge_enable = true;
-    hc.stack_size = 8192;
+    hc.stack_size = 4096;              // measured peak ~1.2 KB
     httpd_handle_t h = NULL;
     if (httpd_start(&h, &hc) == ESP_OK) {
         httpd_uri_t huris[] = {        // specific routes first; the wildcard catches everything else

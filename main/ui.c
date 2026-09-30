@@ -33,7 +33,7 @@ static lv_obj_t *fc_day[3], *fc_temp[3], *fc_icon[3], *hero;
 
 static lv_font_t *mkfont(int px)
 {
-    return lv_tiny_ttf_create_data_ex(ttf_start, ttf_end - ttf_start, px, LV_FONT_KERNING_NORMAL, 96);
+    return lv_tiny_ttf_create_data_ex(ttf_start, ttf_end - ttf_start, px, LV_FONT_KERNING_NONE, 96);
 }
 
 static lv_obj_t *label(lv_obj_t *parent, lv_font_t *f, lv_color_t c, int y)
@@ -718,3 +718,24 @@ void ui_weather(const weather_t *w)
     if (lv_screen_active() == scr_msg) lv_screen_load(scr_main);
     display_unlock();
 }
+
+// Diagnostics bench: the screens to time (hourly view filled with day 1). Call with the display lock held.
+int ui_bench_screens(lv_obj_t **scr, const char **name, int max)
+{
+    int n = 0;
+    static lv_obj_t *blank;
+    if (!blank) blank = base_screen();
+    if (n < max) { scr[n] = blank; name[n++] = "blank"; }
+    if (n < max) { scr[n] = scr_main; name[n++] = "weather"; }
+    if (have_wx && n < max && lv_screen_active() != scr_hour) {   // never disturb a view in use
+        for (int i = 0; i < 3; i++) fill_page(i);
+        lv_obj_update_layout(hr_pager);
+        lv_obj_scroll_to_x(hr_pager, DISP_W, LV_ANIM_OFF);
+        set_dots(1);
+        scr[n] = scr_hour; name[n++] = "hourly";
+    }
+    if (n < max) { scr[n] = scr_radar; name[n++] = "radar"; }
+    return n;
+}
+
+lv_obj_t *ui_main_screen(void) { return scr_main; }

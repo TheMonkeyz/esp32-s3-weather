@@ -92,6 +92,15 @@ Windows build gets both from `main/idf_component.yml`. `components/dns_server` *
 15. **Git on the PC folder from the Linux VM** needs delete permission (index.lock, temporary objects). Set
     `core.fileMode false` and `core.autocrlf false`.
 
+- Internal RAM ran out silently (10 KB free, 0 KB min ever) because LVGL's small allocations went to internal RAM
+  first. Fixed with `lvgl_mem.c` (LVGL heap in PSRAM). Font kerning cost 71% of render time; fonts now use
+  `LV_FONT_KERNING_NONE`. Before optimising anything, run the diagnostics (docs/DIAGNOSTICS.md) and compare with
+  the reference numbers there.
+- A committed firmware file can arrive stale even in a new staging dir: give the staged .bin a unique **name**
+  (`weather_amoled_vNN.bin`) and refuse to flash unless the md5 on the PC matches.
+- Changing sdkconfig makes CMake re-run; the cloud build then needs `IDF_COMPONENT_MANAGER=0` in the environment
+  or it fails looking for `idf_component_manager`.
+
 ## User preferences learned
 
 - Swipe **down** = zoom in, **up** = zoom out (the opposite felt wrong).
@@ -100,6 +109,9 @@ Windows build gets both from `main/idf_component.yml`. `components/dns_server` *
   being called done.
 
 ## Useful facts
+
+- Diagnostics without flashing: `echo 300 > reboot.request`, wait for `flash.status` = idle, then
+  `python3 tools/diag_summary.py serial_log.txt` from the device shell.
 
 - GeoMet `GetCapabilities&layer=RADAR_1KM_RRAI` holds `start/end/PT6M` in the time Dimension. `GetMap` with
   `crs=EPSG:3857`, an exact bbox and 466×466 lines up pixel-perfectly with zoom-7 tiles.
