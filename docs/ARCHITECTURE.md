@@ -98,7 +98,8 @@ LVGL timer and event callbacks already run inside the lock.
   in PSRAM. `compose()` blends the frame over the basemap at alpha×0.86 into `out565`, which an `lv_image` displays.
 - **Animation:** 15 frames. The latest frame, plus 14 history frames on a fixed 12-minute grid (so refreshes reuse
   most of them). They download newest first while the radar screen is visible. A tap plays at 3 fps via an LVGL timer,
-  holds the last frame about 1 s, then returns to live.
+  holds the last frame about 1 s and loops for `PLAY_LOOP_MS` (60 s), then returns to live. A tap while playing
+  stops it; a new radar time or relocation also stops it.
 
 ## Wi-Fi setup / captive portal (`net.c`, `ui.c`, `web.c`)
 

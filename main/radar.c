@@ -473,17 +473,24 @@ static void stop_play(void)
     show_live();
 }
 
+#define PLAY_LOOP_MS  60000      // a tap loops the animation this long; another tap stops it
+static uint32_t play_started;
+
 static void play_step(lv_timer_t *t)
 {
     while (play_i < NFRAMES && !frames[play_i].ok) play_i++;
-    if (play_i >= NFRAMES + 3) { stop_play(); return; }       // hold the last frame ~1 s
+    if (play_i >= NFRAMES + 3) {                               // held the last frame ~1 s
+        if (lv_tick_elaps(play_started) >= PLAY_LOOP_MS) { stop_play(); return; }
+        play_i = 0;                                            // loop
+        while (play_i < NFRAMES && !frames[play_i].ok) play_i++;
+    }
     if (play_i < NFRAMES) {
         frame_t *f = &frames[play_i];
         compose(f);
         char when[8];
         fmt_local(f->t, when, sizeof(when));
         lv_label_set_text(lbl_title, when);
-        lv_label_set_text(lbl_rtime, "Past 3 hours");
+        lv_label_set_text(lbl_rtime, "Past 3 hours  ·  tap to stop");
         lv_bar_set_value(bar, play_i + 1, LV_ANIM_OFF);
         refresh_img();
     }
@@ -503,6 +510,7 @@ static void start_play(void)     // caller holds the display lock
     lv_obj_add_flag(lbl_status, LV_OBJ_FLAG_HIDDEN);
     if (play_timer) lv_timer_delete(play_timer);
     play_i = 0;
+    play_started = lv_tick_get();
     lv_bar_set_value(bar, 0, LV_ANIM_OFF);
     lv_obj_remove_flag(bar, LV_OBJ_FLAG_HIDDEN);
     play_timer = lv_timer_create(play_step, 333, NULL);   // 3 frames per second
