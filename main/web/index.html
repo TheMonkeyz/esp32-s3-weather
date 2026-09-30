@@ -17,11 +17,13 @@ button.sec{background:#2a2f37}.row{display:flex;gap:10px}.row>div{flex:1}
 </style></head><body>
 <h1>Weather display</h1>
 
-<div class="card">
+<div class="card" id="locCard">
   <h2>Location</h2>
   <div class="cur" id="curName">…</div>
   <div class="muted" id="curCoord"></div>
   <button id="gps">📍 Use my phone's location</button>
+  <div class="muted" id="gpsNote" style="display:none;margin-top:8px">Phone location only works on the secure page:
+    <a id="secureLink" style="color:var(--acc)" href="#"></a> (open it in your browser and accept the certificate warning).</div>
   <label for="q">Or search for a city</label>
   <input id="q" placeholder="e.g. Thunder Bay" autocomplete="off">
   <div id="results"></div>
@@ -35,7 +37,7 @@ button.sec{background:#2a2f37}.row{display:flex;gap:10px}.row>div{flex:1}
   <div id="msg"></div>
 </div>
 
-<div class="card">
+<div class="card" id="wifiCard">
   <h2>Wi-Fi</h2>
   <div class="muted">Connected to: <span id="curSsid">–</span></div>
   <label for="ssid">Network</label>
@@ -78,7 +80,7 @@ async function nameFor(lat, lon){
 }
 
 $('gps').onclick = () => {
-  if (!window.isSecureContext || !navigator.geolocation){ say($('msg'), 'This browser blocked location access on this page.', false); return; }
+  if (!window.isSecureContext || !navigator.geolocation){ say($('msg'), 'Location needs the secure page (link above).', false); return; }
   say($('msg'), 'Getting your location…', true);
   navigator.geolocation.getCurrentPosition(async p => {
     const lat = p.coords.latitude, lon = p.coords.longitude;
@@ -127,6 +129,13 @@ $('saveWifi').onclick = async () => {
     say($('wmsg'), 'Saved. The display is restarting.', true);
   }catch(e){ say($('wmsg'), 'Save failed.', false); }
 };
+// Setup network / plain-HTTP page: Wi-Fi first, and point to the secure page for GPS
+if (!window.isSecureContext) {
+  const url = 'https://' + location.host + '/';
+  $('secureLink').textContent = url; $('secureLink').href = url;
+  $('gpsNote').style.display = 'block';
+}
+if (location.hostname === '192.168.4.1') document.body.insertBefore($('wifiCard'), $('locCard'));
 load();
 say($('msg'), '', true);
 </script>

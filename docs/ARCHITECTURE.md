@@ -66,6 +66,24 @@ LVGL timer and event callbacks already run inside the lock.
   most of them). They download newest first while the radar screen is visible. A tap plays at 3 fps via an LVGL timer,
   holds the last frame about 1 s, then returns to live.
 
+## Wi-Fi setup / captive portal (`net.c`, `ui.c`, `web.c`)
+
+- **Settings overlay state machine** (`ui.c`): 0 = hidden, 1 = settings QR (`https://<ip>`), 2 = Wi-Fi setup.
+  A long-press on the weather screen goes to 1; a long-press on the overlay goes to 2 (`net_setup_ap_start()`), which
+  shows a `WIFI:T:WPA;S:Weather-Setup;P:…;;` QR. A tap, or a 10-minute timer, closes it and stops the AP. Gestures are
+  ignored while the overlay is open.
+- **Access point:** `ap_up()` switches to APSTA, so the station connection stays up and the AP follows its channel.
+  It sets DHCP option 114 (captive-portal URI `http://192.168.4.1/`) and starts the DNS server
+  (`components/dns_server`), which answers every name with the AP's IP. First-boot setup (`net_start_portal()`) uses
+  the same function.
+- **HTTP :80 decides by interface** (`from_setup_ap()` looks at the socket's local address):
+  - On the setup AP it *is* the portal. `/` serves the page over plain HTTP, because phone sign-in browsers reject the
+    self-signed certificate. `/api/*` works, and every other URL (OS connectivity checks such as `/generate_204` or
+    `/hotspot-detect.html`) gets a 302 to `http://192.168.4.1/` with a small HTML body, which iOS requires.
+  - On the home network, everything redirects to HTTPS.
+- On the plain-HTTP page the GPS button can't work (browsers only allow geolocation on secure pages). The page shows a
+  link to the HTTPS version instead, and puts the Wi-Fi card first when opened on 192.168.4.1.
+
 ## Settings / web (`web.c`, `config.c`)
 
 - HTTPS server (`esp_https_server`, self-signed EC P-256 cert embedded) on 443. The plain HTTP server on 80 sends
@@ -106,3 +124,7 @@ allocates internal DMA bounce buffers, and that failed mid-response, which trunc
 - The frame count is fixed at 15 and the radar layer is rain rate only (`RADAR_1KM_RRAI`). `Radar_1km_SfcPrecipType`
   would colour snow and rain separately.
 - One TLS key is shared by all builds (see README, Security notes).
+- Internal RAM is tight: about 6.5 KB free while serving the page with the AP running. Watch
+  `web: GET / (page), free internal …` in the log after adding features.
+- Phones hammer the portal with parallel connections (including HTTPS probes that fail the handshake, which is
+  harmless). `CONFIG_LWIP_MAX_SOCKETS` must leave room for both servers, the DNS socket and several clients.

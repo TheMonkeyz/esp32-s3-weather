@@ -85,7 +85,9 @@ Windows build uses `main/idf_component.yml` instead.
     must use `ulTaskNotifyTake` so user requests wake it; long downloads check `zoom_target`/`relocate_pending` and bail.
 13. **Choppy animations:** the project was compiled with `-Og`. Use `CONFIG_COMPILER_OPTIMIZATION_PERF`; keep
     `lv_image_set_antialias(img, false)` for full-screen scaling.
-14. **Git on the PC folder from the Linux VM** needs delete permission (index.lock, temporary objects). Set
+14. **Captive portal and HTTPS don't mix:** sign-in browsers won't accept a self-signed certificate. Serve the portal
+    over HTTP on the AP interface (decide with `getsockname`) and keep HTTPS for the home-network page (GPS).
+15. **Git on the PC folder from the Linux VM** needs delete permission (index.lock, temporary objects). Set
     `core.fileMode false` and `core.autocrlf false`.
 
 ## User preferences learned
