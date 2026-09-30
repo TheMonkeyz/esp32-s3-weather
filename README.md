@@ -134,7 +134,8 @@ git push origin v1.1.0
   (`diag: firmware …`), at the bottom of the settings page and on the flasher page.
 - Release assets: `bootloader.bin`, `partition-table.bin`, `weather_amoled-<version>.bin` (updates keep settings),
   `weather_amoled-<version>-full.bin` (merged, flash at 0x0; erases settings) and `flash-parts.json` (offsets and
-  version, used to build the flasher).
+  version, used to build the flasher). v1.0.0 predates `flash-parts.json`; the site builder falls back to the
+  standard file names and offsets for it.
 - The flasher page is `web/flash/index.html` ([ESP Web Tools](https://esphome.github.io/esp-web-tools/)).
   `tools/make_flasher_site.py` has two steps: `dist` turns a build into release files, `site` assembles the page with
   `stable/` and `beta/` folders (each with its images and an ESP Web Tools `manifest.json`) and `channels.json`,

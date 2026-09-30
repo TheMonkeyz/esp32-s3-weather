@@ -26,6 +26,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FAMILY = {"esp32s3": "ESP32-S3", "esp32": "ESP32", "esp32c3": "ESP32-C3"}
@@ -67,9 +68,29 @@ def cmd_dist(a):
         print(f"  0x{p['offset']:06x}  {p['file']}")
 
 
+def read_parts(src):
+    """flash-parts.json, or for releases made before it existed (v1.0.0), the standard file names."""
+    path = os.path.join(src, "flash-parts.json")
+    if os.path.exists(path):
+        with open(path) as f:
+            return json.load(f)
+    apps = [n for n in os.listdir(src) if n.startswith("weather_amoled-") and n.endswith(".bin")
+            and not n.endswith("-full.bin")]
+    if len(apps) != 1:
+        sys.exit(f"{src}: no flash-parts.json and {len(apps)} app images")
+    return {
+        "chip": "esp32s3",
+        "version": apps[0][len("weather_amoled-"):-len(".bin")],
+        "built": datetime.datetime.fromtimestamp(os.path.getmtime(os.path.join(src, apps[0])),
+                                                 datetime.timezone.utc).strftime("%Y-%m-%d"),
+        "parts": [{"file": "bootloader.bin", "offset": 0x0},
+                  {"file": "partition-table.bin", "offset": 0x8000},
+                  {"file": apps[0], "offset": 0x10000}],
+    }
+
+
 def add_channel(out, name, src):
-    with open(os.path.join(src, "flash-parts.json")) as f:
-        info = json.load(f)
+    info = read_parts(src)
     d = os.path.join(out, name)
     os.makedirs(d, exist_ok=True)
     for p in info["parts"]:
