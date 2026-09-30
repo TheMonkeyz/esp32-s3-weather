@@ -15,6 +15,7 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "dns_server.h"
+#include "esp_dpp.h"
 
 static const char *TAG = "net";
 static EventGroupHandle_t ev;
@@ -25,6 +26,7 @@ static bool portal_mode;
 static esp_netif_t *sta_netif;
 static esp_timer_handle_t retry_timer;
 static volatile bool ap_active;
+static volatile bool dpp_active;
 
 int net_ap_clients(void)
 {
@@ -37,7 +39,7 @@ int net_ap_clients(void)
 // which drops phones joined to the setup network, so while someone is on it we wait.
 static void retry_cb(void *arg)
 {
-    if (portal_mode || net_is_connected()) return;
+    if (portal_mode || dpp_active || net_is_connected()) return;
     if (net_ap_clients() > 0) { esp_timer_start_once(retry_timer, 10 * 1000000ULL); return; }
     esp_wifi_connect();
 }
@@ -45,10 +47,10 @@ static void retry_cb(void *arg)
 static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data)
 {
     if (base == WIFI_EVENT && id == WIFI_EVENT_STA_START) {
-        if (!portal_mode) esp_wifi_connect();
+        if (!portal_mode && !dpp_active) esp_wifi_connect();
     } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
         xEventGroupClearBits(ev, BIT_GOT_IP);
-        if (portal_mode) return;
+        if (portal_mode || dpp_active) return;
         retries++;
         if (retries == 8) xEventGroupSetBits(ev, BIT_FAIL);      // net_wait() gives up; retries go on
         int ms = retries < 8 ? 1000 : retries < 20 ? 3000 : 30000;
@@ -212,13 +214,107 @@ void net_setup_ap_start(void)
     ESP_LOGI(TAG, "Setup AP started alongside the current connection");
 }
 
-void net_setup_ap_stop(void)
+static void ap_down(void)
 {
-    if (!ap_active || portal_mode) return;
+    if (!ap_active) return;
     if (dns) { stop_dns_server(dns); dns = NULL; }
     esp_wifi_set_mode(WIFI_MODE_STA);
     ap_active = false;
     ESP_LOGI(TAG, "Setup AP stopped");
 }
+
+void net_setup_ap_stop(void)
+{
+    if (!portal_mode) ap_down();
+}
+
+void net_setup_ap_stop_any(void) { ap_down(); }
+
+/* ---------------- Wi-Fi Easy Connect (DPP enrollee) ----------------
+ * The display shows a DPP QR code; an Android phone (10+) scans it from its Wi-Fi settings and sends
+ * the network it's connected to (SSID + password). Needs STA mode without connection attempts, so the
+ * setup AP and our reconnects are paused while it listens. */
+
+#define DPP_CHANNELS "1,6,11"
+static net_dpp_uri_cb_t dpp_uri_cb;
+static net_dpp_done_cb_t dpp_done_cb;
+static bool dpp_inited;
+
+static void restart_cb(void *arg) { esp_restart(); }
+
+static void dpp_event(esp_supp_dpp_event_t evt, void *data)
+{
+    switch (evt) {
+    case ESP_SUPP_DPP_URI_READY:
+        if (data) {
+            ESP_LOGI(TAG, "Easy Connect: QR code ready, listening on channels " DPP_CHANNELS);
+            if (dpp_uri_cb) dpp_uri_cb((const char *)data);
+            // bootstrap_gen() is asynchronous: listening is only possible once the code exists
+            esp_err_t e = dpp_active ? esp_supp_dpp_start_listen() : ESP_OK;
+            if (e != ESP_OK) ESP_LOGE(TAG, "Easy Connect: can't listen: %s", esp_err_to_name(e));
+        }
+        break;
+    case ESP_SUPP_DPP_CFG_RECVD: {
+        wifi_config_t *wc = data;
+        ESP_LOGI(TAG, "Easy Connect: received \"%s\" from the phone", (char *)wc->sta.ssid);
+        bool ok = net_save_creds((char *)wc->sta.ssid, (char *)wc->sta.password);
+        if (dpp_done_cb) dpp_done_cb(ok, (char *)wc->sta.ssid);
+        if (ok) {                                            // same as the setup page: restart and join
+            static esp_timer_handle_t t;
+            const esp_timer_create_args_t ta = { .callback = restart_cb, .name = "dpp_restart" };
+            if (!t && esp_timer_create(&ta, &t) == ESP_OK) esp_timer_start_once(t, 2500 * 1000);
+        }
+        break;
+    }
+    case ESP_SUPP_DPP_FAIL:
+        ESP_LOGW(TAG, "Easy Connect failed (%s), listening again", esp_err_to_name((int)(intptr_t)data));
+        if (dpp_done_cb) dpp_done_cb(false, "");
+        if (dpp_active) esp_supp_dpp_start_listen();
+        break;
+    default:
+        break;
+    }
+}
+
+bool net_dpp_start(net_dpp_uri_cb_t on_uri, net_dpp_done_cb_t on_done)
+{
+    if (dpp_active) return true;
+    dpp_uri_cb = on_uri;
+    dpp_done_cb = on_done;
+    dpp_active = true;
+    esp_timer_stop(retry_timer);
+    esp_wifi_disconnect();                                 // listening needs the radio (also cancels an attempt)
+    esp_wifi_set_mode(WIFI_MODE_STA);
+    esp_err_t err = ESP_OK;
+    if (!dpp_inited) {
+        err = esp_supp_dpp_init(dpp_event);
+        dpp_inited = err == ESP_OK;
+    }
+    if (err == ESP_OK) err = esp_supp_dpp_bootstrap_gen(DPP_CHANNELS, DPP_BOOTSTRAP_QR_CODE, NULL, NULL);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Easy Connect unavailable: %s", esp_err_to_name(err));
+        net_dpp_stop();
+        return false;
+    }
+    ESP_LOGI(TAG, "Easy Connect started");
+    return true;
+}
+
+void net_dpp_stop(void)
+{
+    if (!dpp_active) return;
+    esp_supp_dpp_stop_listen();
+    if (dpp_inited) { esp_supp_dpp_deinit(); dpp_inited = false; }
+    dpp_active = false;
+    dpp_uri_cb = NULL;
+    dpp_done_cb = NULL;
+    ESP_LOGI(TAG, "Easy Connect stopped");
+    if (!portal_mode && !net_is_connected()) {             // resume trying the saved network
+        retries = 0;
+        esp_wifi_connect();
+    }
+}
+
+bool net_dpp_active(void) { return dpp_active; }
 
 bool net_setup_ap_active(void) { return ap_active; }

@@ -16,6 +16,8 @@ button.sec{background:#2a2f37}.row{display:flex;gap:10px}.row>div{flex:1}
 #nets div.sel{background:#1f3350;border-radius:8px}.muted{color:var(--dim);font-size:13px}
 #nets div,#results div{padding:10px;border-bottom:1px solid var(--line);cursor:pointer}#nets div:active,#results div:active{background:#232830}
 
+details.tip{margin:10px 0 2px;font-size:14px;color:var(--dim)}details.tip summary{cursor:pointer;color:var(--accent)}
+details.tip ol{margin:6px 0 0;padding-left:20px}details.tip li{margin:4px 0}
 .pw{position:relative}.pw input{padding-right:76px}
 button.eye{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:auto;margin:0;padding:6px 12px;font-size:14px;background:#2a2f37;border-radius:8px}
 .meter{position:relative;height:14px;background:#0c0e12;border:1px solid var(--line);border-radius:7px;overflow:hidden;margin:8px 0 4px}
@@ -94,6 +96,16 @@ select{width:100%;padding:11px 12px;border-radius:10px;border:1px solid var(--li
   <label for="pass">Password</label>
   <div class="pw"><input id="pass" type="password" autocomplete="off" autocapitalize="off" spellcheck="false">
     <button type="button" id="showPw" class="eye" aria-label="Show password">Show</button></div>
+  <details class="tip" id="pwTip">
+    <summary>Password saved on your phone? Copy it</summary>
+    <ol>
+      <li><b>iPhone</b> (iOS 16+): Settings → Wi-Fi → tap <b>ⓘ</b> next to your network → tap <b>Password</b>
+        (Face ID) → <b>Copy</b>, then come back here and paste.</li>
+      <li><b>Android</b> 10+: no typing needed. On the display's Wi-Fi setup screen, swipe left for
+        <b>Easy Connect</b> and scan its code from your phone's Wi-Fi settings (the QR icon).
+        Or Settings → Wi-Fi → your network → <b>Share</b>: the password is under the QR code.</li>
+    </ol>
+  </details>
   <button class="sec" id="saveWifi">Save Wi-Fi &amp; restart</button>
   <div id="wmsg"></div>
 </div>

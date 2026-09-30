@@ -38,6 +38,18 @@ Data sources:
 4. The page scans automatically and lists nearby networks (strongest first, 🔒 = password needed). Tap yours, enter
    the password (**Show** reveals it while typing) and save. The display restarts and connects. **Scan again** refreshes the list.
 
+### Wi-Fi without typing the password
+
+The Wi-Fi setup screen has two pages; **swipe** to switch:
+
+1. **Any phone:** QR code to join **Weather-Setup**; the setup page opens by itself (as above).
+2. **Android 10+ — Easy Connect:** on the phone (connected to the Wi-Fi you want), open **Settings → Wi-Fi**, tap
+   the **QR icon** (next to *Add network*, or *Add device* in the network's details) and scan the display. The
+   phone sends that network, password included; the display saves it and restarts.
+
+Browsers can't read the Wi-Fi passwords saved on a phone, and iPhones don't do Easy Connect. For iPhone, the setup
+page's *Password saved on your phone? Copy it* tip explains how to copy it: Settings → Wi-Fi → ⓘ → Password → Copy.
+
 ## Presence dimming (microphones)
 
 The two onboard microphones measure the room's sound level every 0.1 s.

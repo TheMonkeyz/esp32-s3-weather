@@ -18,8 +18,7 @@ static lv_font_t *f_time, *f_city, *f_big, *f_cond, *f_small, *f_tiny, *f_micro;
 static lv_obj_t *scr_radar;
 static lv_obj_t *scr_msg, *msg_title, *msg_body, *msg_qr;
 static lv_obj_t *overlay, *ov_qr, *ov_url, *ov_title;
-static int ov_state;          // 0 hidden, 1 settings QR, 2 Wi-Fi setup AP running
-static lv_timer_t *ap_timer;
+static int ov_state;          // 0 hidden, 1 settings QR
 static lv_obj_t *scr_hour;       // hourly detail screen
 static int hr_day;
 static void hour_fill(int day);
@@ -213,8 +212,6 @@ static uint32_t overlay_opened;
 
 static void overlay_hide(void)
 {
-    if (ov_state == 2) net_setup_ap_stop();
-    if (ap_timer) { lv_timer_delete(ap_timer); ap_timer = NULL; }
     ov_state = 0;
     lv_obj_add_flag(overlay, LV_OBJ_FLAG_HIDDEN);
 }
@@ -231,14 +228,7 @@ static void overlay_show(void)
 static void overlay_close(lv_event_t *e)
 {
     if (lv_tick_elaps(overlay_opened) < 800) return;   // ignore the release of the long-press itself
-    ESP_LOGI("ui", "overlay closed%s", ov_state == 2 ? " (setup AP stopped)" : "");
-    overlay_hide();
-}
-
-static void ap_timeout(lv_timer_t *t)
-{
-    ap_timer = NULL;                                    // one-shot, LVGL deletes it
-    ESP_LOGI("ui", "Wi-Fi setup timed out");
+    ESP_LOGI("ui", "overlay closed");
     overlay_hide();
 }
 
@@ -249,8 +239,7 @@ static void show_settings(lv_event_t *e)
 {
     if (!net_is_connected()) {                        // offline: the settings QR would be useless
         ESP_LOGI("ui", "long press while offline -> Wi-Fi setup");
-        ov_state = 1;
-        show_wifi_setup(e);
+        ui_wifi_setup(NULL);
         return;
     }
     ESP_LOGI("ui", "long press -> settings QR");
@@ -264,43 +253,21 @@ static void show_settings(lv_event_t *e)
     overlay_show();
 }
 
-// Step 2: long-press on the settings QR -> start the setup network + captive portal
+// Step 2: long-press on the settings QR -> Wi-Fi setup screen
 static void show_wifi_setup(lv_event_t *e)
 {
     if (ov_state != 1) return;
-    ESP_LOGI("ui", "long press -> Wi-Fi setup AP");
-    net_setup_ap_start();
-    static const char wifi_qr[] = "WIFI:T:WPA;S:" SETUP_AP_SSID ";P:" SETUP_AP_PASS ";;";
-    lv_label_set_text(ov_title, "Wi-Fi setup");
-    lv_qrcode_update(ov_qr, wifi_qr, strlen(wifi_qr));
-    lv_label_set_text(ov_url, "Scan to join \"" SETUP_AP_SSID "\"\n(password " SETUP_AP_PASS ").\n"
-                              "The setup page opens by itself.\n\nTap to cancel");
-    ov_state = 2;
-    if (ap_timer) lv_timer_delete(ap_timer);
-    ap_timer = lv_timer_create(ap_timeout, 10 * 60 * 1000, NULL);   // switch the AP off after 10 min
-    lv_timer_set_repeat_count(ap_timer, 1);
-    overlay_show();
+    ESP_LOGI("ui", "long press -> Wi-Fi setup");
+    overlay_hide();
+    ui_wifi_setup(NULL);
 }
 
-// Long-press on a status screen ("Connecting to...", "Fetching forecast..."): start the setup network.
-// It stays up until the board is online and 10 minutes have passed (or new credentials restart it).
-static lv_timer_t *msg_ap_timer;
-static void msg_ap_timeout(lv_timer_t *t)
-{
-    if (!net_is_connected()) return;                  // still offline: keep offering setup
-    lv_timer_delete(t);
-    msg_ap_timer = NULL;
-    net_setup_ap_stop();
-}
-
+// Long-press on a status screen ("Connecting to...", "Fetching forecast..."): Wi-Fi setup screen
 static void msg_long_press(lv_event_t *e)
 {
-    if (net_in_portal()) return;                      // the first-time setup screen already shows it
-    ESP_LOGI("ui", "long press on status screen -> Wi-Fi setup AP");
-    net_setup_ap_start();
-    ui_message_qr("Wi-Fi setup", "Scan to join \"" SETUP_AP_SSID "\"\n(password " SETUP_AP_PASS ").\n"
-                  "The setup page opens by itself.", "WIFI:T:WPA;S:" SETUP_AP_SSID ";P:" SETUP_AP_PASS ";;");
-    if (!msg_ap_timer) msg_ap_timer = lv_timer_create(msg_ap_timeout, 10 * 60 * 1000, NULL);
+    if (net_in_portal()) return;                      // first-time setup is already showing it
+    ESP_LOGI("ui", "long press on status screen -> Wi-Fi setup");
+    ui_wifi_setup(NULL);
 }
 
 static lv_obj_t *make_qr(lv_obj_t *parent, int size)
@@ -581,6 +548,150 @@ static void gesture_cb(lv_event_t *e)
     }
 }
 
+/* ---------- Wi-Fi setup screen ----------
+ * Page 1 (any phone): QR code to join the display's setup network; the setup page opens by itself.
+ * Page 2 (Android 10+): Wi-Fi Easy Connect (DPP). The phone scans this QR code from its Wi-Fi settings and
+ * sends the network it's connected to, password included. The radio can't do both at once, so the
+ * setup network runs on page 1 and Easy Connect listens on page 2. Swipe to switch. */
+
+static lv_obj_t *scr_setup, *su_title, *su_note, *su_qr, *su_body, *su_dot[2];
+static int su_page;
+static bool su_can_close;           // opened while online: a tap closes it
+static lv_timer_t *su_timer;
+static char su_note_text[96];
+static const char su_ap_qr[] = "WIFI:T:WPA;S:" SETUP_AP_SSID ";P:" SETUP_AP_PASS ";;";
+
+static void su_dots(void)
+{
+    for (int i = 0; i < 2; i++) {
+        lv_obj_set_size(su_dot[i], i == su_page ? 18 : 7, 7);
+        lv_obj_set_style_bg_color(su_dot[i], i == su_page ? C_TEXT : C_DIM, 0);
+    }
+}
+
+// Easy Connect callbacks (Wi-Fi task context: take the display lock)
+static void su_dpp_uri(const char *uri)
+{
+    display_lock(-1);
+    if (su_page == 1 && lv_screen_active() == scr_setup) {
+        lv_qrcode_update(su_qr, uri, strlen(uri));
+        lv_obj_remove_flag(su_qr, LV_OBJ_FLAG_HIDDEN);
+    }
+    display_unlock();
+}
+
+static void su_dpp_done(bool ok, const char *ssid)
+{
+    display_lock(-1);
+    if (ok) {
+        lv_label_set_text(su_title, "Wi-Fi received");
+        lv_label_set_text_fmt(su_body, "Got \"%s\" from your phone.\nRestarting...", ssid);
+        lv_obj_add_flag(su_qr, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_label_set_text(su_body, "That didn't work. Scan again,\nor swipe right for other phones.");
+    }
+    display_unlock();
+}
+
+static void su_show_page(int page)
+{
+    su_page = page;
+    su_dots();
+    if (page == 0) {
+        net_dpp_stop();
+        net_setup_ap_start();
+        lv_label_set_text(su_title, "Wi-Fi setup");
+        lv_qrcode_update(su_qr, su_ap_qr, strlen(su_ap_qr));
+        lv_obj_remove_flag(su_qr, LV_OBJ_FLAG_HIDDEN);
+        lv_label_set_text(su_body, "Scan to join " SETUP_AP_SSID "\n(password " SETUP_AP_PASS ").\n"
+                                   "Android? Swipe left to skip\nthe password");
+    } else {
+        lv_label_set_text(su_title, "Android: Easy Connect");
+        lv_obj_add_flag(su_qr, LV_OBJ_FLAG_HIDDEN);          // until the code is generated
+        lv_label_set_text(su_body, "In Wi-Fi settings, tap the QR icon\nand scan this.\n"
+                                   "Your phone sends its network.\nSwipe right for other phones");
+        net_setup_ap_stop_any();
+        if (!net_dpp_start(su_dpp_uri, su_dpp_done))
+            lv_label_set_text(su_body, "Easy Connect isn't available.\nSwipe right for other phones.");
+    }
+    ESP_LOGI("ui", "Wi-Fi setup page %d (%s)", page, page ? "Easy Connect" : "setup network");
+}
+
+static void su_close(void)
+{
+    ESP_LOGI("ui", "Wi-Fi setup closed");
+    if (su_timer) { lv_timer_delete(su_timer); su_timer = NULL; }
+    net_dpp_stop();
+    net_setup_ap_stop();
+    lv_screen_load_anim(scr_main, LV_SCR_LOAD_ANIM_FADE_IN, 200, 0, false);
+}
+
+static void su_timeout(lv_timer_t *t)
+{
+    if (!su_can_close && !net_is_connected()) return;   // still offline: keep offering setup
+    su_close();
+}
+
+static void su_gesture(lv_event_t *e)
+{
+    lv_indev_t *in = lv_indev_active();
+    if (!in) return;
+    lv_dir_t dir = lv_indev_get_gesture_dir(in);
+    if (dir == LV_DIR_LEFT && su_page == 0) su_show_page(1);
+    else if (dir == LV_DIR_RIGHT && su_page == 1) su_show_page(0);
+    lv_indev_wait_release(in);
+}
+
+static void su_tap(lv_event_t *e)
+{
+    if (su_can_close) su_close();
+}
+
+static void setup_create(void)
+{
+    scr_setup = base_screen();
+    su_title = label(scr_setup, f_small, C_ACCENT, 40);
+    su_note = label(scr_setup, f_tiny, C_DIM, 70);
+    lv_obj_set_width(su_note, 330);
+    su_qr = make_qr(scr_setup, 150);
+    lv_obj_align(su_qr, LV_ALIGN_TOP_MID, 0, 122);
+    su_body = label(scr_setup, f_tiny, C_TEXT, 298);
+    lv_obj_set_width(su_body, 360);
+    for (int i = 0; i < 2; i++) {
+        su_dot[i] = lv_obj_create(scr_setup);
+        lv_obj_remove_style_all(su_dot[i]);
+        lv_obj_set_style_radius(su_dot[i], 4, 0);
+        lv_obj_set_style_bg_opa(su_dot[i], LV_OPA_COVER, 0);
+        lv_obj_align(su_dot[i], LV_ALIGN_BOTTOM_MID, i == 0 ? -10 : 10, -16);
+    }
+    lv_obj_add_event_cb(scr_setup, su_gesture, LV_EVENT_GESTURE, NULL);
+    lv_obj_add_event_cb(scr_setup, su_tap, LV_EVENT_SHORT_CLICKED, NULL);
+}
+
+void ui_wifi_setup(const char *note)
+{
+    display_lock(-1);
+    if (note) strlcpy(su_note_text, note, sizeof(su_note_text));
+    else su_note_text[0] = 0;
+    su_can_close = net_is_connected() && !net_in_portal();
+    lv_label_set_text(su_note, su_note_text[0] ? su_note_text : su_can_close ? "Tap to cancel" : "");
+    su_show_page(0);
+    if (su_timer) lv_timer_delete(su_timer);
+    su_timer = lv_timer_create(su_timeout, 10 * 60 * 1000, NULL);   // closes after 10 min once online
+    if (lv_screen_active() != scr_setup) lv_screen_load(scr_setup);
+    lv_indev_t *in = lv_indev_active();
+    if (in) lv_indev_wait_release(in);                              // the long-press isn't also a tap
+    display_unlock();
+}
+
+void ui_wifi_setup_end(void)
+{
+    display_lock(-1);
+    if (su_timer) { lv_timer_delete(su_timer); su_timer = NULL; }
+    net_dpp_stop();
+    display_unlock();
+}
+
 void ui_init(void)
 {
     display_lock(-1);
@@ -667,6 +778,7 @@ void ui_init(void)
     lv_obj_add_flag(msg_qr, LV_OBJ_FLAG_HIDDEN);
 
     lv_obj_add_event_cb(scr_radar, gesture_cb, LV_EVENT_GESTURE, NULL);
+    setup_create();
     touch_register_lvgl();
 
     lv_timer_create(clock_tick, 1000, NULL);
