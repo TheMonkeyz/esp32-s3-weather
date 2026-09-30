@@ -242,9 +242,17 @@ static void ap_timeout(lv_timer_t *t)
     overlay_hide();
 }
 
+static void show_wifi_setup(lv_event_t *e);
+
 // Step 1: long-press on the weather screen -> settings page QR (home network, HTTPS)
 static void show_settings(lv_event_t *e)
 {
+    if (!net_is_connected()) {                        // offline: the settings QR would be useless
+        ESP_LOGI("ui", "long press while offline -> Wi-Fi setup");
+        ov_state = 1;
+        show_wifi_setup(e);
+        return;
+    }
     ESP_LOGI("ui", "long press -> settings QR");
     char ip[20], url[48];
     if (!net_get_ip(ip, sizeof(ip))) strcpy(ip, "192.168.4.1");
@@ -272,6 +280,27 @@ static void show_wifi_setup(lv_event_t *e)
     ap_timer = lv_timer_create(ap_timeout, 10 * 60 * 1000, NULL);   // switch the AP off after 10 min
     lv_timer_set_repeat_count(ap_timer, 1);
     overlay_show();
+}
+
+// Long-press on a status screen ("Connecting to...", "Fetching forecast..."): start the setup network.
+// It stays up until the board is online and 10 minutes have passed (or new credentials restart it).
+static lv_timer_t *msg_ap_timer;
+static void msg_ap_timeout(lv_timer_t *t)
+{
+    if (!net_is_connected()) return;                  // still offline: keep offering setup
+    lv_timer_delete(t);
+    msg_ap_timer = NULL;
+    net_setup_ap_stop();
+}
+
+static void msg_long_press(lv_event_t *e)
+{
+    if (net_in_portal()) return;                      // the first-time setup screen already shows it
+    ESP_LOGI("ui", "long press on status screen -> Wi-Fi setup AP");
+    net_setup_ap_start();
+    ui_message_qr("Wi-Fi setup", "Scan to join \"" SETUP_AP_SSID "\"\n(password " SETUP_AP_PASS ").\n"
+                  "The setup page opens by itself.", "WIFI:T:WPA;S:" SETUP_AP_SSID ";P:" SETUP_AP_PASS ";;");
+    if (!msg_ap_timer) msg_ap_timer = lv_timer_create(msg_ap_timeout, 10 * 60 * 1000, NULL);
 }
 
 static lv_obj_t *make_qr(lv_obj_t *parent, int size)
@@ -632,6 +661,7 @@ void ui_init(void)
     ov_url = label(overlay, f_tiny, C_TEXT, 276);
     lv_obj_set_width(ov_url, 330);
 
+    lv_obj_add_event_cb(scr_msg, msg_long_press, LV_EVENT_LONG_PRESSED, NULL);
     msg_qr = make_qr(scr_msg, 140);
     lv_obj_align(msg_qr, LV_ALIGN_TOP_MID, 0, 250);
     lv_obj_add_flag(msg_qr, LV_OBJ_FLAG_HIDDEN);

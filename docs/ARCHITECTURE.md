@@ -101,6 +101,18 @@ LVGL timer and event callbacks already run inside the lock.
 
 ## Wi-Fi setup / captive portal (`net.c`, `ui.c`, `web.c`)
 
+- **Boot** (`main.c`): no saved network → `portal()` (AP only, until credentials are saved and the board
+  restarts). Saved network → `net_begin()` + `web_start()` right away, then `net_wait(30000)`. If that fails,
+  `offline_setup()` shows the Wi-Fi QR, starts the AP next to the station and waits for a connection; once connected
+  (and no phone is on the AP, max 2 min) it stops the AP and continues.
+- **Reconnects never stop** (`net.c`): each disconnect schedules `esp_wifi_connect()` on an `esp_timer` (1 s for the
+  first 8 tries, then 3 s, then 30 s; formerly a `vTaskDelay` inside the event handler). `BIT_FAIL` only ends
+  `net_wait()`. A connection attempt makes the radio scan other channels, which drops phones on the setup AP, so the
+  retry is postponed while `net_ap_clients() > 0`. SNTP starts on the first `GOT_IP`, whenever that happens.
+- **Status screens** (`scr_msg`) take a long-press too: it starts the AP and shows the Wi-Fi QR (not in first-boot
+  setup, which already shows it). A 10-minute timer stops that AP only once the board is online.
+- On the weather screen, a long-press while offline skips the settings QR (useless without a network) and opens the
+  Wi-Fi setup step directly.
 - **Settings overlay state machine** (`ui.c`): 0 = hidden, 1 = settings QR (`https://<ip>`), 2 = Wi-Fi setup.
   A long-press on the weather screen goes to 1; a long-press on the overlay goes to 2 (`net_setup_ap_start()`), which
   shows a `WIFI:T:WPA;S:Weather-Setup;P:…;;` QR. A tap, or a 10-minute timer, closes it and stops the AP. Gestures are

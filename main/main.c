@@ -44,13 +44,33 @@ static void on_location_changed(void)
     if (main_task) xTaskNotifyGive(main_task);   // refetch weather now
 }
 
+#define WIFI_QR "WIFI:T:WPA;S:" SETUP_AP_SSID ";P:" SETUP_AP_PASS ";;"
+
+// The saved network can't be reached (moved house, new router, router still booting after a power
+// cut...): offer the setup network with its QR code while retrying the saved one in the background.
+// Whichever happens first wins: new credentials restart the board, a connection carries on normally.
+static void offline_setup(const char *ssid)
+{
+    char body[240];
+    snprintf(body, sizeof(body),
+             "Can't reach\n%s\nStill trying. Other network?\nScan to join %s\n(password %s)",
+             ssid, SETUP_AP_SSID, SETUP_AP_PASS);
+    ui_message_qr("Wi-Fi setup", body, WIFI_QR);
+    net_setup_ap_start();
+    net_wait_connected(-1);
+    ESP_LOGI(TAG, "Saved network is back");
+    ui_message("Wi-Fi", "Connected");
+    for (int i = 0; i < 120 && net_ap_clients() > 0; i++) vTaskDelay(pdMS_TO_TICKS(1000));   // let a phone finish
+    net_setup_ap_stop();
+}
+
 static void portal(void)
 {
     char body[200];
     snprintf(body, sizeof(body),
              "Scan to join the display's Wi-Fi\n(%s / %s).\nThe setup page opens by itself.",
              SETUP_AP_SSID, SETUP_AP_PASS);
-    ui_message_qr("Wi-Fi setup", body, "WIFI:T:WPA;S:" SETUP_AP_SSID ";P:" SETUP_AP_PASS ";;");
+    ui_message_qr("Wi-Fi setup", body, WIFI_QR);
     net_start_portal();
     web_start(on_location_changed);
     while (1) vTaskDelay(portMAX_DELAY);     // restarts after credentials are saved
@@ -85,19 +105,19 @@ void app_main(void)
         portal();
     }
 
-    char body[96];
-    snprintf(body, sizeof(body), "Connecting to\n%s", ssid);
+    char body[128];
+    snprintf(body, sizeof(body), "Connecting to\n%s\n\nLong-press for Wi-Fi setup", ssid);
     ui_message("Wi-Fi", body);
-    if (!net_connect(ssid, pass, 20000)) {
-        ESP_LOGW(TAG, "Wi-Fi connect failed, starting setup portal");
-        portal();
-    }
-
-    diag_mark("wifi up");
-    web_start(on_location_changed);
+    net_begin(ssid, pass);
+    web_start(on_location_changed);   // up early, so a long-press can offer the setup page right away
     diag_mark("web");
+    if (!net_wait(30000)) {
+        ESP_LOGW(TAG, "Wi-Fi connect failed, offering the setup network");
+        offline_setup(ssid);
+    }
+    diag_mark("wifi up");
     radar_preload_start();      // missing zoom-level maps download in the background
-    ui_message("Weather", "Fetching forecast...");
+    ui_message("Weather", "Fetching forecast...\n\nLong-press for Wi-Fi setup");
     static weather_t w;         // ~1 KB of hourly data, keep it off the stack
     while (1) {
         int wait_s = REFRESH_MIN * 60;
