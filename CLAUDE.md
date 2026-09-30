@@ -101,6 +101,13 @@ Windows build gets both from `main/idf_component.yml`. `components/dns_server` *
 - Changing sdkconfig makes CMake re-run; the cloud build then needs `IDF_COMPONENT_MANAGER=0` in the environment
   or it fails looking for `idf_component_manager`.
 
+- `.github/` is a protected path for the remote file tools: Claude can't write workflow files into the PC folder.
+  Hand the file to the user to save there (or edit it on GitHub).
+- CI (`.github/workflows/firmware.yml`) builds with the component manager, unlike the cloud recipe above
+  (vendored components). If CI fails but the cloud build works, suspect `main/idf_component.yml` versions.
+- The app version comes from `version.txt` (CI) or `git describe`; a build outside a git checkout shows `1`.
+  `version.txt` is read at CMake configure time: touch `CMakeLists.txt` after changing it.
+
 ## User preferences learned
 
 - Swipe **down** = zoom in, **up** = zoom out (the opposite felt wrong).

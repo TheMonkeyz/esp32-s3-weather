@@ -6,6 +6,10 @@ settings page.
 
 Built with **ESP-IDF v5.4** and **LVGL 9.2**. No API keys needed.
 
+**Install from your browser:** https://themonkeyz.github.io/esp32-s3-weather/ (Chrome or Edge on a computer,
+USB-C data cable). Ready-made images are also attached to each
+[release](https://github.com/TheMonkeyz/esp32-s3-weather/releases).
+
 ## Features
 
 | Screen | What it shows | Interaction |
@@ -26,7 +30,8 @@ Data sources:
 
 ## First-time setup
 
-1. Flash the firmware (see below). With no Wi-Fi saved, the screen shows **Wi-Fi setup** and a QR code.
+1. Flash the firmware: the [web flasher](https://themonkeyz.github.io/esp32-s3-weather/) (tick *Erase device* the
+   first time; leave it unticked for updates to keep Wi-Fi and settings), or see *Flashing (Windows)* below. With no Wi-Fi saved, the screen shows **Wi-Fi setup** and a QR code.
 2. Scan the QR code to join the display's network **Weather-Setup** (password `meteo1234`).
 3. The phone's **"Sign in to network"** page opens by itself (captive portal) and shows the setup page with the Wi-Fi
    section on top. If it doesn't, open **http://192.168.4.1**.
@@ -98,6 +103,30 @@ Flash layout: bootloader at `0x0`, partition table at `0x8000`, app at `0x10000`
 `python3 tools/diag_summary.py` then summarises memory, render timing and per-task CPU/stack. Details and
 reference numbers: [docs/DIAGNOSTICS.md](docs/DIAGNOSTICS.md).
 
+## Web flasher and automatic builds (GitHub Actions)
+
+`.github/workflows/firmware.yml` builds the firmware with ESP-IDF v5.4.2 on every push and pull request.
+
+| Event | What happens |
+|---|---|
+| push to `main` | build, then publish the web flasher to GitHub Pages with that build |
+| tag `v*` (e.g. `git tag v1.0.0 && git push origin v1.0.0`) | build + a GitHub Release with the images attached |
+| pull request | build only (catches compile errors) |
+| *Run workflow* button | same as a push to that branch |
+
+- The version is `git describe --tags --always` (e.g. `v1.0.0`, `v1.0.0-3-g1a2b3c4` or just a commit hash before
+  the first tag). CI writes it to `version.txt`, which ESP-IDF uses as the app version. It appears in the boot log
+  (`diag: firmware …`), at the bottom of the settings page and on the flasher page.
+- The flasher page is `web/flash/index.html` ([ESP Web Tools](https://esphome.github.io/esp-web-tools/)).
+  `tools/make_flasher_site.py` copies it with the three flash images and writes `manifest.json`. The images are
+  separate parts (bootloader 0x0, partition table 0x8000, app 0x10000) so an update doesn't wipe NVS (Wi-Fi,
+  location, settings); a merged image would.
+- Release assets: `bootloader.bin`, `partition-table.bin`, `weather_amoled-<version>.bin` (updates) and
+  `weather_amoled-<version>-full.bin` (merged, flash at 0x0; erases settings).
+- One-time setup on GitHub: **Settings → Pages → Build and deployment → Source: GitHub Actions**.
+- Preview the site locally after a build: `python3 tools/make_flasher_site.py` then
+  `python3 -m http.server -d _site 8000` and open http://localhost:8000 (Web Serial works on localhost).
+
 ## Building from source
 
 With an ESP-IDF **v5.4** environment (the "ESP-IDF 5.4 PowerShell" shortcut on Windows):
@@ -137,12 +166,16 @@ components/dns_server/  captive-portal DNS (from the ESP-IDF captive_portal exam
 docs/ARCHITECTURE.md  how the pieces fit together, memory budget, known issues
 docs/DIAGNOSTICS.md   how to measure memory/CPU/render speed, reference numbers, findings
 tools/diag_summary.py summarises the diag: lines of serial_log.txt
+tools/make_flasher_site.py  builds the web-flasher site (_site/) from a firmware build
+web/flash/            web flasher page (ESP Web Tools) + screenshots
+.github/workflows/firmware.yml  CI: build, GitHub Pages flasher, releases
 flash_helper.ps1      flash.request = flash + log, reboot.request = restart + log (no flashing)
 CLAUDE.md       notes for AI-assisted development sessions
 ```
 
 ## Security notes
 
-- The TLS certificate and private key in `main/certs/` are shared by every build of this firmware. They only protect
+- The TLS certificate and private key in `main/certs/` are shared by every build of this firmware, and the
+  repository is public, so anyone can read the key. They only protect
   traffic on your own network and exist so the phone lets the page use GPS. Don't reuse them anywhere else.
 - The setup access point password (`meteo1234`) is in `main/net.h`.

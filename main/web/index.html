@@ -97,6 +97,7 @@ select{width:100%;padding:11px 12px;border-radius:10px;border:1px solid var(--li
   <button class="sec" id="saveWifi">Save Wi-Fi &amp; restart</button>
   <div id="wmsg"></div>
 </div>
+<p class="muted" style="text-align:center">Firmware <span id="fwVer">–</span></p>
 
 <script>
 window.onerror = (m, src, line) => { const e = document.getElementById('msg'); if (e) { e.textContent = 'Page error: ' + m + ' (line ' + line + ')'; e.className = 'err'; } };
@@ -109,6 +110,7 @@ async function load(){
     $('curName').textContent = c.name; $('curCoord').textContent = c.lat.toFixed(4)+', '+c.lon.toFixed(4);
     $('name').value = c.name; $('lat').value = c.lat.toFixed(4); $('lon').value = c.lon.toFixed(4);
     $('curSsid').textContent = c.ssid || '–';
+    $('fwVer').textContent = c.version || '–';
   }catch(e){ say($('msg'), 'Could not read settings from the display', false); }
 }
 function bars(rssi){ return rssi >= -55 ? '▂▄▆█' : rssi >= -67 ? '▂▄▆' : rssi >= -78 ? '▂▄' : '▂'; }
