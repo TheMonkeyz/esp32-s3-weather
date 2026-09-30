@@ -101,6 +101,8 @@ LVGL timer and event callbacks already run inside the lock.
   holds the last frame about 1 s and loops for `PLAY_LOOP_MS` (60 s), then returns to live. A tap while playing
   stops it, and so does a zoom or location change. A new radar time doesn't: `plan_frames()` swaps the list under
   the display lock, playback skips frames not loaded yet, and the new frame joins the loop once downloaded.
+  The live view (`show_live()`) shows the newest frame that loaded, so a failed download keeps the previous image
+  (with its time in the label) rather than a map without rain.
 
 ## Wi-Fi setup / captive portal (`net.c`, `ui.c`, `web.c`)
 
