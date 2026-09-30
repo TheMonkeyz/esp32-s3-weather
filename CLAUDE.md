@@ -103,6 +103,8 @@ Windows build gets both from `main/idf_component.yml`. `components/dns_server` *
 
 - `.github/` is a protected path for the remote file tools: Claude can't write workflow files into the PC folder.
   Hand the file to the user to save there (or edit it on GitHub).
+- Releases: `vX.Y.Z-rc.N` tags feed the flasher's Beta channel, `vX.Y.Z` tags the Stable one; pushes to main only
+  build. The Pages site is rebuilt from release assets (`flash-parts.json`), never from a branch.
 - CI (`.github/workflows/firmware.yml`) builds with the component manager, unlike the cloud recipe above
   (vendored components). If CI fails but the cloud build works, suspect `main/idf_component.yml` versions.
 - The app version comes from `version.txt` (CI) or `git describe`; a build outside a git checkout shows `1`.

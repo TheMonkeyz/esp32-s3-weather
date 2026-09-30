@@ -171,11 +171,20 @@ LVGL timer and event callbacks already run inside the lock.
 
 ## Release pipeline
 
-`firmware.yml` (GitHub Actions) → `espressif/esp-idf-ci-action` (ESP-IDF v5.4.2, component manager) →
-`tools/make_flasher_site.py` (site + `manifest.json` from `build/flasher_args.json`) → GitHub Pages on `main`,
-GitHub Release on `v*` tags. ESP Web Tools flashes the parts at their offsets; `new_install_prompt_erase` offers an
-erase on the first install. The firmware version (`esp_app_get_description()->version`) is logged by `diag.c` and
-returned by `GET /api/config` as `version`.
+`firmware.yml` (GitHub Actions):
+
+1. **build** (every push, PR and tag): `espressif/esp-idf-ci-action` (ESP-IDF v5.4.2, component manager), then
+   `make_flasher_site.py dist` → release files + `flash-parts.json` (chip, version, offsets from
+   `build/flasher_args.json`), plus a merged full image. Uploaded as a workflow artifact.
+2. **release** (`v*` tags): GitHub Release with those files; `prerelease` when the tag contains `-`.
+3. **pages** (after a release, or *Run workflow* on `main`): `gh release list` → newest stable release and the newest
+   pre-release if it's newer than that; downloads their assets; `make_flasher_site.py site` → `stable/`, `beta/`,
+   `channels.json`; deploys to GitHub Pages. The site always reflects released files, never a branch build.
+
+ESP Web Tools resolves part paths relative to the manifest, so each channel folder is self-contained. The page swaps
+the install button's `manifest` attribute when the channel changes. `new_install_prompt_erase` offers an erase on
+the first install. The firmware version (`esp_app_get_description()->version`) is logged by `diag.c` and returned
+by `GET /api/config` as `version`.
 
 ## Memory budget (approximate)
 
