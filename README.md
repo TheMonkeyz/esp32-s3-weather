@@ -158,7 +158,7 @@ main/
   diag.c        "diag:" log lines: heap, frame timing, lock contention, CPU/stack per task, render bench
   lvgl_mem.c    LVGL's allocator, in PSRAM (keeps internal RAM for Wi-Fi, DMA and stacks)
   web/index.html  settings page (embedded)
-  certs/        self-signed TLS certificate + key (embedded; see Security)
+  tlscert.c     per-device TLS certificate: generated on first boot, stored in NVS (see Security)
   montserrat.ttf  font, rendered at runtime with LVGL TinyTTF (supports accents like "é")
 partitions.csv  nvs, phy, factory app (3 MB), mapcache (4 MB: one 512 KB basemap slot per zoom level)
 sdkconfig.defaults
@@ -175,7 +175,9 @@ CLAUDE.md       notes for AI-assisted development sessions
 
 ## Security notes
 
-- The TLS certificate and private key in `main/certs/` are shared by every build of this firmware, and the
-  repository is public, so anyone can read the key. They only protect
-  traffic on your own network and exist so the phone lets the page use GPS. Don't reuse them anywhere else.
+- The settings page's TLS certificate is **generated on each board** at first boot (EC P-256, self-signed, valid to
+  2099) and kept in NVS, so no private key ships in the firmware or this repository. Browsers still warn once
+  because it's self-signed; the certificate name includes the end of the board's MAC address
+  (`Weather Display C87598`). Erasing the flash creates a new one (accept the warning again).
+  Older versions embedded a shared key from `main/certs/`; it is no longer used anywhere.
 - The setup access point password (`meteo1234`) is in `main/net.h`.
