@@ -11,8 +11,10 @@ label{display:block;font-size:13px;color:var(--dim);margin:10px 0 4px}
 input{width:100%;padding:11px 12px;border-radius:10px;border:1px solid var(--line);background:#0c0e12;color:var(--text);font-size:16px}
 button{width:100%;padding:12px;border:0;border-radius:10px;font-size:16px;font-weight:600;margin-top:12px;background:var(--acc);color:#fff}
 button.sec{background:#2a2f37}.row{display:flex;gap:10px}.row>div{flex:1}
-.cur{font-size:18px;font-weight:600}.muted{color:var(--dim);font-size:13px}
-#results div{padding:10px;border-bottom:1px solid var(--line);cursor:pointer}#results div:active{background:#232830}
+.cur{font-size:18px;font-weight:600}
+#nets div{display:flex;justify-content:space-between;align-items:center}#nets .sig{color:var(--dim);font-size:14px;white-space:nowrap;margin-left:10px}
+#nets div.sel{background:#1f3350;border-radius:8px}.muted{color:var(--dim);font-size:13px}
+#nets div,#results div{padding:10px;border-bottom:1px solid var(--line);cursor:pointer}#nets div:active,#results div:active{background:#232830}
 #msg{min-height:20px;margin-top:10px;font-size:14px}.ok{color:#6fd08c}.err{color:#ff7a7a}
 </style></head><body>
 <h1>Weather display</h1>
@@ -40,8 +42,10 @@ button.sec{background:#2a2f37}.row{display:flex;gap:10px}.row>div{flex:1}
 <div class="card" id="wifiCard">
   <h2>Wi-Fi</h2>
   <div class="muted">Connected to: <span id="curSsid">–</span></div>
-  <label for="ssid">Network</label>
-  <input id="ssid" list="nets" autocomplete="off"><datalist id="nets"></datalist>
+  <button class="sec" id="scanBtn">📶 Scan for networks</button>
+  <div id="nets"></div>
+  <label for="ssid">Network name</label>
+  <input id="ssid" autocomplete="off" placeholder="Pick one above or type it">
   <label for="pass">Password</label>
   <input id="pass" type="password">
   <button class="sec" id="saveWifi">Save Wi-Fi &amp; restart</button>
@@ -61,15 +65,32 @@ async function load(){
     $('curSsid').textContent = c.ssid || '–';
   }catch(e){ say($('msg'), 'Could not read settings from the display', false); }
 }
-let scanned = false;
+function bars(rssi){ return rssi >= -55 ? '▂▄▆█' : rssi >= -67 ? '▂▄▆' : rssi >= -78 ? '▂▄' : '▂'; }
 async function scan(){
-  if (scanned) return; scanned = true;
+  const btn = $('scanBtn');
+  btn.disabled = true; btn.textContent = 'Scanning…';
+  $('nets').innerHTML = '';
   try{
     const nets = await (await fetch('/api/scan')).json();
-    $('nets').innerHTML = nets.map(n => `<option value="${n.replace(/"/g,'&quot;')}">`).join('');
-  }catch(e){ scanned = false; }
+    if (!nets.length) $('nets').innerHTML = '<div class="muted">No networks found. Try again.</div>';
+    nets.forEach(n => {
+      const d = document.createElement('div');
+      const name = document.createElement('span'); name.textContent = n.ssid;
+      const sig = document.createElement('span'); sig.className = 'sig'; sig.textContent = (n.secure ? '🔒 ' : '') + bars(n.rssi);
+      d.append(name, sig);
+      d.onclick = () => {
+        document.querySelectorAll('#nets div').forEach(x => x.classList.remove('sel'));
+        d.classList.add('sel');
+        $('ssid').value = n.ssid;
+        if (n.secure) { $('pass').value = ''; $('pass').focus(); say($('wmsg'), 'Enter the password for ' + n.ssid + '.', true); }
+        else { $('pass').value = ''; say($('wmsg'), n.ssid + ' is an open network; no password needed.', true); }
+      };
+      $('nets').appendChild(d);
+    });
+  }catch(e){ say($('wmsg'), 'Scan failed, try again.', false); }
+  btn.disabled = false; btn.textContent = '📶 Scan again';
 }
-$('ssid').onfocus = scan;
+$('scanBtn').onclick = scan;
 
 async function nameFor(lat, lon){
   try{
@@ -135,7 +156,7 @@ if (!window.isSecureContext) {
   $('secureLink').textContent = url; $('secureLink').href = url;
   $('gpsNote').style.display = 'block';
 }
-if (location.hostname === '192.168.4.1') document.body.insertBefore($('wifiCard'), $('locCard'));
+if (location.hostname === '192.168.4.1') { document.body.insertBefore($('wifiCard'), $('locCard')); setTimeout(scan, 300); }
 load();
 say($('msg'), '', true);
 </script>

@@ -91,7 +91,9 @@ LVGL timer and event callbacks already run inside the lock.
   32768; they must not share a port.
 - API:
   - `GET /api/config`
-  - `GET /api/scan`: Wi-Fi scan; only called when the SSID field gets focus, because scanning blocks the server for 2–3 s.
+  - `GET /api/scan`: Wi-Fi scan, returning `[{ssid, rssi, secure}]` strongest first, one entry per name, without
+    Weather-Setup. Scanning blocks the server for 2–3 s, so the page scans only on the **Scan** button, or
+    automatically when opened on the setup AP.
   - `POST /api/location {name, lat, lon}`
   - `POST /api/wifi {ssid, pass}`: restarts the device.
 - The page runs the phone's geolocation, reverse geocoding (Nominatim) and city search (Open-Meteo geocoding) in the
@@ -127,4 +129,4 @@ allocates internal DMA bounce buffers, and that failed mid-response, which trunc
 - Internal RAM is tight: about 6.5 KB free while serving the page with the AP running. Watch
   `web: GET / (page), free internal …` in the log after adding features.
 - Phones hammer the portal with parallel connections (including HTTPS probes that fail the handshake, which is
-  harmless). `CONFIG_LWIP_MAX_SOCKETS` must leave room for both servers, the DNS socket and several clients.
+  harmless). `CONFIG_LWIP_MAX_SOCKETS=16` leaves room for both servers, the DNS socket and several clients.
