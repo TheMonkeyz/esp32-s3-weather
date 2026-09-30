@@ -15,6 +15,9 @@ button.sec{background:#2a2f37}.row{display:flex;gap:10px}.row>div{flex:1}
 #nets div{display:flex;justify-content:space-between;align-items:center}#nets .sig{color:var(--dim);font-size:14px;white-space:nowrap;margin-left:10px}
 #nets div.sel{background:#1f3350;border-radius:8px}.muted{color:var(--dim);font-size:13px}
 #nets div,#results div{padding:10px;border-bottom:1px solid var(--line);cursor:pointer}#nets div:active,#results div:active{background:#232830}
+
+.pw{position:relative}.pw input{padding-right:76px}
+button.eye{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:auto;margin:0;padding:6px 12px;font-size:14px;background:#2a2f37;border-radius:8px}
 #msg{min-height:20px;margin-top:10px;font-size:14px}.ok{color:#6fd08c}.err{color:#ff7a7a}
 </style></head><body>
 <h1>Weather display</h1>
@@ -47,7 +50,8 @@ button.sec{background:#2a2f37}.row{display:flex;gap:10px}.row>div{flex:1}
   <label for="ssid">Network name</label>
   <input id="ssid" autocomplete="off" placeholder="Pick one above or type it">
   <label for="pass">Password</label>
-  <input id="pass" type="password">
+  <div class="pw"><input id="pass" type="password" autocomplete="off" autocapitalize="off" spellcheck="false">
+    <button type="button" id="showPw" class="eye" aria-label="Show password">Show</button></div>
   <button class="sec" id="saveWifi">Save Wi-Fi &amp; restart</button>
   <div id="wmsg"></div>
 </div>
@@ -91,6 +95,13 @@ async function scan(){
   btn.disabled = false; btn.textContent = '📶 Scan again';
 }
 $('scanBtn').onclick = scan;
+$('showPw').onclick = () => {
+  const p = $('pass'), show = p.type === 'password';
+  p.type = show ? 'text' : 'password';
+  $('showPw').textContent = show ? 'Hide' : 'Show';
+  $('showPw').setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+  p.focus();
+};
 
 async function nameFor(lat, lon){
   try{
