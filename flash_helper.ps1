@@ -1,6 +1,8 @@
 # Flash helper: waits for a "flash.request" file in this folder, flashes firmware\*.bin,
 # then logs the board's serial output. Shows each step live in this window.
 # The request file may contain the number of seconds to log (default 60).
+# "reboot.request" does the same without flashing: restarts the board and logs it
+# (used to re-run the diagnostics, see docs/DIAGNOSTICS.md).
 # Only ever flashes the files in .\firmware with .\tools\esptool.exe. Close this window to stop it.
 Set-Location $PSScriptRoot
 $Host.UI.RawUI.WindowTitle = "ESP flash helper - waiting"
@@ -13,22 +15,25 @@ function Say($msg, $color = "Gray") {
 function Status($s) { Set-Content -Path "flash.status" -Value $s -Encoding ASCII }
 
 Say "Flash helper running in $PSScriptRoot" "Cyan"
-Say "Waiting for flash.request ..." "Cyan"
+Say "Waiting for flash.request / reboot.request ..." "Cyan"
 Status "idle"
 
 while ($true) {
-  if (-not (Test-Path "flash.request")) { Start-Sleep -Seconds 2; continue }
+  $req = if (Test-Path "flash.request") { "flash.request" } elseif (Test-Path "reboot.request") { "reboot.request" } else { $null }
+  if (-not $req) { Start-Sleep -Seconds 2; continue }
+  $reboot = $req -eq "reboot.request"
 
   # ---- read request ----
   $secs = 60
-  $txt = (Get-Content "flash.request" -Raw -ErrorAction SilentlyContinue)
-  if ($txt -match '^\s*(\d{1,3})\s*$') { $secs = [int]$Matches[1] }
-  Remove-Item "flash.request" -Force
+  $txt = (Get-Content $req -Raw -ErrorAction SilentlyContinue)
+  if ($txt -match '^\s*(\d{1,4})\s*$') { $secs = [int]$Matches[1] }
+  Remove-Item $req -Force
   Remove-Item "flash.done" -Force -ErrorAction SilentlyContinue
   $start = Get-Date
   Set-Content "flash.running" (Get-Date -Format s)
   Write-Host ""
-  Say "=== Flash request received (serial log: $secs s) ===" "Cyan"
+  if ($reboot) { Say "=== Reboot request received, no flashing (serial log: $secs s) ===" "Cyan" }
+  else { Say "=== Flash request received (serial log: $secs s) ===" "Cyan" }
   $Host.UI.RawUI.WindowTitle = "ESP flash helper - FLASHING"
   Status "flashing"
 
@@ -41,6 +46,7 @@ while ($true) {
                    "write_flash", "--flash_mode", "dio", "--flash_freq", "80m", "--flash_size", "16MB",
                    "0x0", "firmware\bootloader.bin", "0x8000", "firmware\partition-table.bin",
                    "0x10000", "firmware\weather_amoled.bin")
+  if ($reboot) { $esptoolArgs = @("--chip", "esp32s3", "--before", "default_reset", "--after", "hard_reset", "chip_id") }
   & ".\tools\esptool.exe" @esptoolArgs 2>&1 | ForEach-Object {
     $l = "$_"
     $lines.Add($l)
@@ -54,7 +60,7 @@ while ($true) {
   $flashSecs = [int]((Get-Date) - $start).TotalSeconds
 
   if ($rc -ne 0) {
-    Say "FLASH FAILED (exit $rc) after $flashSecs s - last lines:" "Red"
+    Say "$(if ($reboot) {"REBOOT"} else {"FLASH"}) FAILED (exit $rc) after $flashSecs s - last lines:" "Red"
     $lines | Select-Object -Last 6 | ForEach-Object { Write-Host "    $_" -ForegroundColor Red }
     Say "Tip: if no port was found, hold BOOT, tap RESET, release BOOT, and request again." "Yellow"
     Status "flash_failed"
@@ -64,7 +70,7 @@ while ($true) {
     $Host.UI.RawUI.WindowTitle = "ESP flash helper - FLASH FAILED (waiting)"
     continue
   }
-  Say "FLASH OK on $port in $flashSecs s - board is restarting" "Green"
+  Say "$(if ($reboot) {"REBOOT"} else {"FLASH"}) OK on $port in $flashSecs s - board is restarting" "Green"
   [console]::beep(1000, 150)
 
   # ---- serial log ----

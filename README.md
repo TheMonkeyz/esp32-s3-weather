@@ -92,6 +92,12 @@ https://github.com/espressif/esptool/releases (`esptool-v4.8.1-win64.zip`) and a
 
 Flash layout: bootloader at `0x0`, partition table at `0x8000`, app at `0x10000`. Flash settings: DIO, 80 MHz, 16 MB.
 
+### Diagnostics
+
+`echo 300 > reboot.request` restarts the board through the helper without flashing and records 300 s of log;
+`python3 tools/diag_summary.py` then summarises memory, render timing and per-task CPU/stack. Details and
+reference numbers: [docs/DIAGNOSTICS.md](docs/DIAGNOSTICS.md).
+
 ## Building from source
 
 With an ESP-IDF **v5.4** environment (the "ESP-IDF 5.4 PowerShell" shortcut on Windows):

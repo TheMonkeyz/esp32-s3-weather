@@ -18,6 +18,7 @@ flash_log.txt
 serial_log.txt
 flash_helper_output.txt
 flash.request
+reboot.request
 flash.running
 flash.done
 flash.status

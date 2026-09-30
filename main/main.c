@@ -15,6 +15,7 @@
 #include "radar.h"
 #include "web.h"
 #include "presence.h"
+#include "diag.h"
 
 static const char *TAG = "app";
 #define BOOT_BTN        GPIO_NUM_0
@@ -61,11 +62,17 @@ void app_main(void)
     main_task = xTaskGetCurrentTaskHandle();
     setenv("TZ", "EST5EDT,M3.2.0,M11.1.0", 1);   // until the weather service reports the local offset
     tzset();
+    diag_mark("start");
     display_init();
+    diag_mark("display");
     touch_init();
     net_init();                 // also initialises NVS (settings)
+    diag_mark("net init");
+    diag_start(60);             // "diag:" lines in the log every 60 s (heap, frames, CPU/stack per task)
     presence_start();           // microphones -> screen brightness (uses touch's I2C bus + NVS)
+    diag_mark("presence");
     ui_init();
+    diag_mark("ui");
     ui_message("Weather", "Starting...");
 
     if (boot_button_held()) {
@@ -86,7 +93,9 @@ void app_main(void)
         portal();
     }
 
+    diag_mark("wifi up");
     web_start(on_location_changed);
+    diag_mark("web");
     radar_preload_start();      // missing zoom-level maps download in the background
     ui_message("Weather", "Fetching forecast...");
     static weather_t w;         // ~1 KB of hourly data, keep it off the stack
@@ -94,6 +103,8 @@ void app_main(void)
         int wait_s = REFRESH_MIN * 60;
         if (net_is_connected() && weather_fetch(&w)) {
             ui_weather(&w);
+            static bool first = true;
+            if (first) { first = false; diag_mark("first weather"); }
         } else {
             ESP_LOGW(TAG, "Update failed, retrying in 30 s");
             wait_s = 30;

@@ -872,7 +872,7 @@ lv_obj_t *radar_create(lv_font_t *f_title, lv_font_t *f_small, lv_font_t *f_micr
     lv_obj_set_style_bg_color(pnl_bar, lv_color_hex(0x5AB0FF), LV_PART_INDICATOR);
     lv_obj_remove_flag(pnl_bar, LV_OBJ_FLAG_CLICKABLE);
 
-    xTaskCreatePinnedToCore(radar_task, "radar", 16384, NULL, 3, &task, 0);
+    xTaskCreatePinnedToCore(radar_task, "radar", 10240, NULL, 3, &task, 0);
     return scr;
 }
 
