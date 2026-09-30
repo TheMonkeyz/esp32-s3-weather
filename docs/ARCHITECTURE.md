@@ -45,11 +45,19 @@ LVGL timer and event callbacks already run inside the lock.
 
 ## Radar (`radar.c`)
 
-- **Projection:** Web Mercator, zoom 7 (~837 m/px at 47°N), so the 466 px view covers about 195 km radius.
-  The view is centered on the saved location (`apply_view()`).
-- **Basemap:** 3×3 OSM tiles (`tile.openstreetmap.org/7/x/y.png`, one keep-alive connection, 3 retries each),
-  decoded with LVGL's bundled lodepng, dimmed and desaturated (`dim_map`, 55%), then saved to the `mapcache` flash
-  partition. The header (magic `MAP3`, zoom, view origin) makes a location change download fresh tiles.
+- **Projection:** Web Mercator. Zoom levels 6–9 give view radii of about 390 / 195 / 98 / 49 km at 47°N (zoom 7 =
+  ~837 m/px is the default). The view is centred on the saved location (`apply_view()`). Only doubling steps are used, so
+  map tiles are shown at native resolution and labels stay sharp.
+- **Zoom gestures:** swipe down = zoom in, up = zoom out (`radar_zoom()`, called from the LVGL gesture handler).
+  Zoom in grows the current picture 2× (`lv_anim` on `lv_image_set_scale`, 300 ms, nearest-neighbour), then the sharper
+  map replaces it. Zoom out first loads the wider map (usually from the flash cache), then shrinks it from 2× into
+  place (`reveal_map()`), so no black border shows. The task waits for a running zoom-in animation (`wait_zoom_anim()`)
+  before swapping images. Requests interrupt waits (`ulTaskNotifyTake`), and a basemap download for a zoom level the
+  user has already left is cancelled.
+- **Basemap:** 3×3 OSM tiles (`tile.openstreetmap.org/<z>/x/y.png`, one keep-alive connection, 3 retries each),
+  decoded with LVGL's bundled lodepng, dimmed and desaturated (`dim_map`, 55%), then saved to that zoom level's
+  512 KB slot in the 2 MB `mapcache` partition. The header (magic `MAP5`, zoom, view origin) makes a location change
+  download fresh tiles.
 - **Radar frames:** GeoMet WMS `GetMap` in EPSG:3857 with the exact view bbox at 466×466, `transparent=true`,
   `time=<ISO>`. The latest time comes from `GetCapabilities` (`<Dimension name="time">start/end/PT6M`).
 - **Frame storage:** each frame is palette-indexed (1 byte/px, index 0 = no echo, up to 255 RGBA colours), about 217 KB
@@ -83,6 +91,9 @@ LVGL timer and event callbacks already run inside the lock.
 | PNG decode (466×466 ARGB) | PSRAM (transient) | ~0.9 MB + zlib |
 | TLS (client and server) | PSRAM (`MBEDTLS_EXTERNAL_MEM_ALLOC`) | ~40–60 KB per session |
 
+Build: `CONFIG_COMPILER_OPTIMIZATION_PERF=y` (debug `-Og` made LVGL rendering noticeably slow) and
+`CONFIG_LV_DEF_REFR_PERIOD=15`.
+
 Internal DMA-capable RAM is the scarce resource. `CONFIG_MBEDTLS_HARDWARE_AES` is **off**: the AES peripheral
 allocates internal DMA bounce buffers, and that failed mid-response, which truncated the settings page.
 
@@ -91,7 +102,7 @@ allocates internal DMA bounce buffers, and that failed mid-response, which trunc
 - ~~Task watchdog warnings~~ (fixed): writing the 450 KB basemap cache in one flash erase blocked core 0 for
   seconds. `cache_save()` now erases and writes one 4 KB sector at a time with `vTaskDelay(1)` in between, and the
   palette, compose and tile-copy loops yield every 32–64 rows. Keep new long loops on core 0 yielding.
-- GeoMet sometimes resets keep-alive connections; each request retries once.
+- GeoMet drops idle keep-alive connections. `GetCapabilities` retries up to 3× and frames retry once, reconnecting each time.
 - The frame count is fixed at 15 and the radar layer is rain rate only (`RADAR_1KM_RRAI`). `Radar_1km_SfcPrecipType`
   would colour snow and rain separately.
 - One TLS key is shared by all builds (see README, Security notes).

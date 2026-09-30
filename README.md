@@ -11,14 +11,14 @@ Built with **ESP-IDF v5.4** and **LVGL 9.2**. No API keys needed.
 | Screen | What it shows | Interaction |
 |---|---|---|
 | **Weather** | Clock, city, icon and temperature, conditions, feels-like / humidity / wind, 3-day high/low with icons | Swipe **left** for the radar. **Long-press** for the settings QR code |
-| **Radar** | ~200 km around the location: dimmed OpenStreetMap map, Environment Canada radar, 100 km ring, clock | **Tap** to play the last 3 h (15 frames, 3 fps). Swipe **right** to go back |
+| **Radar** | Area around the location: dimmed OpenStreetMap map, Environment Canada radar, range ring, clock, radar time and radius | **Tap** to play the last 3 h (15 frames, 3 fps). Swipe **down** to zoom in, **up** to zoom out (≈50 / 100 / 200 / 400 km radius, animated). Swipe **right** to go back |
 | **Settings page** (phone) | Location: *Use my phone's location* (GPS), city search, or manual lat/lon. Wi-Fi network | Opened from the QR code; served over HTTPS |
 
 Data sources:
 
 - Weather: [Open-Meteo](https://open-meteo.com) (current conditions plus 4-day forecast, `timezone=auto`).
 - Radar: [ECCC MSC GeoMet](https://eccc-msc.github.io/open-data/msc-data/obs_radar/readme_radar_geomet_en/) WMS, layer `RADAR_1KM_RRAI` (North America, 1 km, every 6 min, last 3 h).
-- Basemap: OpenStreetMap standard tiles at zoom 7, downloaded once and cached in flash. Attribution is shown on screen.
+- Basemap: OpenStreetMap standard tiles (zoom 6–9, one level per radar zoom step), downloaded once per level and cached in flash. Attribution is shown on screen.
 
 ## First-time setup
 
@@ -87,7 +87,7 @@ main/
   web/index.html  settings page (embedded)
   certs/        self-signed TLS certificate + key (embedded; see Security)
   montserrat.ttf  font, rendered at runtime with LVGL TinyTTF (supports accents like "é")
-partitions.csv  nvs, phy, factory app (3 MB), mapcache (512 KB basemap cache)
+partitions.csv  nvs, phy, factory app (3 MB), mapcache (2 MB: one 512 KB basemap slot per zoom level)
 sdkconfig.defaults
 docs/ARCHITECTURE.md  how the pieces fit together, memory budget, known issues
 CLAUDE.md       notes for AI-assisted development sessions
