@@ -2,7 +2,7 @@ idf_component_register(
     SRCS "main.c" "display.c" "net.c" "weather.c" "ui.c" "touch.c" "radar.c" "config.c" "web.c" "presence.c" "diag.c" "lvgl_mem.c" "tlscert.c"
     INCLUDE_DIRS "."
     REQUIRES lvgl dns_server esp_codec_dev esp_driver_i2s esp_lcd esp_driver_spi esp_driver_gpio esp_driver_i2c esp_wifi esp_netif esp_event
-             nvs_flash esp_http_client esp_http_server esp_https_server json mbedtls esp_timer esp_partition esp_psram spi_flash esp_app_format
+             nvs_flash esp_http_client esp_http_server esp_https_server json mbedtls esp_timer esp_partition esp_psram spi_flash esp_app_format wpa_supplicant
     EMBED_FILES "montserrat.ttf"
     EMBED_TXTFILES "web/index.html")
 

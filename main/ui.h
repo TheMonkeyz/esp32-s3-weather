@@ -9,3 +9,5 @@ void ui_message_qr(const char *title, const char *body, const char *qr);
 void ui_set_city(const char *name);
 int ui_bench_screens(lv_obj_t **scr, const char **name, int max);   // diag bench
 lv_obj_t *ui_main_screen(void);
+void ui_wifi_setup(const char *note);   // Wi-Fi setup screen (setup network QR / Android Easy Connect)
+void ui_wifi_setup_end(void);            // online again: stop Easy Connect and the auto-close timer

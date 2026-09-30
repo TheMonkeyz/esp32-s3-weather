@@ -44,21 +44,18 @@ static void on_location_changed(void)
     if (main_task) xTaskNotifyGive(main_task);   // refetch weather now
 }
 
-#define WIFI_QR "WIFI:T:WPA;S:" SETUP_AP_SSID ";P:" SETUP_AP_PASS ";;"
 
 // The saved network can't be reached (moved house, new router, router still booting after a power
 // cut...): offer the setup network with its QR code while retrying the saved one in the background.
 // Whichever happens first wins: new credentials restart the board, a connection carries on normally.
 static void offline_setup(const char *ssid)
 {
-    char body[240];
-    snprintf(body, sizeof(body),
-             "Can't reach\n%s\nStill trying. Other network?\nScan to join %s\n(password %s)",
-             ssid, SETUP_AP_SSID, SETUP_AP_PASS);
-    ui_message_qr("Wi-Fi setup", body, WIFI_QR);
-    net_setup_ap_start();
+    char note[96];
+    snprintf(note, sizeof(note), "Can't reach %s\n(still trying)", ssid);
+    ui_wifi_setup(note);                       // starts the setup network (page 1) or Easy Connect (page 2)
     net_wait_connected(-1);
     ESP_LOGI(TAG, "Saved network is back");
+    ui_wifi_setup_end();
     ui_message("Wi-Fi", "Connected");
     for (int i = 0; i < 120 && net_ap_clients() > 0; i++) vTaskDelay(pdMS_TO_TICKS(1000));   // let a phone finish
     net_setup_ap_stop();
@@ -66,13 +63,9 @@ static void offline_setup(const char *ssid)
 
 static void portal(void)
 {
-    char body[200];
-    snprintf(body, sizeof(body),
-             "Scan to join the display's Wi-Fi\n(%s / %s).\nThe setup page opens by itself.",
-             SETUP_AP_SSID, SETUP_AP_PASS);
-    ui_message_qr("Wi-Fi setup", body, WIFI_QR);
     net_start_portal();
     web_start(on_location_changed);
+    ui_wifi_setup("First-time setup");
     while (1) vTaskDelay(portMAX_DELAY);     // restarts after credentials are saved
 }
 

@@ -113,10 +113,20 @@ LVGL timer and event callbacks already run inside the lock.
   setup, which already shows it). A 10-minute timer stops that AP only once the board is online.
 - On the weather screen, a long-press while offline skips the settings QR (useless without a network) and opens the
   Wi-Fi setup step directly.
+- **Wi-Fi setup screen** (`scr_setup` in `ui.c`, `ui_wifi_setup(note)`): used by first-time setup, offline setup,
+  status-screen long-press and the settings overlay's second long-press. Page 1 = setup AP QR (`net_setup_ap_start()`),
+  page 2 = Wi-Fi Easy Connect; swipe switches. A tap closes it only if it was opened while online; a 10-minute timer
+  closes it once online.
+- **Easy Connect (DPP enrollee, `net.c`)**: `CONFIG_ESP_WIFI_DPP_SUPPORT=y`, `wpa_supplicant` in REQUIRES. The radio
+  can't serve the AP and listen at once, so page 2 stops the AP (`net_setup_ap_stop_any()`, even in first-time setup),
+  disconnects the station and pauses our reconnects (`dpp_active`). `esp_supp_dpp_bootstrap_gen("1,6,11", QR)` is
+  **asynchronous**: `esp_supp_dpp_start_listen()` must be called from the `ESP_SUPP_DPP_URI_READY` callback (calling
+  it right after bootstrap_gen returns `ESP_FAIL`, which was the first bug). `ESP_SUPP_DPP_CFG_RECVD` gives a
+  `wifi_config_t`: saved with `net_save_creds()`, restart after 2.5 s. `ESP_SUPP_DPP_FAIL` re-listens. Leaving page 2
+  deinitialises DPP and resumes reconnects.
 - **Settings overlay state machine** (`ui.c`): 0 = hidden, 1 = settings QR (`https://<ip>`), 2 = Wi-Fi setup.
-  A long-press on the weather screen goes to 1; a long-press on the overlay goes to 2 (`net_setup_ap_start()`), which
-  shows a `WIFI:T:WPA;S:Weather-Setup;P:…;;` QR. A tap, or a 10-minute timer, closes it and stops the AP. Gestures are
-  ignored while the overlay is open.
+  A long-press on the weather screen goes to 1; a long-press on the overlay opens the Wi-Fi setup screen above.
+  Gestures are ignored while the overlay is open.
 - **Access point:** `ap_up()` switches to APSTA, so the station connection stays up and the AP follows its channel.
   It sets DHCP option 114 (captive-portal URI `http://192.168.4.1/`) and starts the DNS server
   (`components/dns_server`), which answers every name with the AP's IP. First-boot setup (`net_start_portal()`) uses
