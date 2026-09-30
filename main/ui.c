@@ -17,7 +17,9 @@ extern const uint8_t ttf_end[]   asm("_binary_montserrat_ttf_end");
 static lv_font_t *f_time, *f_city, *f_big, *f_cond, *f_small, *f_tiny, *f_micro;
 static lv_obj_t *scr_radar;
 static lv_obj_t *scr_msg, *msg_title, *msg_body, *msg_qr;
-static lv_obj_t *overlay, *ov_qr, *ov_url;
+static lv_obj_t *overlay, *ov_qr, *ov_url, *ov_title;
+static int ov_state;          // 0 hidden, 1 settings QR, 2 Wi-Fi setup AP running
+static lv_timer_t *ap_timer;
 static lv_obj_t *scr_main, *lbl_time, *lbl_city, *icon_box, *lbl_temp, *lbl_cond, *lbl_detail;
 static lv_obj_t *fc_day[3], *fc_temp[3], *fc_icon[3], *hero;
 
@@ -174,25 +176,68 @@ static void clock_tick(lv_timer_t *t)
 
 /* Settings overlay (long-press on the weather screen) */
 static uint32_t overlay_opened;
-static void overlay_close(lv_event_t *e)
+
+static void overlay_hide(void)
 {
-    if (lv_tick_elaps(overlay_opened) < 800) return;   // ignore the release of the long-press itself
+    if (ov_state == 2) net_setup_ap_stop();
+    if (ap_timer) { lv_timer_delete(ap_timer); ap_timer = NULL; }
+    ov_state = 0;
     lv_obj_add_flag(overlay, LV_OBJ_FLAG_HIDDEN);
 }
 
+static void overlay_show(void)
+{
+    lv_obj_remove_flag(overlay, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(overlay);
+    overlay_opened = lv_tick_get();
+    lv_indev_t *in = lv_indev_active();
+    if (in) lv_indev_wait_release(in);                  // this touch shouldn't also close it
+}
+
+static void overlay_close(lv_event_t *e)
+{
+    if (lv_tick_elaps(overlay_opened) < 800) return;   // ignore the release of the long-press itself
+    ESP_LOGI("ui", "overlay closed%s", ov_state == 2 ? " (setup AP stopped)" : "");
+    overlay_hide();
+}
+
+static void ap_timeout(lv_timer_t *t)
+{
+    ap_timer = NULL;                                    // one-shot, LVGL deletes it
+    ESP_LOGI("ui", "Wi-Fi setup timed out");
+    overlay_hide();
+}
+
+// Step 1: long-press on the weather screen -> settings page QR (home network, HTTPS)
 static void show_settings(lv_event_t *e)
 {
     ESP_LOGI("ui", "long press -> settings QR");
     char ip[20], url[48];
     if (!net_get_ip(ip, sizeof(ip))) strcpy(ip, "192.168.4.1");
     snprintf(url, sizeof(url), "https://%s", ip);
+    lv_label_set_text(ov_title, "Settings");
     lv_qrcode_update(ov_qr, url, strlen(url));
-    lv_label_set_text_fmt(ov_url, "%s\n\nScan with your phone.\nAccept the certificate warning.\nTap to close", url);
-    lv_obj_remove_flag(overlay, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_move_foreground(overlay);
-    overlay_opened = lv_tick_get();
-    lv_indev_t *in = lv_indev_active();
-    if (in) lv_indev_wait_release(in);                  // this touch shouldn't also close it
+    lv_label_set_text_fmt(ov_url, "%s\nScan with your phone and accept\nthe certificate warning.\n\nLong-press for Wi-Fi setup\nTap to close", url);
+    ov_state = 1;
+    overlay_show();
+}
+
+// Step 2: long-press on the settings QR -> start the setup network + captive portal
+static void show_wifi_setup(lv_event_t *e)
+{
+    if (ov_state != 1) return;
+    ESP_LOGI("ui", "long press -> Wi-Fi setup AP");
+    net_setup_ap_start();
+    static const char wifi_qr[] = "WIFI:T:WPA;S:" SETUP_AP_SSID ";P:" SETUP_AP_PASS ";;";
+    lv_label_set_text(ov_title, "Wi-Fi setup");
+    lv_qrcode_update(ov_qr, wifi_qr, strlen(wifi_qr));
+    lv_label_set_text(ov_url, "Scan to join \"" SETUP_AP_SSID "\"\n(password " SETUP_AP_PASS ").\n"
+                              "The setup page opens by itself.\n\nTap to cancel");
+    ov_state = 2;
+    if (ap_timer) lv_timer_delete(ap_timer);
+    ap_timer = lv_timer_create(ap_timeout, 10 * 60 * 1000, NULL);   // switch the AP off after 10 min
+    lv_timer_set_repeat_count(ap_timer, 1);
+    overlay_show();
 }
 
 static lv_obj_t *make_qr(lv_obj_t *parent, int size)
@@ -226,6 +271,7 @@ static void gesture_cb(lv_event_t *e)
     if (!in) return;
     lv_dir_t dir = lv_indev_get_gesture_dir(in);
     lv_obj_t *cur = lv_screen_active();
+    if (ov_state) return;                                // settings / Wi-Fi setup overlay is open
     LV_LOG_USER("gesture dir %d", dir);
     printf("ui: gesture dir=%d on %s\n", dir, cur == scr_radar ? "radar" : "main");
     if (cur == scr_main && dir == LV_DIR_LEFT) {
@@ -312,8 +358,9 @@ void ui_init(void)
     lv_obj_set_style_bg_opa(overlay, LV_OPA_COVER, 0);
     lv_obj_add_flag(overlay, LV_OBJ_FLAG_HIDDEN | LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(overlay, overlay_close, LV_EVENT_CLICKED, NULL);
-    lv_obj_t *ot = label(overlay, f_small, C_ACCENT, 48);
-    lv_label_set_text(ot, "Settings");
+    ov_title = label(overlay, f_small, C_ACCENT, 48);
+    lv_label_set_text(ov_title, "Settings");
+    lv_obj_add_event_cb(overlay, show_wifi_setup, LV_EVENT_LONG_PRESSED, NULL);
     ov_qr = make_qr(overlay, 170);
     lv_obj_align(ov_qr, LV_ALIGN_TOP_MID, 0, 84);
     ov_url = label(overlay, f_tiny, C_TEXT, 276);

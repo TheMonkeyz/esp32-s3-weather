@@ -12,6 +12,7 @@
 #include "cJSON.h"
 #include "config.h"
 #include "net.h"
+#include "lwip/sockets.h"
 
 static const char *TAG = "web";
 
@@ -139,16 +140,53 @@ static esp_err_t wifi_post(httpd_req_t *req)
     return ESP_OK;
 }
 
-// Plain HTTP: send everything to the HTTPS page
-static esp_err_t redirect_get(httpd_req_t *req)
+// True when the request came in on the setup access point (192.168.4.x) rather than the home network
+static bool from_setup_ap(httpd_req_t *req)
 {
-    ESP_LOGI(TAG, "http -> https redirect");
-    char host[64] = "192.168.4.1", loc[96];
-    httpd_req_get_hdr_value_str(req, "Host", host, sizeof(host));
-    snprintf(loc, sizeof(loc), "https://%s/", host);
+    struct sockaddr_storage ss;
+    socklen_t len = sizeof(ss);
+    int fd = httpd_req_to_sockfd(req);
+    if (getsockname(fd, (struct sockaddr *)&ss, &len) != 0) return false;
+    if (ss.ss_family == AF_INET) {
+        uint32_t a = ntohl(((struct sockaddr_in *)&ss)->sin_addr.s_addr);
+        return (a & 0xFFFFFF00) == 0xC0A80400;          // 192.168.4.0/24
+    }
+    if (ss.ss_family == AF_INET6) {                      // IPv4-mapped (::ffff:192.168.4.x)
+        const uint8_t *b = ((struct sockaddr_in6 *)&ss)->sin6_addr.s6_addr;
+        return b[10] == 0xFF && b[11] == 0xFF && b[12] == 192 && b[13] == 168 && b[14] == 4;
+    }
+    return false;
+}
+
+static esp_err_t redirect_to(httpd_req_t *req, const char *loc)
+{
     httpd_resp_set_status(req, "302 Found");
     httpd_resp_set_hdr(req, "Location", loc);
-    return httpd_resp_send(req, NULL, 0);
+    httpd_resp_set_type(req, "text/html");
+    // iOS needs a body to recognise the captive portal
+    return httpd_resp_sendstr(req, "<html><body><a href=\"/\">Weather display setup</a></body></html>");
+}
+
+// Plain HTTP ":80"
+//  - on the setup AP: this *is* the captive portal. Serve the page over HTTP (the phone's sign-in browser
+//    rejects our self-signed certificate) and send every other URL (OS connectivity checks) to it.
+//  - on the home network: move to HTTPS so the page can use the phone's GPS.
+static esp_err_t http_root_get(httpd_req_t *req)
+{
+    if (from_setup_ap(req)) return index_get(req);
+    char host[64] = "", loc[96];
+    httpd_req_get_hdr_value_str(req, "Host", host, sizeof(host));
+    snprintf(loc, sizeof(loc), "https://%s/", host);
+    return redirect_to(req, loc);
+}
+
+static esp_err_t http_other_get(httpd_req_t *req)
+{
+    if (from_setup_ap(req)) {
+        ESP_LOGI(TAG, "captive: %.60s -> portal", req->uri);
+        return redirect_to(req, "http://192.168.4.1/");
+    }
+    return http_root_get(req);
 }
 
 void web_start(web_location_cb_t on_location_changed)
@@ -180,10 +218,21 @@ void web_start(web_location_cb_t on_location_changed)
 
     httpd_config_t hc = HTTPD_DEFAULT_CONFIG();
     hc.uri_match_fn = httpd_uri_match_wildcard;
+    hc.max_uri_handlers = 8;
+    hc.max_open_sockets = 6;
+    hc.lru_purge_enable = true;
+    hc.stack_size = 8192;
     httpd_handle_t h = NULL;
     if (httpd_start(&h, &hc) == ESP_OK) {
-        httpd_uri_t any = { .uri = "/*", .method = HTTP_GET, .handler = redirect_get };
-        httpd_register_uri_handler(h, &any);
+        httpd_uri_t huris[] = {        // specific routes first; the wildcard catches everything else
+            { .uri = "/",             .method = HTTP_GET,  .handler = http_root_get },
+            { .uri = "/api/config",   .method = HTTP_GET,  .handler = config_get },
+            { .uri = "/api/scan",     .method = HTTP_GET,  .handler = scan_get },
+            { .uri = "/api/location", .method = HTTP_POST, .handler = location_post },
+            { .uri = "/api/wifi",     .method = HTTP_POST, .handler = wifi_post },
+            { .uri = "/*",            .method = HTTP_GET,  .handler = http_other_get },
+        };
+        for (int i = 0; i < sizeof(huris) / sizeof(huris[0]); i++) httpd_register_uri_handler(h, &huris[i]);
     }
     char ip[20] = "?";
     net_get_ip(ip, sizeof(ip));

@@ -46,7 +46,7 @@ static void portal(void)
 {
     char body[200];
     snprintf(body, sizeof(body),
-             "Scan to join the display's Wi-Fi\n(%s / %s),\nthen open https://192.168.4.1",
+             "Scan to join the display's Wi-Fi\n(%s / %s).\nThe setup page opens by itself.",
              SETUP_AP_SSID, SETUP_AP_PASS);
     ui_message_qr("Wi-Fi setup", body, "WIFI:T:WPA;S:" SETUP_AP_SSID ";P:" SETUP_AP_PASS ";;");
     net_start_portal();

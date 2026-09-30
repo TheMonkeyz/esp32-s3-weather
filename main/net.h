@@ -15,3 +15,6 @@ bool net_save_creds(const char *ssid, const char *pass);
 bool net_get_ssid(char *out, size_t n);
 bool net_get_ip(char *out, size_t n);
 bool net_in_portal(void);
+void net_setup_ap_start(void);   // setup AP + captive portal while staying connected
+void net_setup_ap_stop(void);
+bool net_setup_ap_active(void);

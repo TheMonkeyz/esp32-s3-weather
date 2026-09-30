@@ -10,7 +10,7 @@ Built with **ESP-IDF v5.4** and **LVGL 9.2**. No API keys needed.
 
 | Screen | What it shows | Interaction |
 |---|---|---|
-| **Weather** | Clock, city, icon and temperature, conditions, feels-like / humidity / wind, 3-day high/low with icons | Swipe **left** for the radar. **Long-press** for the settings QR code |
+| **Weather** | Clock, city, icon and temperature, conditions, feels-like / humidity / wind, 3-day high/low with icons | Swipe **left** for the radar. **Long-press** for the settings QR code; **long-press again** for Wi-Fi setup |
 | **Radar** | Area around the location: dimmed OpenStreetMap map, Environment Canada radar, range ring, clock, radar time and radius | **Tap** to play the last 3 h (15 frames, 3 fps). Swipe **down** to zoom in, **up** to zoom out (≈50 / 100 / 200 / 400 km radius, animated). Swipe **right** to go back |
 | **Settings page** (phone) | Location: *Use my phone's location* (GPS), city search, or manual lat/lon. Wi-Fi network | Opened from the QR code; served over HTTPS |
 
@@ -24,14 +24,21 @@ Data sources:
 
 1. Flash the firmware (see below). With no Wi-Fi saved, the screen shows **Wi-Fi setup** and a QR code.
 2. Scan the QR code to join the display's network **Weather-Setup** (password `meteo1234`).
-3. Open **https://192.168.4.1**. Your phone will warn that the certificate isn't trusted. That's expected, because the display signs its own certificate. Choose *Advanced → Proceed*.
+3. The phone's **"Sign in to network"** page opens by itself (captive portal) and shows the setup page with the Wi-Fi
+   section on top. If it doesn't, open **http://192.168.4.1**.
 4. Pick your Wi-Fi network, enter the password and save. The display restarts and connects.
 
-**Changing settings later:** long-press the weather screen, scan the QR code and open the page (your phone must be on
-the same Wi-Fi). Location changes apply immediately: the map and radar reload in about 20 s.
+## Changing settings later
 
-**Resetting Wi-Fi:** press **RESET**, then hold **BOOT** for about 2 s while the screen says *Starting…*.
-Don't hold BOOT *while* pressing RESET, because that puts the chip into flashing mode.
+- **Location:** long-press the weather screen, scan the **Settings** QR code and open the page. Your phone must be on
+  the same Wi-Fi. The phone will warn that the certificate isn't trusted. That's expected, because the display signs
+  its own certificate; choose *Advanced → Proceed*. HTTPS is what allows **Use my phone's location**. Location changes
+  apply immediately: the map and radar reload within seconds.
+- **Wi-Fi:** long-press the weather screen, then **long-press again** on the Settings screen. The display starts
+  **Weather-Setup** alongside its current connection and shows a QR code to join it. The sign-in page then opens on
+  the phone as during first-time setup. Tap the display to cancel; the setup network also switches off after 10 min.
+- **Reset Wi-Fi from the buttons:** press **RESET**, then hold **BOOT** for about 2 s while the screen says
+  *Starting…*. Don't hold BOOT *while* pressing RESET, because that puts the chip into flashing mode.
 
 ## Flashing (Windows)
 
@@ -81,14 +88,15 @@ main/
   ui.c          weather screen, message/QR screens, settings overlay, swipe handling
   radar.c       radar screen: basemap tiles + flash cache, GeoMet frames, animation
   weather.c     Open-Meteo fetch/parse, WMO code -> text/icon
-  net.c         Wi-Fi station, setup access point, credentials in NVS
-  web.c         HTTPS settings server (+ HTTP -> HTTPS redirect) and JSON API
+  net.c         Wi-Fi station, setup access point + captive portal (DNS, DHCP option 114), credentials in NVS
+  web.c         settings server: HTTPS on the home network, plain-HTTP captive portal on the setup AP, JSON API
   config.c      saved location (NVS) and local-time helper (UTC offset from Open-Meteo)
   web/index.html  settings page (embedded)
   certs/        self-signed TLS certificate + key (embedded; see Security)
   montserrat.ttf  font, rendered at runtime with LVGL TinyTTF (supports accents like "é")
 partitions.csv  nvs, phy, factory app (3 MB), mapcache (2 MB: one 512 KB basemap slot per zoom level)
 sdkconfig.defaults
+components/dns_server/  captive-portal DNS (from the ESP-IDF captive_portal example, CC0)
 docs/ARCHITECTURE.md  how the pieces fit together, memory budget, known issues
 CLAUDE.md       notes for AI-assisted development sessions
 ```
