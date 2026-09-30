@@ -18,7 +18,9 @@ Data sources:
 
 - Weather: [Open-Meteo](https://open-meteo.com) (current conditions plus 4-day forecast, `timezone=auto`).
 - Radar: [ECCC MSC GeoMet](https://eccc-msc.github.io/open-data/msc-data/obs_radar/readme_radar_geomet_en/) WMS, layer `RADAR_1KM_RRAI` (North America, 1 km, every 6 min, last 3 h).
-- Basemap: OpenStreetMap standard tiles (zoom 4–10, one level per radar zoom step), downloaded once per level and cached in flash. Attribution is shown on screen.
+- Basemap: OpenStreetMap standard tiles (zoom 4–10, one level per radar zoom step). After boot, any level that isn't cached yet downloads in the
+  background (about 45 s for all 7) and is saved in flash, so zooming is instant afterwards. If you open the radar before it's done, a
+  "Preparing maps" panel shows the progress. Attribution is shown on screen.
 
 ## First-time setup
 

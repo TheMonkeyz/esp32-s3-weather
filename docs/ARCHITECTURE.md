@@ -57,8 +57,14 @@ LVGL timer and event callbacks already run inside the lock.
   user has already left is cancelled.
 - **Basemap:** 3×3 OSM tiles (`tile.openstreetmap.org/<z>/x/y.png`, one keep-alive connection, 3 retries each),
   decoded with LVGL's bundled lodepng, dimmed and desaturated (`dim_map`, 55%), then saved to that zoom level's
-  512 KB slot in the 4 MB `mapcache` partition (7 slots). The header (magic `MAP5`, zoom, view origin) makes a location change
-  download fresh tiles.
+  512 KB slot in the 4 MB `mapcache` partition (7 slots). The header (magic `MAP7`, zoom, view origin) makes a location change
+  download fresh tiles. Bump the magic to force a full re-download (useful for testing the preload).
+- **Background preload:** `radar_preload_start()` (called by `main` after Wi-Fi connects) and every location change
+  run `preload_all()` in the radar task. It checks each zoom level's cache header and downloads the missing levels
+  (9 tiles each; all 7 take about 45 s). Meanwhile the weather screen works normally. The radar screen shows a
+  "Preparing maps" panel (level x of n, tile bar), and zoom swipes answer "Maps still downloading", because the
+  preload temporarily moves the task's `zoom`. If a level gets no tiles at all (no network), the preload stops.
+  Afterwards the current level is loaded from flash and the latest frame is fetched.
 - **Radar frames:** GeoMet WMS `GetMap` in EPSG:3857 with the exact view bbox at 466×466, `transparent=true`,
   `time=<ISO>`. The latest time comes from `GetCapabilities` (`<Dimension name="time">start/end/PT6M`).
 - **Frame storage:** each frame is palette-indexed (1 byte/px, index 0 = no echo, up to 255 RGBA colours), about 217 KB

@@ -33,11 +33,16 @@ static uint16_t *base565;   // cached basemap
 static uint16_t *out565;    // basemap + radar, shown on screen
 static lv_image_dsc_t dsc;
 static lv_obj_t *scr, *img, *lbl_title, *lbl_status, *ring, *ring_lbl, *bar, *lbl_rtime;
+static lv_obj_t *pnl, *pnl_body, *pnl_bar;     // "Preparing maps" panel (background preload)
 static TaskHandle_t task;
 static volatile bool visible;
 static bool base_ok;
 static time_t last_fetch;
 static volatile bool relocate_pending;
+static volatile bool loc_changed;          // relocation because the saved location changed (not a zoom)
+static volatile bool preload_req, preloading;
+static int pre_done, pre_total;
+static int last_tiles_ok;                 // tiles that arrived in the last load_basemap()
 static int zoom = ZOOM_DEF;
 static int radius_km = 195;
 static double view_lat = 0.817;          // radians, set by apply_view()
@@ -107,7 +112,7 @@ static bool http_fetch(esp_http_client_handle_t *hp, const char *url, dl_t *d)
 /* ---------------- basemap cache in flash ("mapcache" partition) ---------------- */
 
 typedef struct { uint32_t magic; int32_t zoom, x, y; } cache_hdr_t;
-#define CACHE_MAGIC 0x4D415035  // "MAP5" (per-zoom slots)
+#define CACHE_MAGIC 0x4D415037  // "MAP7" (per-zoom slots, background preload)
 
 static const esp_partition_t *cache_part(void)
 {
@@ -123,6 +128,15 @@ static bool cache_load(void)
     if (esp_partition_read(p, base, &h, sizeof(h)) != ESP_OK) return false;
     if (h.magic != CACHE_MAGIC || h.zoom != zoom || h.x != (int)view_x || h.y != (int)view_y) return false;
     return esp_partition_read(p, base + sizeof(h), base565, W * H * 2) == ESP_OK;
+}
+
+static bool cache_header_ok(void)
+{
+    const esp_partition_t *p = cache_part();
+    cache_hdr_t h;
+    size_t base = (size_t)(zoom - ZOOM_MIN) * SLOT_SIZE;
+    if (!p || base + SLOT_SIZE > p->size || esp_partition_read(p, base, &h, sizeof(h)) != ESP_OK) return false;
+    return h.magic == CACHE_MAGIC && h.zoom == zoom && h.x == (int)view_x && h.y == (int)view_y;
 }
 
 static void cache_save(void)
@@ -180,6 +194,18 @@ static uint16_t dim_map(uint8_t r, uint8_t g, uint8_t b)
     return rgb565(R, G, B);
 }
 
+// Update the "Preparing maps" panel on the radar screen (radar task)
+static void preload_progress(int done)
+{
+    display_lock(-1);
+    int levels = (pre_total + 8) / 9, level = done / 9 + 1;
+    if (level > levels) level = levels;
+    lv_label_set_text_fmt(pnl_body, "Downloading radar maps\nzoom level %d of %d\n\n%d / %d tiles", level, levels, done, pre_total);
+    lv_bar_set_range(pnl_bar, 0, pre_total > 0 ? pre_total : 1);
+    lv_bar_set_value(pnl_bar, done, LV_ANIM_OFF);
+    display_unlock();
+}
+
 static bool load_basemap(void)
 {
     for (int i = 0; i < W * H; i++) base565[i] = rgb565(18, 20, 24);
@@ -190,7 +216,7 @@ static bool load_basemap(void)
     esp_http_client_handle_t h = NULL;
     for (int ty = ty0; ty <= ty1; ty++) {
         for (int tx = tx0; tx <= tx1; tx++) {
-            if (zoom_target != zoom || relocate_pending) {      // user moved on: stop, don't cache
+            if (relocate_pending || (!preloading && zoom_target != zoom)) {   // user moved on: stop, don't cache
                 if (h) esp_http_client_cleanup(h);
                 ESP_LOGI(TAG, "Basemap (zoom %d) cancelled", zoom);
                 return false;
@@ -201,7 +227,7 @@ static bool load_basemap(void)
             dl_t d;
             bool got = false;
             for (int attempt = 0; attempt < 3 && !got; attempt++) got = http_fetch(&h, url, &d);
-            if (!got) continue;
+            if (!got) { if (preloading) preload_progress(++pre_done); continue; }
             unsigned tw, th;
             lv_draw_buf_t *db = decode_png(d.buf, d.len, &tw, &th);
             free(d.buf);
@@ -222,9 +248,11 @@ static bool load_basemap(void)
             }
             lv_draw_buf_destroy(db);
             ok++;
+            if (preloading) preload_progress(++pre_done);
         }
     }
     if (h) esp_http_client_cleanup(h);
+    last_tiles_ok = ok;
     ESP_LOGI(TAG, "Basemap: %d/%d tiles", ok, total);
     if (ok == total) cache_save();
     return ok == total;
@@ -582,14 +610,59 @@ static void reveal_map(void)
     display_unlock();
 }
 
+// Download every zoom level's basemap that isn't cached yet (boot, or after a location change)
+static void preload_all(void)
+{
+    int cur = zoom, missing[ZOOM_MAX - ZOOM_MIN + 1], n = 0;
+    for (int z = ZOOM_MIN; z <= ZOOM_MAX; z++) {
+        zoom = z;
+        apply_view();
+        if (!cache_header_ok()) missing[n++] = z;
+    }
+    pre_done = 0;
+    pre_total = n * 9;
+    if (n) {
+        ESP_LOGI(TAG, "Preloading %d map level(s) in the background", n);
+        preloading = true;
+        preload_progress(0);
+        display_lock(-1);
+        lv_obj_remove_flag(pnl, LV_OBJ_FLAG_HIDDEN);        // only seen if the radar screen is opened meanwhile
+        lv_obj_move_foreground(pnl);
+        display_unlock();
+        for (int i = 0; i < n && !relocate_pending; i++) {
+            zoom = missing[i];
+            apply_view();
+            if (!load_basemap() && last_tiles_ok == 0 && !relocate_pending) {   // nothing came through: no network, give up
+                ESP_LOGW(TAG, "Preload stopped (network?)");
+                break;
+            }
+        }
+        preloading = false;
+        ESP_LOGI(TAG, "Preload finished");
+    }
+    zoom = cur;
+    apply_view();
+    base_ok = cache_load();
+    display_lock(-1);
+    lv_obj_add_flag(pnl, LV_OBJ_FLAG_HIDDEN);
+    show_live();
+    display_unlock();
+}
+
 static void radar_task(void *arg)
 {
     apply_view();
     if (cache_load()) { base_ok = true; display_lock(-1); compose(NULL); refresh_img(); display_unlock(); }
     while (!net_is_connected()) vTaskDelay(pdMS_TO_TICKS(1000));
-    vTaskDelay(pdMS_TO_TICKS(3000));                // let the weather fetch go first
+    ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(3000));  // main asks for the map preload right after connecting
     bool prefetch = true;                            // latest frame at boot so the first swipe is instant
     while (1) {
+        if (preload_req) {
+            preload_req = false;
+            preload_all();
+            last_fetch = 0;
+            prefetch = true;
+        }
         if (zoom_target != zoom) relocate_pending = true;
         if (!prefetch && !relocate_pending) {
             ulTaskNotifyTake(pdTRUE, visible ? pdMS_TO_TICKS(REFRESH_S * 1000) : portMAX_DELAY);
@@ -606,9 +679,14 @@ static void radar_task(void *arg)
             for (int i = 0; i < NFRAMES; i++) frames[i].ok = false;
             display_unlock();
             last_fetch = 0;
-            base_ok = cache_load();
-            if (base_ok) reveal_map();
-            // else: keep the old picture on screen until the new map has downloaded
+            if (loc_changed) {                           // new place: fetch every zoom level's map now
+                loc_changed = false;
+                preload_all();
+            } else {
+                base_ok = cache_load();
+                if (base_ok) reveal_map();
+                // else: keep the old picture on screen until the new map has downloaded
+            }
             prefetch = true;
         }
         bool want_work = prefetch || visible || play_pending;
@@ -767,6 +845,33 @@ lv_obj_t *radar_create(lv_font_t *f_title, lv_font_t *f_small, lv_font_t *f_micr
     lv_label_set_text(attr, "© OpenStreetMap contributors\nRadar: ECCC");
     lv_obj_align(attr, LV_ALIGN_BOTTOM_MID, 0, -26);
 
+    // "Preparing maps" panel, shown over the radar while the background preload runs
+    pnl = lv_obj_create(scr);
+    lv_obj_remove_style_all(pnl);
+    lv_obj_set_size(pnl, W, H);
+    lv_obj_set_style_bg_color(pnl, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(pnl, LV_OPA_COVER, 0);
+    lv_obj_remove_flag(pnl, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_flag(pnl, LV_OBJ_FLAG_HIDDEN | LV_OBJ_FLAG_GESTURE_BUBBLE);
+    lv_obj_t *pt = lv_label_create(pnl);
+    lv_obj_set_style_text_font(pt, f_title, 0);
+    lv_obj_set_style_text_color(pt, lv_color_hex(0x5AB0FF), 0);
+    lv_label_set_text(pt, "Preparing maps");
+    lv_obj_align(pt, LV_ALIGN_TOP_MID, 0, 150);
+    pnl_body = lv_label_create(pnl);
+    lv_obj_set_style_text_font(pnl_body, f_small, 0);
+    lv_obj_set_style_text_color(pnl_body, lv_color_white(), 0);
+    lv_obj_set_style_text_align(pnl_body, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_text(pnl_body, "");
+    lv_obj_align(pnl_body, LV_ALIGN_TOP_MID, 0, 200);
+    pnl_bar = lv_bar_create(pnl);
+    lv_obj_set_size(pnl_bar, 240, 10);
+    lv_obj_align(pnl_bar, LV_ALIGN_TOP_MID, 0, 318);
+    lv_obj_set_style_bg_color(pnl_bar, lv_color_hex(0x2A3138), 0);
+    lv_obj_set_style_bg_opa(pnl_bar, LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_color(pnl_bar, lv_color_hex(0x5AB0FF), LV_PART_INDICATOR);
+    lv_obj_remove_flag(pnl_bar, LV_OBJ_FLAG_CLICKABLE);
+
     xTaskCreatePinnedToCore(radar_task, "radar", 16384, NULL, 3, &task, 0);
     return scr;
 }
@@ -789,6 +894,14 @@ static void hide_status_cb(lv_timer_t *t) { lv_obj_add_flag(lbl_status, LV_OBJ_F
 void radar_zoom(int step)
 {
     int z = zoom_target + step;
+    if (preloading) {
+        lv_label_set_text(lbl_status, "Maps still downloading");
+        lv_obj_remove_flag(lbl_status, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_move_foreground(lbl_status);
+        lv_timer_t *t = lv_timer_create(hide_status_cb, 1500, NULL);
+        lv_timer_set_repeat_count(t, 1);
+        return;
+    }
     if (z < ZOOM_MIN || z > ZOOM_MAX) {
         lv_label_set_text(lbl_status, step > 0 ? "Closest zoom" : "Widest zoom");
         lv_obj_remove_flag(lbl_status, LV_OBJ_FLAG_HIDDEN);
@@ -812,8 +925,15 @@ void radar_zoom(int step)
     if (task) xTaskNotifyGive(task);
 }
 
+void radar_preload_start(void)
+{
+    preload_req = true;
+    if (task) xTaskNotifyGive(task);
+}
+
 void radar_relocate(void)
 {
+    loc_changed = true;
     relocate_pending = true;
     if (task) xTaskNotifyGive(task);
 }
