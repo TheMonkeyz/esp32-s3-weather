@@ -14,6 +14,7 @@ static const char *TAG = "weather";
     "&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m,is_day" \
     "&daily=temperature_2m_max,temperature_2m_min,weather_code,precipitation_probability_max" \
     "&hourly=temperature_2m,weather_code,precipitation_probability,wind_speed_10m,is_day" \
+    "&minutely_15=precipitation,snowfall&forecast_minutely_15=9" \
     "&timezone=auto&forecast_days=7"
 
 typedef struct { char *buf; int len; int cap; } rx_t;
@@ -41,6 +42,34 @@ static double num_at(cJSON *a, int i)
     return cJSON_IsNumber(v) ? v->valuedouble : 0;
 }
 
+// 15-minute forecast: slot i (time T_i) holds the precipitation of (T_i - 15 min, T_i]. Slot 0 is the current
+// quarter hour, 8 more cover the next 2 hours. "Starts" = dry now, wet later: the rain begins around the start
+// of the first wet slot (= T of the slot before). "Stops" = wet now, dry later.
+#define NC_WET_MM 0.1
+static void nowcast(cJSON *m15, weather_t *w)
+{
+    w->nc_kind = NC_NONE;
+    w->nc_time[0] = 0;
+    w->nc_snow = false;
+    cJSON *t = cJSON_GetObjectItem(m15, "time");
+    cJSON *p = cJSON_GetObjectItem(m15, "precipitation");
+    cJSON *sn = cJSON_GetObjectItem(m15, "snowfall");
+    int n = cJSON_GetArraySize(p);
+    if (n < 2 || cJSON_GetArraySize(t) < n) return;
+    bool wet_now = num_at(p, 0) >= NC_WET_MM || num_at(p, 1) >= NC_WET_MM;
+    for (int i = 2; i < n; i++) {
+        bool wet = num_at(p, i) >= NC_WET_MM;
+        if (wet != wet_now) {
+            const char *ts = cJSON_GetStringValue(cJSON_GetArrayItem(t, i - 1));   // "YYYY-MM-DDTHH:MM"
+            if (!ts || strlen(ts) < 16) return;
+            w->nc_kind = wet_now ? NC_STOPS : NC_STARTS;
+            strlcpy(w->nc_time, ts + 11, sizeof(w->nc_time));
+            w->nc_snow = num_at(sn, wet_now ? i - 1 : i) > 0;
+            return;
+        }
+    }
+}
+
 bool weather_fetch(weather_t *w)
 {
     rx_t rx = { .cap = 49152 };    // ~10 KB with 7 days of hourly data
@@ -49,7 +78,7 @@ bool weather_fetch(weather_t *w)
 
     location_t loc;
     config_get_location(&loc);
-    char url[400];
+    char url[640];
     snprintf(url, sizeof(url), URL_FMT, loc.lat, loc.lon);
     esp_http_client_config_t cfg = {
         .url = url, .event_handler = http_evt, .user_data = &rx,
@@ -93,6 +122,10 @@ bool weather_fetch(weather_t *w)
                 cJSON *v = cJSON_GetArrayItem(pop, i);
                 w->day[i].pop = cJSON_IsNumber(v) ? v->valueint : -1;
             }
+            nowcast(cJSON_GetObjectItem(root, "minutely_15"), w);
+            if (w->nc_kind != NC_NONE)
+                ESP_LOGI(TAG, "Nowcast: %s %s %s", w->nc_snow ? "snow" : "rain",
+                         w->nc_kind == NC_STARTS ? "starting around" : "stopping around", w->nc_time);
             cJSON *hourly = cJSON_GetObjectItem(root, "hourly");
             cJSON *ht = cJSON_GetObjectItem(hourly, "temperature_2m");
             cJSON *hc = cJSON_GetObjectItem(hourly, "weather_code");

@@ -53,6 +53,16 @@ LVGL timer and event callbacks already run inside the lock.
 - Long-press opens a settings overlay with a QR code (`lv_qrcode`) for `https://<ip>`.
 - Unused swipes call `lv_indev_wait_release()`; otherwise their release is also delivered as a `SHORT_CLICKED`.
 
+## Rain nowcast (`weather.c`, `ui.c`)
+
+- Open-Meteo `minutely_15=precipitation,snowfall&forecast_minutely_15=9`: slot 0 is the current quarter hour, then
+  2 hours. Each value is the sum over the *preceding* 15 minutes (native 15-min data in North America, from HRRR).
+- `nowcast()`: wet = ≥ 0.1 mm. "Wet now" looks at slots 0–1. The first later slot that differs gives the change;
+  the time shown is the start of that slot (the previous slot's timestamp). Snow if that slot has snowfall.
+  Only the first change is reported; rain for the whole 2 h (or none) shows nothing.
+- Shown in accent blue under the details line: "Rain around 14:45" / "Snow until about 15:30"; hidden otherwise.
+  Refreshed with the weather (every 10 min).
+
 ## Hourly view (`ui.c`, `weather.c`)
 
 - Open-Meteo `hourly=temperature_2m,weather_code,precipitation_probability,wind_speed_10m,is_day` with

@@ -25,6 +25,10 @@ typedef struct {
     int ndays;
     wx_hour_t hour[WX_HOURS];
     int nhours;
+    // Next 2 hours from the 15-minute forecast ("nowcast")
+    enum { NC_NONE, NC_STARTS, NC_STOPS } nc_kind;   // precipitation starting / stopping within 2 h
+    char nc_time[6];                                  // HH:MM, local
+    bool nc_snow;
 } weather_t;
 
 bool weather_fetch(weather_t *w);
