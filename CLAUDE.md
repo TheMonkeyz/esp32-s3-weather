@@ -108,6 +108,9 @@ Windows build gets both from `main/idf_component.yml`. `components/dns_server` *
 - The app version comes from `version.txt` (CI) or `git describe`; a build outside a git checkout shows `1`.
   `version.txt` is read at CMake configure time: touch `CMakeLists.txt` after changing it.
 
+- The HTTPS certificate is per device (`tlscert.c`, NVS namespace `tls`). After an erase the phone shows the
+  certificate warning again; that's expected.
+
 ## User preferences learned
 
 - Swipe **down** = zoom in, **up** = zoom out (the opposite felt wrong).

@@ -142,7 +142,7 @@ LVGL timer and event callbacks already run inside the lock.
 
 ## Settings / web (`web.c`, `config.c`)
 
-- HTTPS server (`esp_https_server`, self-signed EC P-256 cert embedded) on 443. The plain HTTP server on 80 sends
+- HTTPS server (`esp_https_server`, per-device self-signed EC P-256 cert from `tlscert.c`) on 443. The plain HTTP server on 80 sends
   everything to HTTPS with a 302 redirect. The HTTPS server uses control port 32769 and the HTTP one the default
   32768; they must not share a port.
 - API:
@@ -156,6 +156,18 @@ LVGL timer and event callbacks already run inside the lock.
   **browser**; the device only stores the result.
 - Location is stored in NVS namespace `loc`. `config_local_time()` uses Open-Meteo's `utc_offset_seconds`, which
   handles any time zone and DST; before the first fetch it falls back to the `EST5EDT` TZ rule.
+
+## TLS certificate (`tlscert.c`)
+
+- `tlscert_get()` loads `cert` / `key` (PEM strings) from NVS namespace `tls` and checks that the certificate
+  parses. If they're missing, a short-lived task (`tlsgen`, 8 KB internal stack: key generation needs stack and
+  NVS writes need an internal-RAM stack) generates an EC P-256 key with mbedtls (`ctr_drbg` seeded from the
+  hardware RNG, Wi-Fi is up by then) and a self-signed X.509 v3 certificate: CN `Weather Display <last 3 MAC
+  bytes>`, random 16-byte serial, fixed validity 2024-01-01 → 2099-12-31 (the clock may not be set, and there's no
+  CA to renew with). Takes ~180 ms on the S3.
+- `web_start()` starts the HTTPS server with it; if it fails, only the plain-HTTP server runs.
+- The key is stored unencrypted in NVS (no flash encryption on this project). Anyone with the board and a USB
+  cable can read it, which is acceptable for a LAN settings page.
 
 ## Release pipeline
 

@@ -11,6 +11,7 @@
 #include "esp_heap_caps.h"
 #include "cJSON.h"
 #include "esp_app_desc.h"
+#include "tlscert.h"
 #include "config.h"
 #include "net.h"
 #include "presence.h"
@@ -20,10 +21,6 @@ static const char *TAG = "web";
 
 extern const uint8_t index_html_start[] asm("_binary_index_html_start");
 extern const uint8_t index_html_end[]   asm("_binary_index_html_end");
-extern const uint8_t cert_start[]       asm("_binary_servercert_pem_start");
-extern const uint8_t cert_end[]         asm("_binary_servercert_pem_end");
-extern const uint8_t key_start[]        asm("_binary_prvtkey_pem_start");
-extern const uint8_t key_end[]          asm("_binary_prvtkey_pem_end");
 
 static web_location_cb_t loc_cb;
 
@@ -270,18 +267,17 @@ static esp_err_t http_other_get(httpd_req_t *req)
     return http_root_get(req);
 }
 
-void web_start(web_location_cb_t on_location_changed)
+static void start_https(void)
 {
-    static bool started;
-    loc_cb = on_location_changed;
-    if (started) return;
-    started = true;
-
+    const char *cert, *key;
+    size_t cert_len, key_len;
+    if (!tlscert_get(&cert, &cert_len, &key, &key_len)) { ESP_LOGE(TAG, "no TLS certificate, HTTPS disabled"); return; }
+    tlscert_log_fingerprint();
     httpd_ssl_config_t conf = HTTPD_SSL_CONFIG_DEFAULT();
-    conf.servercert = cert_start;
-    conf.servercert_len = cert_end - cert_start;
-    conf.prvtkey_pem = key_start;
-    conf.prvtkey_len = key_end - key_start;
+    conf.servercert = (const uint8_t *)cert;
+    conf.servercert_len = cert_len;
+    conf.prvtkey_pem = (const uint8_t *)key;
+    conf.prvtkey_len = key_len;
     conf.httpd.max_uri_handlers = 12;
     conf.httpd.stack_size = 7168;      // measured peak ~3.3 KB (TLS handshake)
     conf.httpd.max_open_sockets = 5;
@@ -299,6 +295,16 @@ void web_start(web_location_cb_t on_location_changed)
         { .uri = "/api/calibrate", .method = HTTP_POST, .handler = calibrate_post },
     };
     for (int i = 0; i < sizeof(uris) / sizeof(uris[0]); i++) httpd_register_uri_handler(s, &uris[i]);
+}
+
+void web_start(web_location_cb_t on_location_changed)
+{
+    static bool started;
+    loc_cb = on_location_changed;
+    if (started) return;
+    started = true;
+
+    start_https();
 
     httpd_config_t hc = HTTPD_DEFAULT_CONFIG();
     hc.uri_match_fn = httpd_uri_match_wildcard;
