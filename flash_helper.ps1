@@ -46,6 +46,8 @@ while ($true) {
                    "write_flash", "--flash_mode", "dio", "--flash_freq", "80m", "--flash_size", "16MB",
                    "0x0", "firmware\bootloader.bin", "0x8000", "firmware\partition-table.bin",
                    "0x10000", "firmware\weather_amoled.bin")
+  # Two-slot (OTA) layout: reset the boot selection so the board boots the app just written to ota_0
+  if (Test-Path "firmware\ota_data_initial.bin") { $esptoolArgs += @("0x610000", "firmware\ota_data_initial.bin") }
   if ($reboot) { $esptoolArgs = @("--chip", "esp32s3", "--before", "default_reset", "--after", "hard_reset", "chip_id") }
   & ".\tools\esptool.exe" @esptoolArgs 2>&1 | ForEach-Object {
     $l = "$_"

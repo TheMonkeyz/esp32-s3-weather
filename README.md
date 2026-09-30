@@ -53,6 +53,22 @@ The Wi-Fi setup screen has two pages; **swipe** to switch:
 Browsers can't read the Wi-Fi passwords saved on a phone, and iPhones don't do Easy Connect. For iPhone, the setup
 page's *Password saved on your phone? Copy it* tip explains how to copy it: Settings → Wi-Fi → ⓘ → Password → Copy.
 
+## Updates over Wi-Fi
+
+From **v1.3.0**, the display updates itself from the [web flasher site](https://themonkeyz.github.io/esp32-s3-weather/):
+
+- It checks a minute after starting and then every 6 hours. When a newer version exists, a blue **Update vX.Y.Z**
+  pill appears at the bottom of the weather screen. Tap it, then **Install**. It downloads, restarts, and keeps all
+  settings. Nothing installs without you asking.
+- The settings page has a **Firmware** card: installed version, **Updates: Stable releases / Beta (release
+  candidates)**, *Check for updates* and *Install*, with a progress bar.
+- **Beta** follows the flasher's Beta channel (`vX.Y.Z-rc.N` tags) and falls back to Stable when there's no newer
+  release candidate.
+- Safety: the new version is checked (image header, SHA-256, same project) before it's selected, and if it doesn't
+  run for a minute (crash or boot loop), the board goes back to the previous version by itself.
+- **Coming from v1.2.0 or earlier:** flash v1.3.0+ once over USB (web flasher, *Erase device* unticked; settings are
+  kept). It switches to a flash layout with two firmware slots; the stored radar maps download again.
+
 ## Presence dimming (microphones)
 
 The two onboard microphones measure the room's sound level every 0.1 s.
@@ -204,7 +220,7 @@ main/
   web/index.html  settings page (embedded)
   tlscert.c     per-device TLS certificate: generated on first boot, stored in NVS (see Security)
   montserrat.ttf  font, rendered at runtime with LVGL TinyTTF (supports accents like "é"); montserrat-OFL.txt = its license
-partitions.csv  nvs, phy, factory app (3 MB), mapcache (4 MB: one 512 KB basemap slot per zoom level)
+partitions.csv  nvs, phy, ota_0 + ota_1 (3 MB each), otadata, mapcache (4 MB: one 512 KB basemap slot per zoom level)
 sdkconfig.defaults
 components/dns_server/  captive-portal DNS (from the ESP-IDF captive_portal example, CC0)
 docs/ARCHITECTURE.md  how the pieces fit together, memory budget, known issues

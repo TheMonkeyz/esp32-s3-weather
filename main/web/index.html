@@ -109,7 +109,20 @@ select{width:100%;padding:11px 12px;border-radius:10px;border:1px solid var(--li
   <button class="sec" id="saveWifi">Save Wi-Fi &amp; restart</button>
   <div id="wmsg"></div>
 </div>
-<p class="muted" style="text-align:center">Firmware <span id="fwVer">–</span></p>
+<div class="card" id="fwCard">
+  <h2>Firmware</h2>
+  <div class="muted">Installed: <b id="fwVer">–</b></div>
+  <label for="fwChan">Updates</label>
+  <select id="fwChan">
+    <option value="stable">Stable releases</option>
+    <option value="beta">Beta (release candidates)</option>
+  </select>
+  <div id="fwState" class="muted" style="margin-top:8px">–</div>
+  <div class="meter" id="fwMeter" style="display:none"><div class="fill" id="fwBar"></div></div>
+  <button class="sec" id="fwCheck">Check for updates</button>
+  <button id="fwInstall" style="display:none">Install update</button>
+  <div id="fwmsg"></div>
+</div>
 
 <script>
 window.onerror = (m, src, line) => { const e = document.getElementById('msg'); if (e) { e.textContent = 'Page error: ' + m + ' (line ' + line + ')'; e.className = 'err'; } };
@@ -122,7 +135,6 @@ async function load(){
     $('curName').textContent = c.name; $('curCoord').textContent = c.lat.toFixed(4)+', '+c.lon.toFixed(4);
     $('name').value = c.name; $('lat').value = c.lat.toFixed(4); $('lon').value = c.lon.toFixed(4);
     $('curSsid').textContent = c.ssid || '–';
-    $('fwVer').textContent = c.version || '–';
   }catch(e){ say($('msg'), 'Could not read settings from the display', false); }
 }
 function bars(rssi){ return rssi >= -55 ? '▂▄▆█' : rssi >= -67 ? '▂▄▆' : rssi >= -78 ? '▂▄' : '▂'; }
@@ -296,6 +308,39 @@ if (!window.isSecureContext) {
   $('gpsNote').style.display = 'block';
 }
 if (location.hostname === '192.168.4.1') { document.body.insertBefore($('wifiCard'), $('locCard')); setTimeout(scan, 300); }
+// Firmware updates
+let fwPoll = null;
+function fwShow(u){
+  $('fwVer').textContent = u.current || '–';
+  $('fwChan').value = u.channel || 'stable';
+  const busy = u.state === 'checking' || u.state === 'downloading' || u.state === 'done';
+  const txt = {
+    idle: 'Checks for updates a minute after start-up, then every 6 hours.',
+    checking: 'Checking…',
+    up_to_date: 'Up to date' + (u.latest ? ' (latest: ' + u.latest + ')' : '') + '.',
+    available: 'Version ' + u.latest + ' is available.',
+    downloading: 'Downloading ' + u.latest + '… ' + u.progress + ' %. Keep the display plugged in.',
+    done: 'Installed. The display is restarting…',
+    failed: 'Update check failed: ' + (u.error || 'unknown error') + '.'
+  }[u.state] || u.state;
+  $('fwState').textContent = txt;
+  $('fwMeter').style.display = u.state === 'downloading' || u.state === 'done' ? 'block' : 'none';
+  $('fwBar').style.width = (u.state === 'done' ? 100 : u.progress) + '%';
+  $('fwInstall').style.display = u.state === 'available' ? 'block' : 'none';
+  $('fwInstall').textContent = 'Install ' + (u.latest || 'update');
+  $('fwCheck').disabled = busy;
+  if (busy && !fwPoll) fwPoll = setInterval(fwLoad, 1500);
+  if (!busy && fwPoll) { clearInterval(fwPoll); fwPoll = null; }
+}
+async function fwLoad(){ try { fwShow(await (await fetch('/api/update')).json()); } catch(e) {} }
+async function fwPost(body){
+  try { fwShow(await (await fetch('/api/update', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)})).json()); }
+  catch(e){ say($('fwmsg'), 'The display did not answer', false); }
+}
+$('fwCheck').onclick = () => fwPost({action:'check'});
+$('fwInstall').onclick = () => { if (confirm('Install ' + $('fwInstall').textContent.slice(8) + '? The display restarts when it is done; settings are kept.')) fwPost({action:'install'}); };
+$('fwChan').onchange = () => fwPost({channel: $('fwChan').value});
+fwLoad();
 load();
 say($('msg'), '', true);
 </script>

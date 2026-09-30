@@ -53,6 +53,26 @@ LVGL timer and event callbacks already run inside the lock.
 - Long-press opens a settings overlay with a QR code (`lv_qrcode`) for `https://<ip>`.
 - Unused swipes call `lv_indev_wait_release()`; otherwise their release is also delivered as a `SHORT_CLICKED`.
 
+## Updates over Wi-Fi (`ota.c`)
+
+- **Flash layout** (`partitions.csv`): nvs 0x9000 and phy 0xF000 stay where v1.0–1.2 had them (settings survive),
+  `ota_0` 0x10000 and `ota_1` 0x310000 (3 MB each), `otadata` 0x610000, `mapcache` 0x620000. Web flasher, flash
+  helper and `flash.bat` also write `ota_data_initial.bin` (blank boot selection) so a USB flash always boots `ota_0`.
+- **Source**: the Pages site. `channels.json` → the chosen channel (NVS `ota/channel`, "stable" default; beta falls
+  back to stable when absent) → its `manifest.json` → the part at 0x10000 = app image URL. No GitHub API (rate
+  limits, redirects), and the site only ever holds released files.
+- **Versions**: `vX.Y.Z[-rc.N | -N-gHASH | -other]`; rc < release < dev build (git describe) of the same X.Y.Z; other
+  suffixes count as pre-releases. Offered only if strictly newer; an unparsable local version (plain hash) is offered
+  any release.
+- **Task** `ota` (core 0, prio 2): first check 60 s after boot, then every 6 h, or on request. `ota_install()` →
+  `esp_https_ota` (begin / perform / finish), progress to the listener, project name must match, restart 2.5 s later.
+- **Rollback**: `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE`. A new image boots `PENDING_VERIFY`; after 60 s running the
+  task calls `esp_ota_mark_app_valid_cancel_rollback()`. A reset before that makes the bootloader return to the
+  previous slot. (Needs the new bootloader: one USB flash.)
+- **UI**: `ui_ota()` from the OTA task: pill at the bottom of the weather screen (tap region y > 408), `scr_update`
+  with Install button and progress bar; `GET/POST /api/update` (`channel`, `action: check|install`) for the settings
+  page's Firmware card.
+
 ## Extras page (`ui.c`, `weather.c`)
 
 - Screens left to right: extras, weather, radar (page dots show 3). `gesture_cb` handles weather ⇄ extras.
