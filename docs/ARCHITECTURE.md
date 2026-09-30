@@ -24,7 +24,7 @@ The panel's init sequence and pin map come from Waveshare's BSP
 | `radar` | 0 / 3, 10 KB stack | Basemap, latest radar frame, history frames; sleeps unless the radar screen is visible |
 | `presence` | 0 / 2 | Reads 100 ms of audio, computes the level, runs the dim/off state machine, fades brightness |
 | `diag` | 0 / 1 | Every 60 s logs heap, frame timing, CPU and stack per task; starts `bench` once at 45 s |
-| `bench` | 1 / 4, one-shot | Times full-screen renders of each screen without showing them (UI blocked ~1.5 s); only while the weather screen is idle |
+| `bench` | 1 / 4, one-shot, 10 KB stack (6 KB overflowed) | Times full-screen renders of each screen without showing them (UI blocked ~1.5 s); only while the weather screen is idle |
 | httpd (HTTPS :443, HTTP :80) | – | Settings page + JSON API. Stacks 7 KB (TLS handshake peaks ~3.3 KB) / 4 KB |
 
 Main task stack is 6 KB. Stack sizes come from the measured high-water marks in `diag: tasks` lines; re-check
@@ -99,7 +99,8 @@ LVGL timer and event callbacks already run inside the lock.
 - **Animation:** 15 frames. The latest frame, plus 14 history frames on a fixed 12-minute grid (so refreshes reuse
   most of them). They download newest first while the radar screen is visible. A tap plays at 3 fps via an LVGL timer,
   holds the last frame about 1 s and loops for `PLAY_LOOP_MS` (60 s), then returns to live. A tap while playing
-  stops it; a new radar time or relocation also stops it.
+  stops it, and so does a zoom or location change. A new radar time doesn't: `plan_frames()` swaps the list under
+  the display lock, playback skips frames not loaded yet, and the new frame joins the loop once downloaded.
 
 ## Wi-Fi setup / captive portal (`net.c`, `ui.c`, `web.c`)
 
