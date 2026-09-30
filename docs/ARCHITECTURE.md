@@ -45,8 +45,9 @@ LVGL timer and event callbacks already run inside the lock.
 
 ## Radar (`radar.c`)
 
-- **Projection:** Web Mercator. Zoom levels 6–9 give view radii of about 390 / 195 / 98 / 49 km at 47°N (zoom 7 =
-  ~837 m/px is the default). The view is centred on the saved location (`apply_view()`). Only doubling steps are used, so
+- **Projection:** Web Mercator. Zoom levels 4–10 give view radii of about 1560 / 780 / 390 / 195 / 98 / 49 / 24 km
+  at 47°N (zoom 7 = ~837 m/px is the default). Zoom 10 is the useful limit, because GeoMet radar is 1 km/px. The range
+  ring picks the round distance (5 km … 800 km) closest to half the radius. The view is centred on the saved location (`apply_view()`). Only doubling steps are used, so
   map tiles are shown at native resolution and labels stay sharp.
 - **Zoom gestures:** swipe down = zoom in, up = zoom out (`radar_zoom()`, called from the LVGL gesture handler).
   Zoom in grows the current picture 2× (`lv_anim` on `lv_image_set_scale`, 300 ms, nearest-neighbour), then the sharper
@@ -56,7 +57,7 @@ LVGL timer and event callbacks already run inside the lock.
   user has already left is cancelled.
 - **Basemap:** 3×3 OSM tiles (`tile.openstreetmap.org/<z>/x/y.png`, one keep-alive connection, 3 retries each),
   decoded with LVGL's bundled lodepng, dimmed and desaturated (`dim_map`, 55%), then saved to that zoom level's
-  512 KB slot in the 2 MB `mapcache` partition. The header (magic `MAP5`, zoom, view origin) makes a location change
+  512 KB slot in the 4 MB `mapcache` partition (7 slots). The header (magic `MAP5`, zoom, view origin) makes a location change
   download fresh tiles.
 - **Radar frames:** GeoMet WMS `GetMap` in EPSG:3857 with the exact view bbox at 466×466, `transparent=true`,
   `time=<ISO>`. The latest time comes from `GetCapabilities` (`<Dimension name="time">start/end/PT6M`).
