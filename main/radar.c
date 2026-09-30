@@ -22,8 +22,8 @@ static const char *TAG = "radar";
 
 #define W        DISP_W
 #define H        DISP_H
-#define ZOOM_MIN 6          // ~390 km radius at 47°N
-#define ZOOM_MAX 9          // ~49 km radius
+#define ZOOM_MIN 4          // ~1560 km radius at 47°N
+#define ZOOM_MAX 10         // ~24 km radius (radar data is 1 km/px; closer would just be blocky)
 #define ZOOM_DEF 7          // ~195 km radius
 #define SLOT_SIZE (512 * 1024)   // one cached basemap per zoom level in the mapcache partition
 #define REFRESH_S  (6 * 60)
@@ -504,8 +504,12 @@ static void apply_view(void)
     view_x = floor((loc.lon + 180.0) / 360.0 * n) - W / 2;
     view_y = floor((1.0 - log(tan(lat) + 1.0 / cos(lat)) / M_PI) / 2.0 * n) - H / 2;
     double m_per_px = 2 * MERC_MAX / n * cos(lat);
-    static const int ring_by_zoom[] = {200, 100, 50, 25};          // zoom 6..9, about half the radius
-    int ring_km = ring_by_zoom[zoom - ZOOM_MIN];
+    // Range ring: the "nice" distance closest to half the view radius
+    static const int nice_km[] = {5, 10, 25, 50, 100, 200, 400, 800};
+    double half = W / 4.0 * m_per_px / 1000.0;
+    int ring_km = nice_km[0];
+    for (int i = 0; i < (int)(sizeof(nice_km) / sizeof(nice_km[0])); i++)
+        if (fabs(log(nice_km[i] / half)) < fabs(log(ring_km / half))) ring_km = nice_km[i];
     int ring_r = (int)(ring_km * 1000.0 / m_per_px);
     view_lat = lat;
     radius_km = radius_at(zoom);
