@@ -22,7 +22,7 @@ static int ov_state;          // 0 hidden, 1 settings QR
 static lv_obj_t *scr_hour;       // hourly detail screen
 static int hr_day;
 static void hour_fill(int day);
-static lv_obj_t *scr_main, *lbl_time, *lbl_city, *icon_box, *lbl_temp, *lbl_cond, *lbl_detail;
+static lv_obj_t *scr_main, *lbl_time, *lbl_city, *icon_box, *lbl_temp, *lbl_cond, *lbl_detail, *lbl_nowcast;
 static lv_obj_t *fc_day[3], *fc_temp[3], *fc_icon[3], *hero;
 
 #define C_BG      lv_color_hex(0x000000)
@@ -732,8 +732,10 @@ void ui_init(void)
     lv_obj_set_style_text_color(lbl_temp, C_TEXT, 0);
     lv_label_set_text(lbl_temp, "");
 
-    lbl_cond = label(scr_main, f_cond, C_TEXT, 220);
-    lbl_detail = label(scr_main, f_small, C_DIM, 256);
+    lbl_cond = label(scr_main, f_cond, C_TEXT, 214);
+    lbl_detail = label(scr_main, f_small, C_DIM, 248);
+    lbl_nowcast = label(scr_main, f_tiny, C_ACCENT, 273);         // "Rain around 14:45" (hidden when none)
+    lv_obj_add_flag(lbl_nowcast, LV_OBJ_FLAG_HIDDEN);
 
     // Divider
     lv_obj_t *div = lv_obj_create(scr_main);
@@ -741,7 +743,7 @@ void ui_init(void)
     lv_obj_set_size(div, 260, 2);
     lv_obj_set_style_bg_color(div, lv_color_hex(0x2A3138), 0);
     lv_obj_set_style_bg_opa(div, LV_OPA_COVER, 0);
-    lv_obj_align(div, LV_ALIGN_TOP_MID, 0, 294);
+    lv_obj_align(div, LV_ALIGN_TOP_MID, 0, 298);
 
     // 3-day forecast: day / icon / high-low
     for (int i = 0; i < 3; i++) {
@@ -852,6 +854,12 @@ void ui_weather(const weather_t *w)
     snprintf(buf, sizeof(buf), "Feels %.0f°  ·  %d%%  ·  %.0f km/h", w->feels, w->humidity, w->wind);
     lv_label_set_text(lbl_detail, buf);
     draw_icon(icon_box, weather_kind(w->code), w->is_day, 80, 0);
+    if (w->nc_kind == NC_NONE) lv_obj_add_flag(lbl_nowcast, LV_OBJ_FLAG_HIDDEN);
+    else {
+        lv_label_set_text_fmt(lbl_nowcast, w->nc_kind == NC_STARTS ? "%s around %s" : "%s until about %s",
+                              w->nc_snow ? "Snow" : "Rain", w->nc_time);
+        lv_obj_remove_flag(lbl_nowcast, LV_OBJ_FLAG_HIDDEN);
+    }
     for (int i = 0; i < 3; i++) {
         if (i < w->ndays) {
             day_name(w->day[i].date, i, buf, sizeof(buf));

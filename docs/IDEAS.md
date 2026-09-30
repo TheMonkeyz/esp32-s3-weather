@@ -4,8 +4,6 @@ Backlog of possible features (2026-09-30). ⭐ = suggested first. Move an item t
 
 ## Weather
 
-- [ ] ⭐ **Rain starting soon** — "Rain around 14:40" on the weather screen from Open-Meteo's 15-minute
-  precipitation forecast (`minutely_15`). *(in progress)*
 - [ ] **Weather warnings** — Environment Canada watches/warnings for the location as a coloured banner.
 - [ ] **Temperature graph** — the day's temperature curve at the top of each hourly-view page.
 - [ ] **Extras page** — sunrise/sunset, UV index, air quality and pollen (Open-Meteo), as a third swipe screen.
@@ -32,4 +30,5 @@ charging (AXP2101).
 
 ## Done
 
-- (move items here)
+- [x] **Rain starting soon** — "Rain around 14:45" / "Rain until about 15:30" on the weather screen, from
+  Open-Meteo's 15-minute forecast (2026-09-30).
