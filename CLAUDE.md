@@ -113,6 +113,10 @@ Windows build gets both from `main/idf_component.yml`. `components/dns_server` *
 - The HTTPS certificate is per device (`tlscert.c`, NVS namespace `tls`). After an erase the phone shows the
   certificate warning again; that's expected.
 
+- Testing offline behaviour without touching the router: a throw-away build that calls `net_begin()` with a bogus
+  SSID and restores the real one with `esp_wifi_set_config()` after N seconds (never commit it). Verified: long-press
+  on *Connecting…* → AP + captive portal; auto setup QR after ~30 s; reconnect → AP stops.
+
 ## User preferences learned
 
 - Swipe **down** = zoom in, **up** = zoom out (the opposite felt wrong).

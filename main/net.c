@@ -13,6 +13,7 @@
 #include "nvs_flash.h"
 #include "nvs.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "dns_server.h"
 
 static const char *TAG = "net";
@@ -20,9 +21,26 @@ static EventGroupHandle_t ev;
 #define BIT_GOT_IP  BIT0
 #define BIT_FAIL    BIT1
 static int retries;
-static bool connected_once;
 static bool portal_mode;
 static esp_netif_t *sta_netif;
+static esp_timer_handle_t retry_timer;
+static volatile bool ap_active;
+
+int net_ap_clients(void)
+{
+    wifi_sta_list_t l;
+    return ap_active && esp_wifi_ap_get_sta_list(&l) == ESP_OK ? l.num : 0;
+}
+
+// Reconnect attempts never stop (the router may come back after a power cut), they just slow down:
+// 1 s for the first 8, then 3 s, then every 30 s. A connection attempt makes the radio hop channels,
+// which drops phones joined to the setup network, so while someone is on it we wait.
+static void retry_cb(void *arg)
+{
+    if (portal_mode || net_is_connected()) return;
+    if (net_ap_clients() > 0) { esp_timer_start_once(retry_timer, 10 * 1000000ULL); return; }
+    esp_wifi_connect();
+}
 
 static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data)
 {
@@ -31,18 +49,24 @@ static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data)
     } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
         xEventGroupClearBits(ev, BIT_GOT_IP);
         if (portal_mode) return;
-        if (connected_once || retries++ < 8) {
-            vTaskDelay(pdMS_TO_TICKS(connected_once ? 3000 : 1000));
-            esp_wifi_connect();
-        } else {
-            xEventGroupSetBits(ev, BIT_FAIL);
-        }
+        retries++;
+        if (retries == 8) xEventGroupSetBits(ev, BIT_FAIL);      // net_wait() gives up; retries go on
+        int ms = retries < 8 ? 1000 : retries < 20 ? 3000 : 30000;
+        if (retries == 20) ESP_LOGW(TAG, "Still no Wi-Fi, retrying every 30 s");
+        esp_timer_stop(retry_timer);
+        esp_timer_start_once(retry_timer, ms * 1000ULL);
     } else if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t *e = data;
         ESP_LOGI(TAG, "Connected, IP " IPSTR, IP2STR(&e->ip_info.ip));
         retries = 0;
-        connected_once = true;
+        xEventGroupClearBits(ev, BIT_FAIL);
         xEventGroupSetBits(ev, BIT_GOT_IP);
+        static bool sntp;
+        if (!sntp) {                                             // clock via SNTP, once
+            sntp = true;
+            esp_sntp_config_t sc = ESP_NETIF_SNTP_DEFAULT_CONFIG("pool.ntp.org");
+            esp_netif_sntp_init(&sc);
+        }
     }
 }
 
@@ -60,6 +84,8 @@ void net_init(void)
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
     esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, on_event, NULL);
     esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, on_event, NULL);
+    const esp_timer_create_args_t ta = { .callback = retry_cb, .name = "wifi_retry" };
+    esp_timer_create(&ta, &retry_timer);
 }
 
 bool net_load_creds(char *ssid, size_t sl, char *pass, size_t pl)
@@ -78,7 +104,7 @@ void net_clear_creds(void)
     ESP_LOGW(TAG, "Wi-Fi credentials cleared");
 }
 
-bool net_connect(const char *ssid, const char *pass, int timeout_ms)
+void net_begin(const char *ssid, const char *pass)
 {
     if (!sta_netif) sta_netif = esp_netif_create_default_wifi_sta();
     wifi_config_t wc = {0};
@@ -89,17 +115,21 @@ bool net_connect(const char *ssid, const char *pass, int timeout_ms)
     esp_wifi_set_config(WIFI_IF_STA, &wc);
     ESP_LOGI(TAG, "Connecting to \"%s\"...", ssid);
     esp_wifi_start();
-    EventBits_t b = xEventGroupWaitBits(ev, BIT_GOT_IP | BIT_FAIL, pdFALSE, pdFALSE, pdMS_TO_TICKS(timeout_ms));
-    if (!(b & BIT_GOT_IP)) {
-        ESP_LOGW(TAG, "Could not connect");
-        return false;
-    }
-    // Clock via SNTP, Eastern time
-    setenv("TZ", "EST5EDT,M3.2.0,M11.1.0", 1);
-    tzset();
-    esp_sntp_config_t sc = ESP_NETIF_SNTP_DEFAULT_CONFIG("pool.ntp.org");
-    esp_netif_sntp_init(&sc);
-    return true;
+}
+
+bool net_wait(int timeout_ms)
+{
+    EventBits_t b = xEventGroupWaitBits(ev, BIT_GOT_IP | BIT_FAIL, pdFALSE, pdFALSE,
+                                        timeout_ms < 0 ? portMAX_DELAY : pdMS_TO_TICKS(timeout_ms));
+    if (b & BIT_GOT_IP) return true;
+    ESP_LOGW(TAG, "Could not connect (still retrying in the background)");
+    return false;
+}
+
+bool net_wait_connected(int timeout_ms)
+{
+    return xEventGroupWaitBits(ev, BIT_GOT_IP, pdFALSE, pdFALSE,
+                               timeout_ms < 0 ? portMAX_DELAY : pdMS_TO_TICKS(timeout_ms)) & BIT_GOT_IP;
 }
 
 bool net_is_connected(void) { return ev && (xEventGroupGetBits(ev) & BIT_GOT_IP); }
@@ -139,7 +169,6 @@ bool net_in_portal(void) { return portal_mode; }
 
 static esp_netif_t *ap_netif;
 static dns_server_handle_t dns;
-static volatile bool ap_active;
 
 // Bring up the setup access point with a captive portal (DNS answers everything with us,
 // DHCP option 114 advertises the setup page). Keeps the station connection if there is one.

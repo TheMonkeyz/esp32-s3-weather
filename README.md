@@ -70,7 +70,15 @@ The two onboard microphones measure the room's sound level every 0.1 s.
 - **Wi-Fi:** long-press the weather screen, then **long-press again** on the Settings screen. The display starts
   **Weather-Setup** alongside its current connection and shows a QR code to join it. The sign-in page then opens on
   the phone as during first-time setup. Tap the display to cancel; the setup network also switches off after 10 min.
-- **Reset Wi-Fi from the buttons:** press **RESET**, then hold **BOOT** for about 2 s while the screen says
+  When the display is offline, the first long-press goes straight to the Wi-Fi setup QR code.
+- **When the saved network can't be reached** (new place, new router, router still starting after a power cut):
+  - While it says *Connecting to …* or *Fetching forecast…*, a **long-press** starts the setup network and shows its
+    QR code.
+  - After about 30 s without a connection it shows the setup QR code by itself (*Can't reach …, still trying*).
+  - Either way it keeps retrying the saved network in the background (every 30 s after the first minute, and not
+    while a phone is on the setup network). If the network comes back, it carries on normally and switches the setup
+    network off; if you save a new network instead, it restarts and joins that one.
+- **Reset Wi-Fi from the buttons** (rarely needed now): press **RESET**, then hold **BOOT** for about 2 s while the screen says
   *Starting…*. Don't hold BOOT *while* pressing RESET, because that puts the chip into flashing mode.
 
 ## Flashing (Windows)

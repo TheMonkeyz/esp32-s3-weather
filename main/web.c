@@ -327,7 +327,7 @@ void web_start(web_location_cb_t on_location_changed)
         };
         for (int i = 0; i < sizeof(huris) / sizeof(huris[0]); i++) httpd_register_uri_handler(h, &huris[i]);
     }
-    char ip[20] = "?";
-    net_get_ip(ip, sizeof(ip));
-    ESP_LOGI(TAG, "Settings page: https://%s/", ip);
+    char ip[20];
+    if (net_get_ip(ip, sizeof(ip))) ESP_LOGI(TAG, "Settings page: https://%s/", ip);
+    else ESP_LOGI(TAG, "Web servers started (no IP yet)");
 }
