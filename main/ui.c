@@ -369,6 +369,7 @@ void ui_init(void)
     msg_qr = make_qr(scr_msg, 140);
     lv_obj_align(msg_qr, LV_ALIGN_TOP_MID, 0, 250);
     lv_obj_add_flag(msg_qr, LV_OBJ_FLAG_HIDDEN);
+
     lv_obj_add_event_cb(scr_radar, gesture_cb, LV_EVENT_GESTURE, NULL);
     touch_register_lvgl();
 
