@@ -445,7 +445,10 @@ static void set_status(const char *title, const char *status)
 
 static void show_live(void)      // caller holds the display lock
 {
+    // Newest image that did load: if the latest download failed, keep showing the previous one
+    // (its time is in the label, so its age is visible) instead of a map without rain.
     frame_t *f = &frames[NFRAMES - 1];
+    for (int i = NFRAMES - 1; i >= 0; i--) if (frames[i].ok) { f = &frames[i]; break; }
     compose(f->ok ? f : NULL);
     char when[8], now[8], sub[32];
     fmt_local(time(NULL), now, sizeof(now));
