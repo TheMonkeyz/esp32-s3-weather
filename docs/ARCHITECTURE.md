@@ -111,6 +111,10 @@ LVGL timer and event callbacks already run inside the lock.
 - **API:** `GET /api/presence` (config and live status: level, threshold, state, wake_progress, quiet_s, calibrating,
   brightness), `POST /api/presence` (config), `POST /api/calibrate {seconds}`. The page polls status every 700 ms
   while visible.
+- **Presets & units:** firmware stores `dim_s` and `off_s` (off is *after* dim). The page shows "Turn off after" as
+  total quiet time (`dim_s + off_s`) with s/min/h unit selectors and converts back on save. Presets
+  (Testing/Short/Normal/Long) live only in `index.html` (`PRESETS`); loading the config picks the matching preset or
+  *Custom*. Firmware default = Normal (`dim_s 600`, `off_s 3000`, `wake_s 3`).
 
 ## Settings / web (`web.c`, `config.c`)
 

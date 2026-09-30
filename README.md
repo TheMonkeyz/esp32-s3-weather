@@ -36,15 +36,24 @@ Data sources:
 
 The two onboard microphones measure the room's sound level every 0.1 s.
 
-- **Quiet** for *Dim after* seconds → the screen dims. Quiet for *Then off after* more seconds → the screen turns off.
+- **Quiet** for *Dim after* → the screen dims. Quiet for *Turn off after* (total quiet time) → the screen turns off.
 - **Waking** from dim/off needs *Wake after* seconds of **sustained** sound. Sound fills a wake meter and silence drains
   it at half speed, so talking with pauses wakes it but a door slam doesn't. Touching the screen always wakes it; the
   touch that wakes a dark screen is ignored, so it doesn't also swipe or tap.
 - **Calibrate** on the settings page while the room is quiet: 5 s of measurement set the background level (90th
   percentile). "Loud" means background + *Sensitivity* dB.
 - The settings card shows a live meter (orange mark = trigger level), the state (Active / Dimmed / Screen off), the
-  wake progress and the quiet timer, which is handy for tuning. Current defaults are short testing values (dim 10 s,
-  off +20 s, wake 2 s, sensitivity 10 dB, 100% / 15%).
+  wake progress and the quiet timer, which is handy for tuning.
+- **Presets** (durations can be entered in s / min / h; editing any value switches to *Custom*):
+
+  | Preset | Dim after | Turn off after (total quiet) | Wake after |
+  |---|---|---|---|
+  | Testing | 10 s | 30 s | 2 s |
+  | Short | 2 min | 15 min | 2 s |
+  | **Normal** (default) | 10 min | 60 min | 3 s |
+  | Long | 30 min | 3 h | 3 s |
+
+  Other defaults: sensitivity 10 dB, brightness 100% / dimmed 15%. Defaults only apply when nothing is saved in NVS.
 
 ## Changing settings later
 
