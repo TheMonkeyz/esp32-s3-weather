@@ -19,6 +19,7 @@
 #include "presence.h"
 #include "diag.h"
 #include "alerts.h"
+#include "ota.h"
 
 static const char *TAG = "app";
 #define BOOT_BTN        GPIO_NUM_0
@@ -90,6 +91,7 @@ void app_main(void)
     presence_start();           // microphones -> screen brightness (uses touch's I2C bus + NVS)
     diag_mark("presence");
     ui_init();
+    ota_start(ui_ota);          // update checks start once Wi-Fi is up; marks a new firmware valid after 60 s
     diag_mark("ui");
     ui_message("Weather", "Starting...");
 

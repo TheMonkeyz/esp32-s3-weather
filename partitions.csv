@@ -1,5 +1,8 @@
 # Name,   Type, SubType, Offset,   Size
+# nvs and phy_init keep their v1.0.0 place, so settings survive the switch to two app slots.
 nvs,      data, nvs,     0x9000,   0x6000,
 phy_init, data, phy,     0xf000,   0x1000,
-factory,  app,  factory, 0x10000,  3M,
-mapcache, data, 0x40,    0x310000, 4M,
+ota_0,    app,  ota_0,   0x10000,  3M,
+ota_1,    app,  ota_1,   0x310000, 3M,
+otadata,  data, ota,     0x610000, 0x2000,
+mapcache, data, 0x40,    0x620000, 4M,

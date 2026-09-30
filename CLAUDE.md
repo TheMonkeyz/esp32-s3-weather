@@ -120,6 +120,12 @@ Windows build gets both from `main/idf_component.yml`. `components/dns_server` *
 - DPP (Easy Connect): `esp_supp_dpp_bootstrap_gen()` only queues work; start listening from the URI_READY callback.
   Verified with an Android phone: scan from Wi-Fi settings → credentials saved → restart → connected.
 
+- OTA layout since v1.3.0 (two app slots + otadata at 0x610000). USB flashes must include `ota_data_initial.bin`
+  (the helper does when `firmware/ota_data_initial.bin` exists), otherwise a board that last updated over Wi-Fi keeps
+  booting `ota_1`. The flash helper only picks up script changes after a restart.
+- Test OTA end to end with the real site: flash a build labelled `vX.Y.Z-rc.0`, tag `vX.Y.Z-rc.1`, set the channel to
+  Beta. A test build must be labelled above the current stable release or it will offer that release.
+
 ## User preferences learned
 
 - Swipe **down** = zoom in, **up** = zoom out (the opposite felt wrong).

@@ -12,6 +12,7 @@
 #include "cJSON.h"
 #include "esp_app_desc.h"
 #include "tlscert.h"
+#include "ota.h"
 #include "config.h"
 #include "net.h"
 #include "presence.h"
@@ -193,6 +194,41 @@ static esp_err_t presence_post(httpd_req_t *req)
     return presence_get(req);
 }
 
+static const char *ota_state_name(ota_state_t s)
+{
+    static const char *n[] = { "idle", "checking", "up_to_date", "available", "downloading", "done", "failed" };
+    return s <= OTA_FAILED ? n[s] : "?";
+}
+
+// {"current","latest","channel","state","progress","error"}
+static esp_err_t update_get(httpd_req_t *req)
+{
+    ota_status_t o;
+    ota_get_status(&o);
+    cJSON *j = cJSON_CreateObject();
+    cJSON_AddStringToObject(j, "current", o.current);
+    cJSON_AddStringToObject(j, "latest", o.latest);
+    cJSON_AddStringToObject(j, "channel", o.channel);
+    cJSON_AddStringToObject(j, "state", ota_state_name(o.state));
+    cJSON_AddNumberToObject(j, "progress", o.progress);
+    cJSON_AddStringToObject(j, "error", o.error);
+    return send_json(req, j);
+}
+
+// {"channel":"stable"|"beta"} and/or {"action":"check"|"install"}
+static esp_err_t update_post(httpd_req_t *req)
+{
+    cJSON *j = read_json(req);
+    const char *ch = cJSON_GetStringValue(cJSON_GetObjectItem(j, "channel"));
+    const char *act = cJSON_GetStringValue(cJSON_GetObjectItem(j, "action"));
+    if (ch) ota_set_channel(ch);
+    if (act && !strcmp(act, "check")) ota_check_now();
+    if (act && !strcmp(act, "install")) ota_install();
+    cJSON_Delete(j);
+    vTaskDelay(pdMS_TO_TICKS(200));                        // let the OTA task pick it up
+    return update_get(req);
+}
+
 static esp_err_t calibrate_post(httpd_req_t *req)
 {
     cJSON *j = read_json(req);
@@ -293,6 +329,8 @@ static void start_https(void)
         { .uri = "/api/presence", .method = HTTP_GET,  .handler = presence_get },
         { .uri = "/api/presence", .method = HTTP_POST, .handler = presence_post },
         { .uri = "/api/calibrate", .method = HTTP_POST, .handler = calibrate_post },
+        { .uri = "/api/update",   .method = HTTP_GET,  .handler = update_get },
+        { .uri = "/api/update",   .method = HTTP_POST, .handler = update_post },
     };
     for (int i = 0; i < sizeof(uris) / sizeof(uris[0]); i++) httpd_register_uri_handler(s, &uris[i]);
 }
@@ -323,6 +361,8 @@ void web_start(web_location_cb_t on_location_changed)
             { .uri = "/api/presence", .method = HTTP_GET,  .handler = presence_get },
             { .uri = "/api/presence", .method = HTTP_POST, .handler = presence_post },
             { .uri = "/api/calibrate", .method = HTTP_POST, .handler = calibrate_post },
+            { .uri = "/api/update",   .method = HTTP_GET,  .handler = update_get },
+            { .uri = "/api/update",   .method = HTTP_POST, .handler = update_post },
             { .uri = "/*",            .method = HTTP_GET,  .handler = http_other_get },
         };
         for (int i = 0; i < sizeof(huris) / sizeof(huris[0]); i++) httpd_register_uri_handler(h, &huris[i]);

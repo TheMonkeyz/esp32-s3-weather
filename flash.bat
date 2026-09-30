@@ -4,7 +4,7 @@ cd /d "%~dp0"
 set SECS=%2
 if "%SECS%"=="" set SECS=40
 echo Flashing ESP32-S3 (port auto-detected)...
-tools\esptool.exe --chip esp32s3 -b 460800 --before default_reset --after hard_reset write_flash --flash_mode dio --flash_freq 80m --flash_size 16MB 0x0 firmware\bootloader.bin 0x8000 firmware\partition-table.bin 0x10000 firmware\weather_amoled.bin > flash_log.txt 2>&1
+tools\esptool.exe --chip esp32s3 -b 460800 --before default_reset --after hard_reset write_flash --flash_mode dio --flash_freq 80m --flash_size 16MB 0x0 firmware\bootloader.bin 0x8000 firmware\partition-table.bin 0x10000 firmware\weather_amoled.bin 0x610000 firmware\ota_data_initial.bin > flash_log.txt 2>&1
 set RC=%ERRORLEVEL%
 type flash_log.txt
 if not "%RC%"=="0" (
