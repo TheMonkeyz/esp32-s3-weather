@@ -306,8 +306,8 @@ typedef struct {
     lv_obj_t *page, *title, *sum, *list, *content;
     int first, count, now;           // hour indexes into wx.hour
 } day_page_t;
-static day_page_t pg[3];
-static lv_obj_t *hr_pager, *hr_dot[3];
+static day_page_t pg[WX_DAYS];
+static lv_obj_t *hr_pager, *hr_dot[WX_DAYS];
 static weather_t wx;                 // copy of the last forecast
 static bool have_wx;
 
@@ -368,8 +368,10 @@ static void hr_draw(lv_event_t *e)
 static void set_dots(int day)
 {
     hr_day = day;
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < WX_DAYS; i++) {
         lv_obj_set_size(hr_dot[i], i == day ? 18 : 7, 7);
+        if (i < wx.ndays) lv_obj_remove_flag(hr_dot[i], LV_OBJ_FLAG_HIDDEN);
+        else lv_obj_add_flag(hr_dot[i], LV_OBJ_FLAG_HIDDEN);
         lv_obj_set_style_bg_color(hr_dot[i], i == day ? C_TEXT : C_DIM, 0);
     }
 }
@@ -422,7 +424,7 @@ static void main_tap(lv_event_t *e)
     int col = p.x < DISP_W / 2 - 49 ? 0 : p.x > DISP_W / 2 + 49 ? 2 : 1;
     if (col >= wx.ndays) return;
     printf("ui: tap forecast day %d\n", col);
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < WX_DAYS; i++) {
         fill_page(i);
         lv_obj_scroll_to_y(pg[i].list, 0, LV_ANIM_OFF);
     }
@@ -450,7 +452,7 @@ static void pager_scrolled(lv_event_t *e)
     int x = lv_obj_get_scroll_x(hr_pager);
     int day = (x + DISP_W / 2) / DISP_W;
     if (day < 0) day = 0;
-    if (day > 2) day = 2;
+    if (day > WX_DAYS - 1) day = WX_DAYS - 1;
     if (day != hr_day) set_dots(day);
     if (lv_event_get_code(e) == LV_EVENT_SCROLL_END)
         ESP_LOGI("ui", "hourly view: day %d, %d rows", day, pg[day].count);
@@ -469,7 +471,7 @@ static void hour_create(void)
     lv_obj_add_event_cb(hr_pager, pager_scrolled, LV_EVENT_SCROLL, NULL);
     lv_obj_add_event_cb(hr_pager, pager_scrolled, LV_EVENT_SCROLL_END, NULL);
 
-    for (int d = 0; d < 3; d++) {
+    for (int d = 0; d < WX_DAYS; d++) {
         day_page_t *dp = &pg[d];
         dp->page = lv_obj_create(hr_pager);
         lv_obj_remove_style_all(dp->page);
@@ -510,13 +512,19 @@ static void hour_create(void)
         lv_obj_add_event_cb(dp->content, hr_draw, LV_EVENT_DRAW_MAIN, dp);
     }
 
-    for (int i = 0; i < 3; i++) {
-        hr_dot[i] = lv_obj_create(scr_hour);
+    lv_obj_t *dots = lv_obj_create(scr_hour);                 // centred row of page dots
+    lv_obj_remove_style_all(dots);
+    lv_obj_set_size(dots, LV_SIZE_CONTENT, 7);
+    lv_obj_set_flex_flow(dots, LV_FLEX_FLOW_ROW);
+    lv_obj_set_style_pad_column(dots, 7, 0);
+    lv_obj_align(dots, LV_ALIGN_BOTTOM_MID, 0, -16);
+    lv_obj_remove_flag(dots, LV_OBJ_FLAG_CLICKABLE);
+    for (int i = 0; i < WX_DAYS; i++) {
+        hr_dot[i] = lv_obj_create(dots);
         lv_obj_remove_style_all(hr_dot[i]);
         lv_obj_set_size(hr_dot[i], 7, 7);
         lv_obj_set_style_radius(hr_dot[i], 4, 0);
         lv_obj_set_style_bg_opa(hr_dot[i], LV_OPA_COVER, 0);
-        lv_obj_align(hr_dot[i], LV_ALIGN_BOTTOM_MID, (i - 1) * 16, -16);
         lv_obj_remove_flag(hr_dot[i], LV_OBJ_FLAG_CLICKABLE);
     }
     lv_obj_add_event_cb(scr_hour, hour_tap, LV_EVENT_SHORT_CLICKED, NULL);
@@ -855,7 +863,7 @@ void ui_weather(const weather_t *w)
     }
     wx = *w;
     have_wx = true;
-    if (lv_screen_active() == scr_hour) for (int i = 0; i < 3; i++) hour_fill(i);
+    if (lv_screen_active() == scr_hour) for (int i = 0; i < WX_DAYS; i++) hour_fill(i);
     clock_tick(NULL);
     if (lv_screen_active() == scr_msg) lv_screen_load(scr_main);
     display_unlock();
@@ -870,7 +878,7 @@ int ui_bench_screens(lv_obj_t **scr, const char **name, int max)
     if (n < max) { scr[n] = blank; name[n++] = "blank"; }
     if (n < max) { scr[n] = scr_main; name[n++] = "weather"; }
     if (have_wx && n < max && lv_screen_active() != scr_hour) {   // never disturb a view in use
-        for (int i = 0; i < 3; i++) fill_page(i);
+        for (int i = 0; i < WX_DAYS; i++) fill_page(i);
         lv_obj_update_layout(hr_pager);
         lv_obj_scroll_to_x(hr_pager, DISP_W, LV_ANIM_OFF);
         set_dots(1);

@@ -14,7 +14,7 @@ static const char *TAG = "weather";
     "&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m,is_day" \
     "&daily=temperature_2m_max,temperature_2m_min,weather_code,precipitation_probability_max" \
     "&hourly=temperature_2m,weather_code,precipitation_probability,wind_speed_10m,is_day" \
-    "&timezone=auto&forecast_days=3"
+    "&timezone=auto&forecast_days=7"
 
 typedef struct { char *buf; int len; int cap; } rx_t;
 
@@ -43,7 +43,7 @@ static double num_at(cJSON *a, int i)
 
 bool weather_fetch(weather_t *w)
 {
-    rx_t rx = { .cap = 24576 };
+    rx_t rx = { .cap = 49152 };    // ~10 KB with 7 days of hourly data
     rx.buf = calloc(1, rx.cap);
     if (!rx.buf) return false;
 
@@ -81,7 +81,7 @@ bool weather_fetch(weather_t *w)
             cJSON *codes = cJSON_GetObjectItem(daily, "weather_code");
             cJSON *days = cJSON_GetObjectItem(daily, "time");
             w->ndays = 0;
-            for (int i = 0; i < 3 && i < cJSON_GetArraySize(tmax); i++) {
+            for (int i = 0; i < WX_DAYS && i < cJSON_GetArraySize(tmax); i++) {
                 w->day[i].tmax = cJSON_GetArrayItem(tmax, i)->valuedouble;
                 w->day[i].tmin = cJSON_GetArrayItem(tmin, i)->valuedouble;
                 w->day[i].code = cJSON_GetArrayItem(codes, i)->valueint;

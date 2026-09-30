@@ -24,7 +24,7 @@ The panel's init sequence and pin map come from Waveshare's BSP
 | `radar` | 0 / 3, 10 KB stack | Basemap, latest radar frame, history frames; sleeps unless the radar screen is visible |
 | `presence` | 0 / 2 | Reads 100 ms of audio, computes the level, runs the dim/off state machine, fades brightness |
 | `diag` | 0 / 1 | Every 60 s logs heap, frame timing, CPU and stack per task; starts `bench` once at 45 s |
-| `bench` | 1 / 4, one-shot | Times full-screen renders of each screen without showing them (UI blocked ~1.5 s) |
+| `bench` | 1 / 4, one-shot | Times full-screen renders of each screen without showing them (UI blocked ~1.5 s); only while the weather screen is idle |
 | httpd (HTTPS :443, HTTP :80) | – | Settings page + JSON API. Stacks 7 KB (TLS handshake peaks ~3.3 KB) / 4 KB |
 
 Main task stack is 6 KB. Stack sizes come from the measured high-water marks in `diag: tasks` lines; re-check
@@ -56,10 +56,11 @@ LVGL timer and event callbacks already run inside the lock.
 ## Hourly view (`ui.c`, `weather.c`)
 
 - Open-Meteo `hourly=temperature_2m,weather_code,precipitation_probability,wind_speed_10m,is_day` with
-  `forecast_days=3` → `weather_t.hour[72]` (starts at 00:00 local today). Response is about 4 KB.
+  `forecast_days=7` → `weather_t.day[WX_DAYS]` and `hour[WX_DAYS*24]` (`WX_DAYS` = 7, hours start at 00:00 local
+  today). Response is about 7 KB (receive buffer 48 KB in PSRAM). The weather screen shows `day[0..2]`.
 - `SHORT_CLICKED` on the weather screen with y ≥ 296 → forecast column by x → `scr_hour` (move-top animation).
   `ui_weather()` keeps a copy of the forecast (`wx`) for this screen.
-- `scr_hour` holds a pager: a horizontally scrollable object with three full-screen day pages,
+- `scr_hour` holds a pager: a horizontally scrollable object with one full-screen page per forecast day (`WX_DAYS`),
   `LV_SCROLL_SNAP_CENTER` + `LV_OBJ_FLAG_SCROLL_ONE`, so pages follow the finger, snap, and bounce at the ends.
   Each page has its own vertically scrollable hour list; LVGL picks the scroll direction from the drag.
   Page dots update on `LV_EVENT_SCROLL`. A tap closes the view.
