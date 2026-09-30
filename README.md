@@ -26,7 +26,8 @@ Data sources:
 2. Scan the QR code to join the display's network **Weather-Setup** (password `meteo1234`).
 3. The phone's **"Sign in to network"** page opens by itself (captive portal) and shows the setup page with the Wi-Fi
    section on top. If it doesn't, open **http://192.168.4.1**.
-4. Pick your Wi-Fi network, enter the password and save. The display restarts and connects.
+4. The page scans automatically and lists nearby networks (strongest first, 🔒 = password needed). Tap yours, enter
+   the password and save. The display restarts and connects. **Scan again** refreshes the list.
 
 ## Changing settings later
 

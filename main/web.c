@@ -83,20 +83,36 @@ static esp_err_t config_get(httpd_req_t *req)
     return send_json(req, j);
 }
 
+static int by_rssi(const void *a, const void *b)
+{
+    return ((const wifi_ap_record_t *)b)->rssi - ((const wifi_ap_record_t *)a)->rssi;
+}
+
+// [{"ssid":"...","rssi":-52,"secure":true}, ...] strongest first, one entry per name
 static esp_err_t scan_get(httpd_req_t *req)
 {
     ESP_LOGI(TAG, "GET /api/scan");
     cJSON *arr = cJSON_CreateArray();
-    uint16_t n = 20;
+    uint16_t n = 30;
     wifi_ap_record_t *recs = calloc(n, sizeof(wifi_ap_record_t));
-    wifi_scan_config_t sc = {0};
+    wifi_scan_config_t sc = { .show_hidden = false };
     if (recs && esp_wifi_scan_start(&sc, true) == ESP_OK && esp_wifi_scan_get_ap_records(&n, recs) == ESP_OK) {
+        qsort(recs, n, sizeof(recs[0]), by_rssi);
         for (int i = 0; i < n; i++) {
-            if (!recs[i].ssid[0]) continue;
+            const char *ssid = (const char *)recs[i].ssid;
+            if (!ssid[0] || !strcmp(ssid, SETUP_AP_SSID)) continue;
             bool dup = false;
-            for (int k = 0; k < i; k++) dup |= !strcmp((char *)recs[k].ssid, (char *)recs[i].ssid);
-            if (!dup) cJSON_AddItemToArray(arr, cJSON_CreateString((char *)recs[i].ssid));
+            for (int k = 0; k < i && !dup; k++) dup = !strcmp((const char *)recs[k].ssid, ssid);
+            if (dup) continue;                               // already listed with a stronger signal
+            cJSON *o = cJSON_CreateObject();
+            cJSON_AddStringToObject(o, "ssid", ssid);
+            cJSON_AddNumberToObject(o, "rssi", recs[i].rssi);
+            cJSON_AddBoolToObject(o, "secure", recs[i].authmode != WIFI_AUTH_OPEN);
+            cJSON_AddItemToArray(arr, o);
         }
+        ESP_LOGI(TAG, "scan: %d networks", cJSON_GetArraySize(arr));
+    } else {
+        ESP_LOGW(TAG, "scan failed");
     }
     free(recs);
     return send_json(req, arr);
