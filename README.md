@@ -200,7 +200,7 @@ main/
   lvgl_mem.c    LVGL's allocator, in PSRAM (keeps internal RAM for Wi-Fi, DMA and stacks)
   web/index.html  settings page (embedded)
   tlscert.c     per-device TLS certificate: generated on first boot, stored in NVS (see Security)
-  montserrat.ttf  font, rendered at runtime with LVGL TinyTTF (supports accents like "é")
+  montserrat.ttf  font, rendered at runtime with LVGL TinyTTF (supports accents like "é"); montserrat-OFL.txt = its license
 partitions.csv  nvs, phy, factory app (3 MB), mapcache (4 MB: one 512 KB basemap slot per zoom level)
 sdkconfig.defaults
 components/dns_server/  captive-portal DNS (from the ESP-IDF captive_portal example, CC0)
@@ -222,3 +222,9 @@ CLAUDE.md       notes for AI-assisted development sessions
   (`Weather Display C87598`). Erasing the flash creates a new one (accept the warning again).
   Older versions embedded a shared key from `main/certs/`; it is no longer used anywhere.
 - The setup access point password (`meteo1234`) is in `main/net.h`.
+
+## License
+
+MIT, © 2026 Laurent Mathieu. See [LICENSE](LICENSE).
+The Montserrat font is under the SIL Open Font License ([`main/montserrat-OFL.txt`](main/montserrat-OFL.txt)); other
+bundled and downloaded components keep their own licenses, listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
