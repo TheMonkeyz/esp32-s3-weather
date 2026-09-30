@@ -6,6 +6,7 @@
 #include "driver/gpio.h"
 #include "esp_log.h"
 #include "rom/ets_sys.h"
+#include "presence.h"
 
 static const char *TAG = "touch";
 
@@ -16,6 +17,7 @@ static const char *TAG = "touch";
 #define RES       466
 
 static i2c_master_dev_handle_t dev;
+static i2c_master_bus_handle_t bus;
 static bool ok;
 static int n_ok, n_err;
 
@@ -26,7 +28,6 @@ void touch_init(void)
         .clk_source = I2C_CLK_SRC_DEFAULT, .glitch_ignore_cnt = 7,
         .flags.enable_internal_pullup = true,
     };
-    i2c_master_bus_handle_t bus;
     if (i2c_new_master_bus(&bc, &bus) != ESP_OK) { ESP_LOGE(TAG, "I2C bus init failed"); return; }
     i2c_device_config_t dc = { .dev_addr_length = I2C_ADDR_BIT_LEN_7, .device_address = ADDR, .scl_speed_hz = 400000 };
     ESP_ERROR_CHECK(i2c_master_bus_add_device(bus, &dc, &dev));
@@ -82,6 +83,15 @@ static void read_cb(lv_indev_t *indev, lv_indev_data_t *data)
         return;
     }
     errs = 0;
+    static bool swallow;                    // the touch that wakes a dark screen does nothing else
+    if (r > 0 && !was && presence_touch()) swallow = true;
+    if (swallow) {
+        if (r == 0) swallow = false;
+        was = r > 0;
+        data->state = LV_INDEV_STATE_RELEASED;
+        data->point.x = lx; data->point.y = ly;
+        return;
+    }
     if (r > 0) {
         lx = x; ly = y;
         data->state = LV_INDEV_STATE_PRESSED;
@@ -102,3 +112,5 @@ void touch_register_lvgl(void)
     lv_indev_set_type(in, LV_INDEV_TYPE_POINTER);
     lv_indev_set_read_cb(in, read_cb);
 }
+
+i2c_master_bus_handle_t touch_i2c_bus(void) { return bus; }

@@ -14,6 +14,7 @@
 #include "config.h"
 #include "radar.h"
 #include "web.h"
+#include "presence.h"
 
 static const char *TAG = "app";
 #define BOOT_BTN        GPIO_NUM_0
@@ -63,6 +64,7 @@ void app_main(void)
     display_init();
     touch_init();
     net_init();                 // also initialises NVS (settings)
+    presence_start();           // microphones -> screen brightness (uses touch's I2C bus + NVS)
     ui_init();
     ui_message("Weather", "Starting...");
 

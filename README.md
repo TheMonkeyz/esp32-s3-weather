@@ -12,7 +12,8 @@ Built with **ESP-IDF v5.4** and **LVGL 9.2**. No API keys needed.
 |---|---|---|
 | **Weather** | Clock, city, icon and temperature, conditions, feels-like / humidity / wind, 3-day high/low with icons | Swipe **left** for the radar. **Long-press** for the settings QR code; **long-press again** for Wi-Fi setup |
 | **Radar** | Area around the location: dimmed OpenStreetMap map, Environment Canada radar, range ring, clock, radar time and radius | **Tap** to play the last 3 h (15 frames, 3 fps). Swipe **down** to zoom in, **up** to zoom out (≈25 km up to ≈1,550 km radius in 7 doubling steps, animated). Swipe **right** to go back |
-| **Settings page** (phone) | Location: *Use my phone's location* (GPS), city search, or manual lat/lon. Wi-Fi network | Opened from the QR code; served over HTTPS |
+| **Settings page** (phone) | Location: *Use my phone's location* (GPS), city search, or manual lat/lon. Screen & presence (live sound meter, calibration, delays, brightness). Wi-Fi network | Opened from the QR code; served over HTTPS |
+| **Presence dimming** | The microphones act as a presence sensor: quiet room → dim → screen off; sustained sound (not a single bang) or a touch → back on | Configured on the settings page |
 
 Data sources:
 
@@ -30,6 +31,20 @@ Data sources:
    section on top. If it doesn't, open **http://192.168.4.1**.
 4. The page scans automatically and lists nearby networks (strongest first, 🔒 = password needed). Tap yours, enter
    the password (**Show** reveals it while typing) and save. The display restarts and connects. **Scan again** refreshes the list.
+
+## Presence dimming (microphones)
+
+The two onboard microphones measure the room's sound level every 0.1 s.
+
+- **Quiet** for *Dim after* seconds → the screen dims. Quiet for *Then off after* more seconds → the screen turns off.
+- **Waking** from dim/off needs *Wake after* seconds of **sustained** sound. Sound fills a wake meter and silence drains
+  it at half speed, so talking with pauses wakes it but a door slam doesn't. Touching the screen always wakes it; the
+  touch that wakes a dark screen is ignored, so it doesn't also swipe or tap.
+- **Calibrate** on the settings page while the room is quiet: 5 s of measurement set the background level (90th
+  percentile). "Loud" means background + *Sensitivity* dB.
+- The settings card shows a live meter (orange mark = trigger level), the state (Active / Dimmed / Screen off), the
+  wake progress and the quiet timer, which is handy for tuning. Current defaults are short testing values (dim 10 s,
+  off +20 s, wake 2 s, sensitivity 10 dB, 100% / 15%).
 
 ## Changing settings later
 
@@ -94,6 +109,7 @@ main/
   net.c         Wi-Fi station, setup access point + captive portal (DNS, DHCP option 114), credentials in NVS
   web.c         settings server: HTTPS on the home network, plain-HTTP captive portal on the setup AP, JSON API
   config.c      saved location (NVS) and local-time helper (UTC offset from Open-Meteo)
+  presence.c    microphones (ES7210 over I2S) -> presence state machine -> screen brightness
   web/index.html  settings page (embedded)
   certs/        self-signed TLS certificate + key (embedded; see Security)
   montserrat.ttf  font, rendered at runtime with LVGL TinyTTF (supports accents like "é")

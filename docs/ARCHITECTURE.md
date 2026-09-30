@@ -7,6 +7,7 @@
 | MCU | ESP32-S3 (QFN56) rev 0.2, 16 MB flash, 8 MB octal PSRAM | |
 | Display | CO5300 AMOLED 466×466, QSPI, RGB565 | CS 12, CLK 38, D0–D3 4/5/6/7, RST 39; column offset **+6** |
 | Touch | CST9217, I2C addr `0x5A` | SDA 15, SCL 14, RST 40, INT 11 (unused) |
+| Microphones | 2× digital mics via ES7210 ADC (I2C `0x40`, shared bus with touch), I2S 16 kHz stereo 16-bit | MCLK 42, BCLK 9, WS 45, DIN 10 |
 | Buttons | BOOT = GPIO0 (also the strapping pin) | |
 | USB | COM5 on the dev PC | |
 
@@ -21,6 +22,7 @@ The panel's init sequence and pin map come from Waveshare's BSP
 | `main` (app_main) | 0 / 1 | Boot flow, then weather loop: fetch every 10 min; woken early by a location change |
 | `lvgl` | 1 / 4 | `lv_timer_handler()` loop under a recursive mutex (`display_lock()`) |
 | `radar` | 0 / 3, 16 KB stack | Basemap, latest radar frame, history frames; sleeps unless the radar screen is visible |
+| `presence` | 0 / 2 | Reads 100 ms of audio, computes the level, runs the dim/off state machine, fades brightness |
 | httpd (HTTPS :443, HTTP :80) | – | Settings page + JSON API |
 
 **Rule:** any LVGL call from outside the `lvgl` task must be wrapped in `display_lock(-1)` / `display_unlock()`.
@@ -90,6 +92,25 @@ LVGL timer and event callbacks already run inside the lock.
   - On the home network, everything redirects to HTTPS.
 - On the plain-HTTP page the GPS button can't work (browsers only allow geolocation on secure pages). The page shows a
   link to the HTTPS version instead, and puts the Wi-Fi card first when opened on 192.168.4.1.
+
+## Presence dimming (`presence.c`)
+
+- **Audio:** the ES7210 is driven through `esp_codec_dev` (I2C control on the touch controller's bus via
+  `touch_i2c_bus()`; I2S0 RX, 16 kHz, 2 channels, 16-bit, 30 dB mic gain). Every 100 ms: RMS of both channels → dBFS.
+- **Calibration:** `presence_calibrate(5)` collects 5 s of levels. The baseline is the 90th percentile, saved in NVS
+  (`presence/cfg` blob, with the rest of the settings).
+- **Sustained-noise score:** +0.1 per loud tick, −0.05 per quiet tick, clamped to `[0, wake_s]`. It wakes when it
+  reaches `wake_s`, so short bangs don't wake it, while speech with pauses does.
+- **States:**
+  - ACTIVE: any loud tick resets the quiet timer; `dim_s` of quiet → DIM.
+  - DIM: the score reaching `wake_s` → ACTIVE. A loud tick restarts the off countdown. `dim_s + off_s` of quiet → OFF.
+  - OFF: the score reaching `wake_s` → ACTIVE.
+  - Touch: `presence_touch()` → ACTIVE; the waking touch is swallowed in `touch.c` if the screen was off.
+- **Brightness:** CO5300 command `0x51`, faded in 10% steps per tick (about 1 s full ↔ off), under `display_lock()`.
+  Rendering continues while the screen is off.
+- **API:** `GET /api/presence` (config and live status: level, threshold, state, wake_progress, quiet_s, calibrating,
+  brightness), `POST /api/presence` (config), `POST /api/calibrate {seconds}`. The page polls status every 700 ms
+  while visible.
 
 ## Settings / web (`web.c`, `config.c`)
 
