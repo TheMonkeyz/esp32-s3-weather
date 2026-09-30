@@ -91,12 +91,20 @@ RAM for the two 8 KB draw stacks. Reverted.
 
 ### 4. Other observations (no action needed now)
 
+- After-fix scenario run (300 s): internal RAM 61–69 KB free, min ever 28 KB; PSRAM min ever 1.7 MB; no resets;
+  the only errors were the harmless TLS `-0x7780` below.
 - CPU at idle: core 0 ~4–6% (presence 2.8%, Wi-Fi ~1%), core 1 ~1–2% (LVGL). Radar download/decoding peaks at
   ~35% of core 0; hourly-view dragging kept LVGL at ~31% of core 1.
 - PSRAM: ~4 MB free steady, **1.7 MB min ever** (during radar frame loading at a new zoom level). Plenty, but
   that is the real headroom, not 2.8 MB.
-- Before the fixes, animations ran at 7–10 fps (radar zoom, hourly drag); the render bench predicts about
-  15–20 fps now. Re-measure with the scenario.
+- Animations measured with the scenario (60 s windows, frames rendered < 250 ms apart):
+
+  | window | before | after |
+  |---|---|---|
+  | radar animation + zoom | 7.3 fps, frames avg 88 ms, worst 235 ms | 10.2 fps, avg 72 ms, worst 263 ms |
+  | hourly view dragging | 9.9 fps, avg 90 ms | 14.9 fps, avg 58 ms, worst gap 174 ms |
+
+  Radar zoom is the heaviest case: the scale animation transforms a full-screen image every frame.
 - The radar task holds `display_lock()` for up to ~75 ms while it swaps in a composed frame, so the UI can miss
   a frame or two during radar loading. Candidate fix if it's ever visible: compose outside the lock, swap under it.
 - `mbedtls_ssl_handshake returned -0x7780` on the HTTPS server = the phone's browser closed extra speculative
@@ -108,6 +116,7 @@ RAM for the two 8 KB draw stacks. Reverted.
 
 | Symptom | Candidate | Expected gain |
 |---|---|---|
+| Radar zoom feels choppy (10 fps) | render the zoom animation from a half-resolution copy, or fewer steps | fewer pixels transformed per frame |
 | Swipes/animations feel choppy | profile rendering on the device per object type; raise SPI clock to 80 MHz if the CO5300 accepts it | panel 22→11 ms (only matters when it doesn't overlap) |
 | UI hiccup while the radar loads | compose radar frames outside `display_lock()` | removes 75 ms stalls |
 | Internal RAM low again | check `diag: mark` lines to find the stage; stacks from the task table | — |
