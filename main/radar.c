@@ -583,8 +583,9 @@ static void plan_frames(time_t latest)
         nw[i].t = want[i];
         nw[i].ok = false;
     }
+    // Playback keeps running: it reads frames[] under the display lock and skips frames that aren't ok,
+    // and the buffers handed to missing frames belonged to frames that are no longer in the list.
     display_lock(-1);
-    if (play_timer) { lv_timer_delete(play_timer); play_timer = NULL; lv_obj_add_flag(bar, LV_OBJ_FLAG_HIDDEN); }
     memcpy(frames, nw, sizeof(frames));
     display_unlock();
 }

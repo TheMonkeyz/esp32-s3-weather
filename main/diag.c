@@ -125,7 +125,7 @@ static void diag_task(void *arg)
         if (b < dma_lg_min) dma_lg_min = b;
         // once, on the LVGL core, after boot settles; only while the weather screen is idle (see diag_bench)
         if (BENCH_AT_S && !bench_done && tick >= BENCH_AT_S && (tick - BENCH_AT_S) % 20 == 0 && tick < 3600)
-            xTaskCreatePinnedToCore(bench_task, "bench", 6144, NULL, 4, NULL, 1);
+            xTaskCreatePinnedToCore(bench_task, "bench", 10240, NULL, 4, NULL, 1);   // renders like the LVGL task (8 KB); 6 KB overflowed
         if (tick % period) continue;
 
         ESP_LOGI(TAG, "heap: internal %u KB free (min ever %u, largest block now %u / worst %u) | "
