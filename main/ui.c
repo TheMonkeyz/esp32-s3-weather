@@ -232,6 +232,9 @@ static void gesture_cb(lv_event_t *e)
         radar_set_visible(true);
         lv_screen_load_anim(scr_radar, LV_SCR_LOAD_ANIM_MOVE_LEFT, 280, 0, false);
         lv_indev_wait_release(in);
+    } else if (cur == scr_radar && (dir == LV_DIR_TOP || dir == LV_DIR_BOTTOM)) {
+        radar_zoom(dir == LV_DIR_BOTTOM ? +1 : -1);  // swipe down = zoom in, up = zoom out
+        lv_indev_wait_release(in);
     } else if (cur == scr_radar && dir == LV_DIR_RIGHT) {
         radar_set_visible(false);
         lv_screen_load_anim(scr_main, LV_SCR_LOAD_ANIM_MOVE_RIGHT, 280, 0, false);

@@ -22,7 +22,10 @@ static const char *TAG = "radar";
 
 #define W        DISP_W
 #define H        DISP_H
-#define ZOOM     7
+#define ZOOM_MIN 6          // ~390 km radius at 47°N
+#define ZOOM_MAX 9          // ~49 km radius
+#define ZOOM_DEF 7          // ~195 km radius
+#define SLOT_SIZE (512 * 1024)   // one cached basemap per zoom level in the mapcache partition
 #define REFRESH_S  (6 * 60)
 #define MERC_MAX 20037508.342789244
 
@@ -35,8 +38,19 @@ static volatile bool visible;
 static bool base_ok;
 static time_t last_fetch;
 static volatile bool relocate_pending;
+static int zoom = ZOOM_DEF;
+static int radius_km = 195;
+static double view_lat = 0.817;          // radians, set by apply_view()
+
+// View radius in km at zoom z for the current latitude (W/2 pixels)
+static int radius_at(int z)
+{
+    double m_per_px = 2 * MERC_MAX / (256.0 * (1 << z)) * cos(view_lat);
+    return (int)(W / 2 * m_per_px / 1000.0 + 0.5);
+}            // current zoom (used by the radar task)
+static volatile int zoom_target = ZOOM_DEF;
 static esp_http_client_handle_t geo_h;   // keep-alive connection to GeoMet
-static double view_x, view_y;       // top-left of view in world pixels at ZOOM
+static double view_x, view_y;       // top-left of view in world pixels at `zoom`
 
 /* ---------------- HTTP download into a growing PSRAM buffer ---------------- */
 
@@ -93,7 +107,7 @@ static bool http_fetch(esp_http_client_handle_t *hp, const char *url, dl_t *d)
 /* ---------------- basemap cache in flash ("mapcache" partition) ---------------- */
 
 typedef struct { uint32_t magic; int32_t zoom, x, y; } cache_hdr_t;
-#define CACHE_MAGIC 0x4D415034  // "MAP4" (OSM basemap, chunked write)
+#define CACHE_MAGIC 0x4D415035  // "MAP5" (per-zoom slots)
 
 static const esp_partition_t *cache_part(void)
 {
@@ -104,9 +118,11 @@ static bool cache_load(void)
 {
     const esp_partition_t *p = cache_part();
     cache_hdr_t h;
-    if (!p || esp_partition_read(p, 0, &h, sizeof(h)) != ESP_OK) return false;
-    if (h.magic != CACHE_MAGIC || h.zoom != ZOOM || h.x != (int)view_x || h.y != (int)view_y) return false;
-    return esp_partition_read(p, sizeof(h), base565, W * H * 2) == ESP_OK;
+    size_t base = (size_t)(zoom - ZOOM_MIN) * SLOT_SIZE;
+    if (!p || base + SLOT_SIZE > p->size) return false;
+    if (esp_partition_read(p, base, &h, sizeof(h)) != ESP_OK) return false;
+    if (h.magic != CACHE_MAGIC || h.zoom != zoom || h.x != (int)view_x || h.y != (int)view_y) return false;
+    return esp_partition_read(p, base + sizeof(h), base565, W * H * 2) == ESP_OK;
 }
 
 static void cache_save(void)
@@ -114,22 +130,24 @@ static void cache_save(void)
     const esp_partition_t *p = cache_part();
     if (!p) return;
     const size_t SECT = 4096;
+    size_t base = (size_t)(zoom - ZOOM_MIN) * SLOT_SIZE;
+    if (base + SLOT_SIZE > p->size) return;
     size_t len = (sizeof(cache_hdr_t) + W * H * 2 + SECT - 1) & ~(SECT - 1);
     // Erase and write one sector at a time with a short pause in between, so the idle task
     // (and the task watchdog) get to run: a single 450 KB erase blocks this core for seconds.
     for (size_t off = 0; off < len; off += SECT) {
-        if (esp_partition_erase_range(p, off, SECT) != ESP_OK) return;
+        if (esp_partition_erase_range(p, base + off, SECT) != ESP_OK) return;
         vTaskDelay(1);
     }
     const uint8_t *src = (const uint8_t *)base565;
     size_t total = W * H * 2;
     for (size_t off = 0; off < total; off += SECT) {
         size_t n = total - off < SECT ? total - off : SECT;
-        if (esp_partition_write(p, sizeof(cache_hdr_t) + off, src + off, n) != ESP_OK) return;
+        if (esp_partition_write(p, base + sizeof(cache_hdr_t) + off, src + off, n) != ESP_OK) return;
         vTaskDelay(1);
     }
-    cache_hdr_t h = { CACHE_MAGIC, ZOOM, (int)view_x, (int)view_y };   // header last = valid only when complete
-    if (esp_partition_write(p, 0, &h, sizeof(h)) == ESP_OK) ESP_LOGI(TAG, "Basemap cached to flash");
+    cache_hdr_t h = { CACHE_MAGIC, zoom, (int)view_x, (int)view_y };   // header last = valid only when complete
+    if (esp_partition_write(p, base, &h, sizeof(h)) == ESP_OK) ESP_LOGI(TAG, "Basemap (zoom %d) cached to flash", zoom);
 }
 
 static void set_status(const char *title, const char *status);
@@ -172,9 +190,14 @@ static bool load_basemap(void)
     esp_http_client_handle_t h = NULL;
     for (int ty = ty0; ty <= ty1; ty++) {
         for (int tx = tx0; tx <= tx1; tx++) {
+            if (zoom_target != zoom || relocate_pending) {      // user moved on: stop, don't cache
+                if (h) esp_http_client_cleanup(h);
+                ESP_LOGI(TAG, "Basemap (zoom %d) cancelled", zoom);
+                return false;
+            }
             snprintf(msg, sizeof(msg), "Loading map %d/%d", ++n, total);
             set_status(NULL, msg);
-            snprintf(url, sizeof(url), "https://tile.openstreetmap.org/%d/%d/%d.png", ZOOM, tx, ty);
+            snprintf(url, sizeof(url), "https://tile.openstreetmap.org/%d/%d/%d.png", zoom, tx, ty);
             dl_t d;
             bool got = false;
             for (int attempt = 0; attempt < 3 && !got; attempt++) got = http_fetch(&h, url, &d);
@@ -249,8 +272,11 @@ static volatile bool play_pending;
 static time_t latest_radar_time(void)
 {
     dl_t d;
-    if (!http_fetch(&geo_h, "https://geo.weather.gc.ca/geomet?service=WMS&version=1.3.0&request=GetCapabilities&layer=RADAR_1KM_RRAI", &d))
-        return 0;
+    bool got = false;
+    // GeoMet drops idle keep-alive connections; the first attempt then fails and the retry reconnects
+    for (int attempt = 0; attempt < 3 && !got; attempt++)
+        got = http_fetch(&geo_h, "https://geo.weather.gc.ca/geomet?service=WMS&version=1.3.0&request=GetCapabilities&layer=RADAR_1KM_RRAI", &d);
+    if (!got) return 0;
     time_t t = 0;
     char *p = strstr((char *)d.buf, "name=\"time\"");
     if (p) {
@@ -266,7 +292,7 @@ static time_t latest_radar_time(void)
 
 static bool fetch_frame(time_t t, frame_t *f)
 {
-    double res = 2 * MERC_MAX / (256.0 * (1 << ZOOM));
+    double res = 2 * MERC_MAX / (256.0 * (1 << zoom));
     double minx = view_x * res - MERC_MAX, maxx = (view_x + W) * res - MERC_MAX;
     double maxy = MERC_MAX - view_y * res, miny = MERC_MAX - (view_y + H) * res;
     char iso[24];
@@ -342,8 +368,37 @@ static void compose(const frame_t *f)
     }
 }
 
+#define ZOOM_ANIM_MS 300
+static volatile uint32_t anim_until;       // lv_tick when the zoom animation ends
+
+static void scale_cb(void *o, int32_t v) { lv_image_set_scale((lv_obj_t *)o, v); }
+
+// Radar task: let a running zoom animation finish before the new map replaces it
+static void wait_zoom_anim(void)
+{
+    uint32_t now = lv_tick_get();
+    if (anim_until > now && anim_until - now < 2000) vTaskDelay(pdMS_TO_TICKS(anim_until - now));
+}
+
+static void start_scale_anim(int32_t from, int32_t to)     // caller holds the display lock
+{
+    lv_anim_delete(img, scale_cb);
+    lv_image_set_scale(img, from);
+    lv_anim_t a;
+    lv_anim_init(&a);
+    lv_anim_set_var(&a, img);
+    lv_anim_set_exec_cb(&a, scale_cb);
+    lv_anim_set_values(&a, from, to);
+    lv_anim_set_duration(&a, ZOOM_ANIM_MS);
+    lv_anim_set_path_cb(&a, lv_anim_path_ease_out);
+    lv_anim_start(&a);
+    anim_until = lv_tick_get() + ZOOM_ANIM_MS;
+}
+
 static void refresh_img(void)
 {
+    lv_anim_delete(img, scale_cb);
+    lv_image_set_scale(img, LV_SCALE_NONE);
     lv_image_cache_drop(&dsc);
     lv_obj_invalidate(img);
 }
@@ -367,8 +422,8 @@ static void show_live(void)      // caller holds the display lock
     char when[8], now[8], sub[32];
     fmt_local(time(NULL), now, sizeof(now));
     lv_label_set_text(lbl_title, now[0] ? now : "Radar");
-    if (f->ok) { fmt_local(f->t, when, sizeof(when)); snprintf(sub, sizeof(sub), "Radar %s  ·  tap to play", when); }
-    else snprintf(sub, sizeof(sub), "Radar");
+    if (f->ok) { fmt_local(f->t, when, sizeof(when)); snprintf(sub, sizeof(sub), "Radar %s  ·  %d km", when, radius_km); }
+    else snprintf(sub, sizeof(sub), "Radar  ·  %d km", radius_km);
     lv_label_set_text(lbl_rtime, sub);
     refresh_img();
 }
@@ -445,12 +500,17 @@ static void apply_view(void)
     location_t loc;
     config_get_location(&loc);
     double lat = loc.lat * M_PI / 180.0;
-    double n = 256.0 * (1 << ZOOM);
+    double n = 256.0 * (1 << zoom);
     view_x = floor((loc.lon + 180.0) / 360.0 * n) - W / 2;
     view_y = floor((1.0 - log(tan(lat) + 1.0 / cos(lat)) / M_PI) / 2.0 * n) - H / 2;
     double m_per_px = 2 * MERC_MAX / n * cos(lat);
-    int ring_r = (int)(100000.0 / m_per_px);          // 100 km ring
+    static const int ring_by_zoom[] = {200, 100, 50, 25};          // zoom 6..9, about half the radius
+    int ring_km = ring_by_zoom[zoom - ZOOM_MIN];
+    int ring_r = (int)(ring_km * 1000.0 / m_per_px);
+    view_lat = lat;
+    radius_km = radius_at(zoom);
     display_lock(-1);
+    lv_label_set_text_fmt(ring_lbl, "%d km", ring_km);
     lv_obj_set_size(ring, ring_r * 2, ring_r * 2);
     lv_obj_center(ring);
     lv_obj_align(ring_lbl, LV_ALIGN_CENTER, 0, ring_r + 12);
@@ -502,6 +562,22 @@ static bool load_frame(int i)
     return true;
 }
 
+static int out_steps;      // zoom-out levels still to animate when the new map is shown
+
+// Show the new basemap; after a zoom-out, shrink it from 2x (or 4x) into place
+static void reveal_map(void)
+{
+    wait_zoom_anim();                           // let a zoom-in animation finish first
+    display_lock(-1);
+    show_live();
+    if (out_steps > 0) {
+        int32_t from = 256 << (out_steps > 2 ? 2 : out_steps);
+        start_scale_anim(from, LV_SCALE_NONE);
+        out_steps = 0;
+    }
+    display_unlock();
+}
+
 static void radar_task(void *arg)
 {
     apply_view();
@@ -510,11 +586,16 @@ static void radar_task(void *arg)
     vTaskDelay(pdMS_TO_TICKS(3000));                // let the weather fetch go first
     bool prefetch = true;                            // latest frame at boot so the first swipe is instant
     while (1) {
+        if (zoom_target != zoom) relocate_pending = true;
         if (!prefetch && !relocate_pending) {
             ulTaskNotifyTake(pdTRUE, visible ? pdMS_TO_TICKS(REFRESH_S * 1000) : portMAX_DELAY);
         }
+        if (zoom_target != zoom) relocate_pending = true;
         if (relocate_pending) {
             relocate_pending = false;
+            int prev_zoom = zoom;
+            zoom = zoom_target;
+            out_steps = prev_zoom > zoom ? prev_zoom - zoom : 0;   // >0 = zoomed out
             apply_view();
             display_lock(-1);
             if (play_timer) { lv_timer_delete(play_timer); play_timer = NULL; lv_obj_add_flag(bar, LV_OBJ_FLAG_HIDDEN); }
@@ -522,7 +603,8 @@ static void radar_task(void *arg)
             display_unlock();
             last_fetch = 0;
             base_ok = cache_load();
-            display_lock(-1); compose(NULL); refresh_img(); display_unlock();
+            if (base_ok) reveal_map();
+            // else: keep the old picture on screen until the new map has downloaded
             prefetch = true;
         }
         bool want_work = prefetch || visible || play_pending;
@@ -532,7 +614,8 @@ static void radar_task(void *arg)
 
         if (!base_ok) {
             base_ok = load_basemap();
-            display_lock(-1); show_live(); display_unlock();
+            if (!base_ok && (zoom_target != zoom || relocate_pending)) continue;   // superseded: handle the new request
+            reveal_map();
         }
 
         // Latest frame
@@ -541,7 +624,7 @@ static void radar_task(void *arg)
             time_t latest = latest_radar_time();
             if (!latest) {
                 set_status(NULL, "Radar unavailable");
-                vTaskDelay(pdMS_TO_TICKS(20000));
+                ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(5000));    // a zoom/relocate request wakes us early
                 if (visible) xTaskNotifyGive(task);
                 continue;
             }
@@ -555,7 +638,7 @@ static void radar_task(void *arg)
         }
 
         // History frames for the animation, newest first (only while the radar is on screen)
-        for (int i = NFRAMES - 2; i >= 0 && (visible || play_pending) && !relocate_pending; i--) {
+        for (int i = NFRAMES - 2; i >= 0 && (visible || play_pending) && !relocate_pending && zoom_target == zoom; i--) {
             if (frames[i].ok) continue;
             load_frame(i);
             if (play_pending) {
@@ -600,6 +683,7 @@ lv_obj_t *radar_create(lv_font_t *f_title, lv_font_t *f_small, lv_font_t *f_micr
     lv_image_set_src(img, &dsc);
     lv_obj_center(img);
     lv_obj_remove_flag(img, LV_OBJ_FLAG_CLICKABLE);
+    lv_image_set_antialias(img, false);        // nearest-neighbour while zoom-animating: much cheaper
 
     ring = lv_obj_create(scr);
     lv_obj_remove_style_all(ring);
@@ -693,6 +777,35 @@ void radar_set_visible(bool v)
         display_unlock();
     }
     if (v && task) xTaskNotifyGive(task);
+}
+
+static void hide_status_cb(lv_timer_t *t) { lv_obj_add_flag(lbl_status, LV_OBJ_FLAG_HIDDEN); }
+
+// Called from the LVGL task (gesture): +1 = zoom in (smaller radius), -1 = zoom out
+void radar_zoom(int step)
+{
+    int z = zoom_target + step;
+    if (z < ZOOM_MIN || z > ZOOM_MAX) {
+        lv_label_set_text(lbl_status, step > 0 ? "Closest zoom" : "Widest zoom");
+        lv_obj_remove_flag(lbl_status, LV_OBJ_FLAG_HIDDEN);
+        lv_timer_t *t = lv_timer_create(hide_status_cb, 1500, NULL);
+        lv_timer_set_repeat_count(t, 1);
+        return;
+    }
+    zoom_target = z;
+    if (play_timer) stop_play();
+    play_pending = false;
+    // Zoom in: grow the current picture 2x now, the sharper map replaces it afterwards.
+    // Zoom out: the task loads the wider (cached) map first and shrinks it into place, so no borders show.
+    if (step > 0) {
+        int32_t to = lv_image_get_scale(img) * 2;
+        start_scale_anim(lv_image_get_scale(img), to > 1024 ? 1024 : to);
+    } else if (lv_image_get_scale(img) > LV_SCALE_NONE) {
+        start_scale_anim(lv_image_get_scale(img), lv_image_get_scale(img) / 2);   // undo a pending zoom-in preview
+    }
+    lv_label_set_text_fmt(lbl_status, "%s  ·  %d km", step > 0 ? "Zoom in" : "Zoom out", radius_at(z));
+    lv_obj_remove_flag(lbl_status, LV_OBJ_FLAG_HIDDEN);
+    if (task) xTaskNotifyGive(task);
 }
 
 void radar_relocate(void)

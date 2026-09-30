@@ -79,8 +79,21 @@ Windows build uses `main/idf_component.yml` instead.
    about 1 s *after* boot.
 10. **Task watchdog (IDLE0) warnings:** caused by one big `esp_partition_erase_range` of the map cache. Erase and
     write sector by sector with `vTaskDelay(1)` in between.
-11. **Git on the PC folder from the Linux VM** needs delete permission (index.lock, temporary objects). Set
+11. **Zoom-out showed a small square:** shrinking the old picture exposes black borders. Load the wider map first,
+    then animate it from 2× down to 1×.
+12. **Radar ignored swipes for 20 s** after a dropped GeoMet connection (a fixed `vTaskDelay`). Waits in the radar task
+    must use `ulTaskNotifyTake` so user requests wake it; long downloads check `zoom_target`/`relocate_pending` and bail.
+13. **Choppy animations:** the project was compiled with `-Og`. Use `CONFIG_COMPILER_OPTIMIZATION_PERF`; keep
+    `lv_image_set_antialias(img, false)` for full-screen scaling.
+14. **Git on the PC folder from the Linux VM** needs delete permission (index.lock, temporary objects). Set
     `core.fileMode false` and `core.autocrlf false`.
+
+## User preferences learned
+
+- Swipe **down** = zoom in, **up** = zoom out (the opposite felt wrong).
+- Prefers doubling zoom steps (sharp map) over exact 50 km steps.
+- Wants short progress notes, no screen takeover, and changes verified on the device (log + snapshot) before
+  being called done.
 
 ## Useful facts
 
