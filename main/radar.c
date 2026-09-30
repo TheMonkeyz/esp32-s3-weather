@@ -8,6 +8,7 @@
 #include <time.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
 #include "esp_http_client.h"
 #include "esp_crt_bundle.h"
 #include "esp_heap_caps.h"
@@ -114,6 +115,8 @@ static bool http_fetch(esp_http_client_handle_t *hp, const char *url, dl_t *d)
 typedef struct { uint32_t magic; int32_t zoom, x, y; } cache_hdr_t;
 #define CACHE_MAGIC 0x4D415037  // "MAP7" (per-zoom slots, background preload)
 
+static SemaphoreHandle_t cache_mux;      // cache_save() vs readers in other tasks (radar_basemap_read)
+
 static const esp_partition_t *cache_part(void)
 {
     return esp_partition_find_first(ESP_PARTITION_TYPE_DATA, 0x40, "mapcache");
@@ -127,7 +130,35 @@ static bool cache_load(void)
     if (!p || base + SLOT_SIZE > p->size) return false;
     if (esp_partition_read(p, base, &h, sizeof(h)) != ESP_OK) return false;
     if (h.magic != CACHE_MAGIC || h.zoom != zoom || h.x != (int)view_x || h.y != (int)view_y) return false;
-    return esp_partition_read(p, base + sizeof(h), base565, W * H * 2) == ESP_OK;
+    xSemaphoreTake(cache_mux, portMAX_DELAY);
+    bool ok = esp_partition_read(p, base + sizeof(h), base565, W * H * 2) == ESP_OK;
+    xSemaphoreGive(cache_mux);
+    return ok;
+}
+
+// Top-left world pixel of the map centred on the location at zoom z (same formula as apply_view)
+static void view_origin(int z, double lat_deg, double lon_deg, double *x, double *y)
+{
+    double lat = lat_deg * M_PI / 180.0, n = 256.0 * (1 << z);
+    *x = floor((lon_deg + 180.0) / 360.0 * n) - W / 2;
+    *y = floor((1.0 - log(tan(lat) + 1.0 / cos(lat)) / M_PI) / 2.0 * n) - H / 2;
+}
+
+bool radar_basemap_read(int z, uint16_t *dst, double *ox, double *oy)
+{
+    location_t loc;
+    config_get_location(&loc);
+    view_origin(z, loc.lat, loc.lon, ox, oy);
+    const esp_partition_t *p = cache_part();
+    if (!p || z < ZOOM_MIN || z > ZOOM_MAX || !cache_mux) return false;
+    size_t base = (size_t)(z - ZOOM_MIN) * SLOT_SIZE;
+    cache_hdr_t h;
+    xSemaphoreTake(cache_mux, portMAX_DELAY);
+    bool ok = esp_partition_read(p, base, &h, sizeof(h)) == ESP_OK && h.magic == CACHE_MAGIC && h.zoom == z &&
+              h.x == (int)*ox && h.y == (int)*oy &&
+              esp_partition_read(p, base + sizeof(h), dst, W * H * 2) == ESP_OK;
+    xSemaphoreGive(cache_mux);
+    return ok;
 }
 
 static bool cache_header_ok(void)
@@ -147,21 +178,23 @@ static void cache_save(void)
     size_t base = (size_t)(zoom - ZOOM_MIN) * SLOT_SIZE;
     if (base + SLOT_SIZE > p->size) return;
     size_t len = (sizeof(cache_hdr_t) + W * H * 2 + SECT - 1) & ~(SECT - 1);
+    xSemaphoreTake(cache_mux, portMAX_DELAY);
     // Erase and write one sector at a time with a short pause in between, so the idle task
     // (and the task watchdog) get to run: a single 450 KB erase blocks this core for seconds.
     for (size_t off = 0; off < len; off += SECT) {
-        if (esp_partition_erase_range(p, base + off, SECT) != ESP_OK) return;
+        if (esp_partition_erase_range(p, base + off, SECT) != ESP_OK) { xSemaphoreGive(cache_mux); return; }
         vTaskDelay(1);
     }
     const uint8_t *src = (const uint8_t *)base565;
     size_t total = W * H * 2;
     for (size_t off = 0; off < total; off += SECT) {
         size_t n = total - off < SECT ? total - off : SECT;
-        if (esp_partition_write(p, base + sizeof(cache_hdr_t) + off, src + off, n) != ESP_OK) return;
+        if (esp_partition_write(p, base + sizeof(cache_hdr_t) + off, src + off, n) != ESP_OK) { xSemaphoreGive(cache_mux); return; }
         vTaskDelay(1);
     }
     cache_hdr_t h = { CACHE_MAGIC, zoom, (int)view_x, (int)view_y };   // header last = valid only when complete
     if (esp_partition_write(p, base, &h, sizeof(h)) == ESP_OK) ESP_LOGI(TAG, "Basemap (zoom %d) cached to flash", zoom);
+    xSemaphoreGive(cache_mux);
 }
 
 static void set_status(const char *title, const char *status);
@@ -256,6 +289,47 @@ static bool load_basemap(void)
     ESP_LOGI(TAG, "Basemap: %d/%d tiles", ok, total);
     if (ok == total) cache_save();
     return ok == total;
+}
+
+// Draw the dimmed OSM map for any w x h window whose top-left is (ox, oy) in world pixels at zoom z
+// (used by the alert map when the radar cache doesn't cover it). Other task, own connection.
+bool radar_osm_render(int z, double ox, double oy, uint16_t *dst, int w, int h)
+{
+    for (int i = 0; i < w * h; i++) dst[i] = rgb565(18, 20, 24);
+    int tx0 = (int)floor(ox / 256), tx1 = (int)floor((ox + w - 1) / 256);
+    int ty0 = (int)floor(oy / 256), ty1 = (int)floor((oy + h - 1) / 256);
+    int ok = 0, total = (tx1 - tx0 + 1) * (ty1 - ty0 + 1);
+    char url[128];
+    esp_http_client_handle_t hc = NULL;
+    for (int ty = ty0; ty <= ty1; ty++) {
+        for (int tx = tx0; tx <= tx1; tx++) {
+            snprintf(url, sizeof(url), "https://tile.openstreetmap.org/%d/%d/%d.png", z, tx, ty);
+            dl_t d;
+            bool got = false;
+            for (int attempt = 0; attempt < 2 && !got; attempt++) got = http_fetch(&hc, url, &d);
+            if (!got) continue;
+            unsigned tw, th;
+            lv_draw_buf_t *db = decode_png(d.buf, d.len, &tw, &th);
+            free(d.buf);
+            if (!db) continue;
+            int x0 = tx * 256 - (int)ox, y0 = ty * 256 - (int)oy;
+            for (int y = 0; y < (int)th; y++) {
+                int sy = y0 + y;
+                if (sy < 0 || sy >= h) continue;
+                for (int x = 0; x < (int)tw; x++) {
+                    int sx = x0 + x;
+                    if (sx < 0 || sx >= w) continue;
+                    const uint8_t *px = db->data + y * db->header.stride + x * 4;
+                    dst[sy * w + sx] = dim_map(px[0], px[1], px[2]);
+                }
+            }
+            lv_draw_buf_destroy(db);
+            ok++;
+        }
+    }
+    if (hc) esp_http_client_cleanup(hc);
+    ESP_LOGI(TAG, "Alert map: %d/%d tiles at zoom %d", ok, total, z);
+    return ok > 0;
 }
 
 // UTC "YYYY-MM-DDTHH:MM:SSZ" -> time_t
@@ -751,6 +825,7 @@ static void radar_task(void *arg)
 
 lv_obj_t *radar_create(lv_font_t *f_title, lv_font_t *f_small, lv_font_t *f_micro)
 {
+    cache_mux = xSemaphoreCreateMutex();
     base565 = heap_caps_malloc(W * H * 2, MALLOC_CAP_SPIRAM);
     out565 = heap_caps_malloc(W * H * 2, MALLOC_CAP_SPIRAM);
     assert(base565 && out565);

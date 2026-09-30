@@ -53,6 +53,27 @@ LVGL timer and event callbacks already run inside the lock.
 - Long-press opens a settings overlay with a QR code (`lv_qrcode`) for `https://<ip>`.
 - Unused swipes call `lv_indev_wait_release()`; otherwise their release is also delivered as a `SHORT_CLICKED`.
 
+## Weather alerts (`alerts.c`, `ui.c`)
+
+- List: `https://api.weather.gc.ca/collections/weather-alerts/items?f=json&skipGeometry=true&bbox=<±0.005° around
+  the location>`. The server intersects the box with the real region shapes, so a tiny box is a point query.
+  Properties used: `alert_name_en`, `risk_colour_en` (yellow/orange/red), `event_end_datetime`,
+  `expiration_datetime`, `status_en` (skip `ended`/`cancelled`), `feature_name_en`, `alert_text_en` (the standard
+  "Please continue to monitor…" closing paragraph is cut). Same alert in two regions = one entry. Sorted red first.
+  Fetched with the weather (every 10 min); a failed request keeps the previous alerts.
+- UI: a pill in the alert colour replaces the city name; a tap in the top half opens `scr_alert` (title fixed; map,
+  when/where and text in one scrolling column).
+- **Region map** (`alerts_map()`): `items/<id>?f=json` gives the shape (≈4 KB for a county). Coordinates are pulled
+  out with a small scanner instead of cJSON (thousands of points would mean thousands of small allocations). The zoom
+  is the closest level (4–10) where the region fits around the location in the 300×200 crop, then one level out for
+  context. Background: the radar's cached basemap for that zoom (`radar_basemap_read()`, under the new `cache_mux`),
+  or OSM tiles fetched directly (`radar_osm_render()`) when it isn't cached. Region filled at 35 % plus outline,
+  white dot at the location. Rebuilt only when the top alert changes. `ui_alert_map()` swaps the buffer under the
+  display lock.
+- Tested with a throw-away build using Athabasca, AB (frost advisory at the time). Large static buffers
+  (`alerts_t`, `weather_t`, the alert text) use `EXT_RAM_BSS_ATTR` (`CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY`),
+  which also freed ~15 KB of internal RAM.
+
 ## Rain nowcast (`weather.c`, `ui.c`)
 
 - Open-Meteo `minutely_15=precipitation,snowfall&forecast_minutely_15=9`: slot 0 is the current quarter hour, then

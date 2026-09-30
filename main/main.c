@@ -1,11 +1,13 @@
 // Simple weather display for Waveshare ESP32-S3-Touch-AMOLED-1.75
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <time.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "driver/gpio.h"
 #include "esp_log.h"
+#include "esp_attr.h"
 #include "display.h"
 #include "net.h"
 #include "ui.h"
@@ -16,10 +18,13 @@
 #include "web.h"
 #include "presence.h"
 #include "diag.h"
+#include "alerts.h"
 
 static const char *TAG = "app";
 #define BOOT_BTN        GPIO_NUM_0
 #define REFRESH_MIN     10
+#define ALERT_MAP_W     300
+#define ALERT_MAP_H     200
 
 static bool boot_button_held(void)
 {
@@ -111,11 +116,23 @@ void app_main(void)
     diag_mark("wifi up");
     radar_preload_start();      // missing zoom-level maps download in the background
     ui_message("Weather", "Fetching forecast...\n\nLong-press for Wi-Fi setup");
-    static weather_t w;         // ~1 KB of hourly data, keep it off the stack
+    static EXT_RAM_BSS_ATTR weather_t w;   // ~2 KB of hourly data: PSRAM, off the stack
     while (1) {
         int wait_s = REFRESH_MIN * 60;
         if (net_is_connected() && weather_fetch(&w)) {
             ui_weather(&w);
+            static EXT_RAM_BSS_ATTR alerts_t al;
+            location_t loc;
+            config_get_location(&loc);
+            if (alerts_fetch(loc.lat, loc.lon, &al)) {                 // failed: keep showing the last ones
+                ui_alerts(&al);
+                static char map_id[80];                                 // map of the top alert's region
+                if (!al.n) { if (map_id[0]) { ui_alert_map(NULL, 0, 0); map_id[0] = 0; } }
+                else if (strcmp(map_id, al.a[0].id)) {
+                    uint16_t *m = alerts_map(&al.a[0], loc.lat, loc.lon, ALERT_MAP_W, ALERT_MAP_H);
+                    if (m) { ui_alert_map(m, ALERT_MAP_W, ALERT_MAP_H); strlcpy(map_id, al.a[0].id, sizeof(map_id)); }
+                }
+            }
             static bool first = true;
             if (first) { first = false; diag_mark("first weather"); }
         } else {

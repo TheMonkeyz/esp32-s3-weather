@@ -1,6 +1,7 @@
 #pragma once
 #include "weather.h"
 #include "lvgl.h"
+#include "alerts.h"
 
 void ui_init(void);
 void ui_message(const char *title, const char *body);
@@ -11,3 +12,5 @@ int ui_bench_screens(lv_obj_t **scr, const char **name, int max);   // diag benc
 lv_obj_t *ui_main_screen(void);
 void ui_wifi_setup(const char *note);   // Wi-Fi setup screen (setup network QR / Android Easy Connect)
 void ui_wifi_setup_end(void);            // online again: stop Easy Connect and the auto-close timer
+void ui_alerts(const alerts_t *al);     // weather alerts for the location (empty = none)
+void ui_alert_map(uint16_t *buf, int w, int h);   // region map for the alert screen (takes ownership; NULL hides)
