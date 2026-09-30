@@ -36,9 +36,11 @@ cmake -S . -B build -G Ninja -DIDF_TARGET=esp32s3 -DPYTHON=$(which python) -DPYT
 ninja -C build
 ```
 
-With the component manager off, LVGL is vendored at `components/lvgl` (a v9.2.2 clone). Keep its `examples/` and
-`demos/` directories, because the CMake file adds them as include paths. That directory isn't in this repo; the
-Windows build uses `main/idf_component.yml` instead.
+With the component manager off, LVGL is vendored at `components/lvgl`, and `esp_codec_dev` (v1.5.2, sparse-cloned
+from `espressif/esp-adf`) at `components/esp_codec_dev`. Its Kconfig warns that `ESP_IDF_VERSION` isn't set; that's
+harmless and keeps `CODEC_I2C_BACKWARD_COMPATIBLE` off, which we need because we use the new I2C driver. LVGL is (a v9.2.2 clone). Keep its `examples/` and
+`demos/` directories, because the CMake file adds them as include paths. Neither vendored directory is in this repo; the
+Windows build gets both from `main/idf_component.yml`. `components/dns_server` *is* in the repo.
 
 ## Verification tricks that paid off
 

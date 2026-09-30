@@ -12,6 +12,7 @@
 #include "cJSON.h"
 #include "config.h"
 #include "net.h"
+#include "presence.h"
 #include "lwip/sockets.h"
 
 static const char *TAG = "web";
@@ -140,6 +141,68 @@ static esp_err_t location_post(httpd_req_t *req)
     return ESP_OK;
 }
 
+static esp_err_t presence_get(httpd_req_t *req)
+{
+    presence_cfg_t c;
+    presence_status_t st;
+    presence_get_config(&c);
+    presence_get_status(&st);
+    static const char *names[] = {"active", "dim", "off"};
+    cJSON *j = cJSON_CreateObject();
+    cJSON_AddBoolToObject(j, "enabled", c.enabled);
+    cJSON_AddNumberToObject(j, "margin_db", c.margin_db);
+    cJSON_AddNumberToObject(j, "wake_s", c.wake_s);
+    cJSON_AddNumberToObject(j, "dim_s", c.dim_s);
+    cJSON_AddNumberToObject(j, "off_s", c.off_s);
+    cJSON_AddNumberToObject(j, "bright_pct", c.bright_pct);
+    cJSON_AddNumberToObject(j, "dim_pct", c.dim_pct);
+    cJSON_AddNumberToObject(j, "baseline_db", c.baseline_db);
+    cJSON_AddNumberToObject(j, "level_db", st.level_db);
+    cJSON_AddNumberToObject(j, "threshold_db", st.threshold_db);
+    cJSON_AddStringToObject(j, "state", names[st.state]);
+    cJSON_AddNumberToObject(j, "wake_progress", st.wake_progress);
+    cJSON_AddNumberToObject(j, "quiet_s", st.quiet_s);
+    cJSON_AddBoolToObject(j, "calibrating", st.calibrating);
+    cJSON_AddNumberToObject(j, "calib_left_s", st.calib_left_s);
+    cJSON_AddBoolToObject(j, "mic_ok", st.mic_ok);
+    cJSON_AddNumberToObject(j, "brightness", st.brightness);
+    return send_json(req, j);
+}
+
+static double num_or(cJSON *j, const char *k, double def)
+{
+    cJSON *v = cJSON_GetObjectItem(j, k);
+    return cJSON_IsNumber(v) ? v->valuedouble : def;
+}
+
+static esp_err_t presence_post(httpd_req_t *req)
+{
+    cJSON *j = read_json(req);
+    if (!j) return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "bad json");
+    presence_cfg_t c;
+    presence_get_config(&c);
+    cJSON *en = cJSON_GetObjectItem(j, "enabled");
+    if (cJSON_IsBool(en)) c.enabled = cJSON_IsTrue(en);
+    c.margin_db = num_or(j, "margin_db", c.margin_db);
+    c.wake_s = num_or(j, "wake_s", c.wake_s);
+    c.dim_s = num_or(j, "dim_s", c.dim_s);
+    c.off_s = num_or(j, "off_s", c.off_s);
+    c.bright_pct = (int)num_or(j, "bright_pct", c.bright_pct);
+    c.dim_pct = (int)num_or(j, "dim_pct", c.dim_pct);
+    cJSON_Delete(j);
+    presence_set_config(&c);
+    return presence_get(req);
+}
+
+static esp_err_t calibrate_post(httpd_req_t *req)
+{
+    cJSON *j = read_json(req);
+    int secs = j ? (int)num_or(j, "seconds", 5) : 5;
+    cJSON_Delete(j);
+    if (!presence_calibrate(secs)) return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "busy or no mic");
+    return presence_get(req);
+}
+
 static void restart_task(void *a) { vTaskDelay(pdMS_TO_TICKS(1500)); esp_restart(); }
 
 static esp_err_t wifi_post(httpd_req_t *req)
@@ -217,7 +280,7 @@ void web_start(web_location_cb_t on_location_changed)
     conf.servercert_len = cert_end - cert_start;
     conf.prvtkey_pem = key_start;
     conf.prvtkey_len = key_end - key_start;
-    conf.httpd.max_uri_handlers = 8;
+    conf.httpd.max_uri_handlers = 12;
     conf.httpd.stack_size = 10240;
     conf.httpd.max_open_sockets = 5;
     conf.httpd.lru_purge_enable = true;
@@ -229,12 +292,15 @@ void web_start(web_location_cb_t on_location_changed)
         { .uri = "/api/scan",     .method = HTTP_GET,  .handler = scan_get },
         { .uri = "/api/location", .method = HTTP_POST, .handler = location_post },
         { .uri = "/api/wifi",     .method = HTTP_POST, .handler = wifi_post },
+        { .uri = "/api/presence", .method = HTTP_GET,  .handler = presence_get },
+        { .uri = "/api/presence", .method = HTTP_POST, .handler = presence_post },
+        { .uri = "/api/calibrate", .method = HTTP_POST, .handler = calibrate_post },
     };
     for (int i = 0; i < sizeof(uris) / sizeof(uris[0]); i++) httpd_register_uri_handler(s, &uris[i]);
 
     httpd_config_t hc = HTTPD_DEFAULT_CONFIG();
     hc.uri_match_fn = httpd_uri_match_wildcard;
-    hc.max_uri_handlers = 8;
+    hc.max_uri_handlers = 12;
     hc.max_open_sockets = 6;
     hc.lru_purge_enable = true;
     hc.stack_size = 8192;
@@ -246,6 +312,9 @@ void web_start(web_location_cb_t on_location_changed)
             { .uri = "/api/scan",     .method = HTTP_GET,  .handler = scan_get },
             { .uri = "/api/location", .method = HTTP_POST, .handler = location_post },
             { .uri = "/api/wifi",     .method = HTTP_POST, .handler = wifi_post },
+            { .uri = "/api/presence", .method = HTTP_GET,  .handler = presence_get },
+            { .uri = "/api/presence", .method = HTTP_POST, .handler = presence_post },
+            { .uri = "/api/calibrate", .method = HTTP_POST, .handler = calibrate_post },
             { .uri = "/*",            .method = HTTP_GET,  .handler = http_other_get },
         };
         for (int i = 0; i < sizeof(huris) / sizeof(huris[0]); i++) httpd_register_uri_handler(h, &huris[i]);

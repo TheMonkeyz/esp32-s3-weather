@@ -18,6 +18,13 @@ button.sec{background:#2a2f37}.row{display:flex;gap:10px}.row>div{flex:1}
 
 .pw{position:relative}.pw input{padding-right:76px}
 button.eye{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:auto;margin:0;padding:6px 12px;font-size:14px;background:#2a2f37;border-radius:8px}
+.meter{position:relative;height:14px;background:#0c0e12;border:1px solid var(--line);border-radius:7px;overflow:hidden;margin:8px 0 4px}
+.meter .fill{position:absolute;left:0;top:0;bottom:0;background:var(--acc);transition:width .3s}
+.meter .mark{position:absolute;top:-2px;bottom:-2px;width:2px;background:#ffb347}
+.small{height:6px;margin-top:4px}.small .fill{background:#6fd08c}
+.st{display:inline-block;padding:2px 10px;border-radius:10px;font-size:13px;font-weight:600;background:#2a2f37}
+.st.active{background:#1f4d2e;color:#8ff0a4}.st.dim{background:#4a3d14;color:#ffd479}.st.off{background:#3a1f1f;color:#ff9a9a}
+.chk{display:flex;align-items:center;gap:10px;margin-top:10px}.chk input{width:22px;height:22px}
 #msg{min-height:20px;margin-top:10px;font-size:14px}.ok{color:#6fd08c}.err{color:#ff7a7a}
 </style></head><body>
 <h1>Weather display</h1>
@@ -40,6 +47,31 @@ button.eye{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:
   <input id="name" maxlength="40">
   <button id="saveLoc">Save location</button>
   <div id="msg"></div>
+</div>
+
+<div class="card" id="presCard">
+  <h2>Screen &amp; presence</h2>
+  <div><span class="st" id="pState">…</span> <span class="muted" id="pBright"></span></div>
+  <div class="meter" id="pMeter"><div class="fill" id="pFill"></div><div class="mark" id="pMark"></div></div>
+  <div class="muted" id="pLevel">Sound level …</div>
+  <div class="meter small"><div class="fill" id="pWake"></div></div>
+  <div class="muted" id="pWakeTxt"></div>
+  <button class="sec" id="pCal">🎙️ Calibrate background (stay quiet 5 s)</button>
+  <label class="chk"><input type="checkbox" id="pEn"> Dim and turn off the screen when the room is quiet</label>
+  <div class="row">
+    <div><label for="pMargin">Sensitivity (dB)</label><input id="pMargin" inputmode="decimal"></div>
+    <div><label for="pWakeS">Wake after (s)</label><input id="pWakeS" inputmode="decimal"></div>
+  </div>
+  <div class="row">
+    <div><label for="pDim">Dim after (s quiet)</label><input id="pDim" inputmode="decimal"></div>
+    <div><label for="pOff">Then off after (s)</label><input id="pOff" inputmode="decimal"></div>
+  </div>
+  <div class="row">
+    <div><label for="pBr">Brightness (%)</label><input id="pBr" inputmode="numeric"></div>
+    <div><label for="pDimPct">Dimmed (%)</label><input id="pDimPct" inputmode="numeric"></div>
+  </div>
+  <button id="pSave">Save screen settings</button>
+  <div id="pmsg"></div>
 </div>
 
 <div class="card" id="wifiCard">
@@ -161,6 +193,50 @@ $('saveWifi').onclick = async () => {
     say($('wmsg'), 'Saved. The display is restarting.', true);
   }catch(e){ say($('wmsg'), 'Save failed.', false); }
 };
+
+// ---- Screen & presence ----
+let presLoaded = false;
+const pct = db => Math.max(0, Math.min(100, (db + 90) / 90 * 100));      // -90..0 dBFS -> 0..100 %
+async function pollPresence(){
+  try{
+    const p = await (await fetch('/api/presence')).json();
+    const names = {active:'Active', dim:'Dimmed', off:'Screen off'};
+    $('pState').textContent = p.calibrating ? 'Calibrating… ' + Math.ceil(p.calib_left_s) + ' s' : (p.mic_ok ? names[p.state] : 'No microphone');
+    $('pState').className = 'st ' + (p.calibrating ? '' : p.state);
+    $('pBright').textContent = 'brightness ' + p.brightness + '%' + (p.state !== 'active' || !p.enabled ? '' : '');
+    $('pFill').style.width = pct(p.level_db) + '%';
+    $('pFill').style.background = p.level_db > p.threshold_db ? '#ffb347' : 'var(--acc)';
+    $('pMark').style.left = pct(p.threshold_db) + '%';
+    $('pLevel').textContent = `Sound ${p.level_db.toFixed(0)} dB · trigger ${p.threshold_db.toFixed(0)} dB (background ${p.baseline_db.toFixed(0)} + ${p.margin_db.toFixed(0)})`;
+    $('pWake').style.width = Math.round(p.wake_progress * 100) + '%';
+    $('pWakeTxt').textContent = p.state === 'active' ? `Quiet for ${p.quiet_s.toFixed(0)} s (dims at ${p.dim_s} s)`
+                                                     : `Wake-up progress ${Math.round(p.wake_progress * 100)}% (needs ${p.wake_s} s of sound)`;
+    $('pCal').disabled = p.calibrating;
+    if (!presLoaded) {
+      presLoaded = true;
+      $('pEn').checked = p.enabled; $('pMargin').value = p.margin_db; $('pWakeS').value = p.wake_s;
+      $('pDim').value = p.dim_s; $('pOff').value = p.off_s; $('pBr').value = p.bright_pct; $('pDimPct').value = p.dim_pct;
+    }
+  }catch(e){}
+}
+$('pCal').onclick = async () => {
+  try{
+    const r = await fetch('/api/calibrate', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({seconds:5})});
+    say($('pmsg'), r.ok ? 'Calibrating: stay quiet for 5 seconds…' : 'Calibration unavailable.', r.ok);
+  }catch(e){ say($('pmsg'), 'Calibration failed.', false); }
+};
+$('pSave').onclick = async () => {
+  const body = {enabled: $('pEn').checked, margin_db: +$('pMargin').value, wake_s: +$('pWakeS').value,
+                dim_s: +$('pDim').value, off_s: +$('pOff').value, bright_pct: +$('pBr').value, dim_pct: +$('pDimPct').value};
+  try{
+    const r = await fetch('/api/presence', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    if (!r.ok) throw 0;
+    presLoaded = false; say($('pmsg'), 'Saved.', true);
+  }catch(e){ say($('pmsg'), 'Save failed.', false); }
+};
+setInterval(() => { if (!document.hidden) pollPresence(); }, 700);
+pollPresence();
+
 // Setup network / plain-HTTP page: Wi-Fi first, and point to the secure page for GPS
 if (!window.isSecureContext) {
   const url = 'https://' + location.host + '/';
