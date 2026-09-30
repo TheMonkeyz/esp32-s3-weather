@@ -206,6 +206,7 @@ sdkconfig.defaults
 components/dns_server/  captive-portal DNS (from the ESP-IDF captive_portal example, CC0)
 docs/ARCHITECTURE.md  how the pieces fit together, memory budget, known issues
 docs/DIAGNOSTICS.md   how to measure memory/CPU/render speed, reference numbers, findings
+docs/IDEAS.md         feature ideas / backlog
 tools/diag_summary.py summarises the diag: lines of serial_log.txt
 tools/make_flasher_site.py  release files (dist) and the web-flasher site with Stable/Beta channels (site)
 web/flash/            web flasher page (ESP Web Tools) + screenshots
