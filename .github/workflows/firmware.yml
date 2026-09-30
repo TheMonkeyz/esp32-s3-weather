@@ -95,8 +95,8 @@ jobs:
             Or with esptool, first install (erases saved settings):
             `esptool.py --chip esp32s3 write_flash 0x0 weather_amoled-${{ needs.build.outputs.version }}-full.bin`
 
-            Update keeping settings:
-            `esptool.py --chip esp32s3 write_flash 0x0 bootloader.bin 0x8000 partition-table.bin 0x10000 weather_amoled-${{ needs.build.outputs.version }}.bin`
+            Update keeping settings (or use Settings → Firmware on the display, v1.3.0 and later):
+            `esptool.py --chip esp32s3 write_flash 0x0 bootloader.bin 0x8000 partition-table.bin 0x10000 weather_amoled-${{ needs.build.outputs.version }}.bin 0x610000 ota_data_initial.bin`
 
   pages:
     needs: release
