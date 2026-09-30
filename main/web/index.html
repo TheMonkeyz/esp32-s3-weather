@@ -24,6 +24,8 @@ button.eye{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:
 .small{height:6px;margin-top:4px}.small .fill{background:#6fd08c}
 .st{display:inline-block;padding:2px 10px;border-radius:10px;font-size:13px;font-weight:600;background:#2a2f37}
 .st.active{background:#1f4d2e;color:#8ff0a4}.st.dim{background:#4a3d14;color:#ffd479}.st.off{background:#3a1f1f;color:#ff9a9a}
+select{width:100%;padding:11px 12px;border-radius:10px;border:1px solid var(--line);background:#0c0e12;color:var(--text);font-size:16px}
+.dur{display:flex;gap:6px}.dur input{flex:1;min-width:0}.dur select{width:78px;padding:11px 6px}
 .chk{display:flex;align-items:center;gap:10px;margin-top:10px}.chk input{width:22px;height:22px}
 #msg{min-height:20px;margin-top:10px;font-size:14px}.ok{color:#6fd08c}.err{color:#ff7a7a}
 </style></head><body>
@@ -58,13 +60,21 @@ button.eye{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:
   <div class="muted" id="pWakeTxt"></div>
   <button class="sec" id="pCal">🎙️ Calibrate background (stay quiet 5 s)</button>
   <label class="chk"><input type="checkbox" id="pEn"> Dim and turn off the screen when the room is quiet</label>
+  <label for="pPreset">Timing preset</label>
+  <select id="pPreset">
+    <option value="testing">Testing: dim 10 s, off 30 s</option>
+    <option value="short">Short: dim 2 min, off 15 min</option>
+    <option value="normal">Normal: dim 10 min, off 60 min</option>
+    <option value="long">Long: dim 30 min, off 3 h</option>
+    <option value="custom">Custom</option>
+  </select>
+  <label for="pDim">Dim after (quiet)</label>
+  <div class="dur"><input id="pDim" inputmode="decimal"><select id="pDimU"><option>s</option><option>min</option><option>h</option></select></div>
+  <label for="pOffT">Turn off after (total quiet)</label>
+  <div class="dur"><input id="pOffT" inputmode="decimal"><select id="pOffTU"><option>s</option><option>min</option><option>h</option></select></div>
   <div class="row">
+    <div><label for="pWakeS">Wake after (s of sound)</label><input id="pWakeS" inputmode="decimal"></div>
     <div><label for="pMargin">Sensitivity (dB)</label><input id="pMargin" inputmode="decimal"></div>
-    <div><label for="pWakeS">Wake after (s)</label><input id="pWakeS" inputmode="decimal"></div>
-  </div>
-  <div class="row">
-    <div><label for="pDim">Dim after (s quiet)</label><input id="pDim" inputmode="decimal"></div>
-    <div><label for="pOff">Then off after (s)</label><input id="pOff" inputmode="decimal"></div>
   </div>
   <div class="row">
     <div><label for="pBr">Brightness (%)</label><input id="pBr" inputmode="numeric"></div>
@@ -196,6 +206,22 @@ $('saveWifi').onclick = async () => {
 
 // ---- Screen & presence ----
 let presLoaded = false;
+const PRESETS = {                                     // seconds; off = total quiet time before the screen goes dark
+  testing: {dim: 10,   off: 30,    wake: 2},
+  short:   {dim: 120,  off: 900,   wake: 2},
+  normal:  {dim: 600,  off: 3600,  wake: 3},
+  long:    {dim: 1800, off: 10800, wake: 3},
+};
+const UNIT = {s: 1, min: 60, h: 3600};
+function setDur(id, secs){                            // show in the largest unit that gives a round-ish number
+  const u = secs >= 3600 && secs % 1800 === 0 ? 'h' : secs >= 60 && secs % 30 === 0 ? 'min' : 's';
+  $(id).value = +(secs / UNIT[u]).toFixed(2); $(id + 'U').value = u;
+}
+const getDur = id => (+$(id).value) * UNIT[$(id + 'U').value];
+function matchPreset(dim, off, wake){
+  for (const [k, p] of Object.entries(PRESETS)) if (p.dim === dim && p.off === off && p.wake === wake) return k;
+  return 'custom';
+}
 const pct = db => Math.max(0, Math.min(100, (db + 90) / 90 * 100));      // -90..0 dBFS -> 0..100 %
 async function pollPresence(){
   try{
@@ -209,13 +235,16 @@ async function pollPresence(){
     $('pMark').style.left = pct(p.threshold_db) + '%';
     $('pLevel').textContent = `Sound ${p.level_db.toFixed(0)} dB · trigger ${p.threshold_db.toFixed(0)} dB (background ${p.baseline_db.toFixed(0)} + ${p.margin_db.toFixed(0)})`;
     $('pWake').style.width = Math.round(p.wake_progress * 100) + '%';
-    $('pWakeTxt').textContent = p.state === 'active' ? `Quiet for ${p.quiet_s.toFixed(0)} s (dims at ${p.dim_s} s)`
+    const fmt = x => x >= 3600 ? (x / 3600).toFixed(1) + ' h' : x >= 60 ? (x / 60).toFixed(1) + ' min' : x.toFixed(0) + ' s';
+    $('pWakeTxt').textContent = p.state === 'active' ? `Quiet for ${fmt(p.quiet_s)} (dims at ${fmt(p.dim_s)})`
                                                      : `Wake-up progress ${Math.round(p.wake_progress * 100)}% (needs ${p.wake_s} s of sound)`;
     $('pCal').disabled = p.calibrating;
     if (!presLoaded) {
       presLoaded = true;
       $('pEn').checked = p.enabled; $('pMargin').value = p.margin_db; $('pWakeS').value = p.wake_s;
-      $('pDim').value = p.dim_s; $('pOff').value = p.off_s; $('pBr').value = p.bright_pct; $('pDimPct').value = p.dim_pct;
+      setDur('pDim', p.dim_s); setDur('pOffT', p.dim_s + p.off_s);
+      $('pBr').value = p.bright_pct; $('pDimPct').value = p.dim_pct;
+      $('pPreset').value = matchPreset(p.dim_s, p.dim_s + p.off_s, p.wake_s);
     }
   }catch(e){}
 }
@@ -226,14 +255,23 @@ $('pCal').onclick = async () => {
   }catch(e){ say($('pmsg'), 'Calibration failed.', false); }
 };
 $('pSave').onclick = async () => {
+  const dim = getDur('pDim'), offTotal = getDur('pOffT');
+  if (!(dim > 0) || !(offTotal > dim)) { say($('pmsg'), '"Turn off after" must be longer than "Dim after".', false); return; }
   const body = {enabled: $('pEn').checked, margin_db: +$('pMargin').value, wake_s: +$('pWakeS').value,
-                dim_s: +$('pDim').value, off_s: +$('pOff').value, bright_pct: +$('pBr').value, dim_pct: +$('pDimPct').value};
+                dim_s: dim, off_s: offTotal - dim, bright_pct: +$('pBr').value, dim_pct: +$('pDimPct').value};
   try{
     const r = await fetch('/api/presence', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
     if (!r.ok) throw 0;
     presLoaded = false; say($('pmsg'), 'Saved.', true);
   }catch(e){ say($('pmsg'), 'Save failed.', false); }
 };
+$('pPreset').onchange = () => {
+  const p = PRESETS[$('pPreset').value];
+  if (!p) return;
+  setDur('pDim', p.dim); setDur('pOffT', p.off); $('pWakeS').value = p.wake;
+  say($('pmsg'), 'Preset filled in. Tap Save to apply.', true);
+};
+['pDim', 'pDimU', 'pOffT', 'pOffTU', 'pWakeS'].forEach(id => $(id).addEventListener('input', () => { $('pPreset').value = 'custom'; }));
 setInterval(() => { if (!document.hidden) pollPresence(); }, 700);
 pollPresence();
 

@@ -30,7 +30,7 @@ static const char *TAG = "presence";
 #define CALIB_MAX     600                        // up to 60 s of 100 ms samples
 
 static presence_cfg_t cfg = {
-    .enabled = true, .margin_db = 10, .wake_s = 2, .dim_s = 10, .off_s = 20,
+    .enabled = true, .margin_db = 10, .wake_s = 3, .dim_s = 600, .off_s = 3000,   // "Normal" preset: dim 10 min, off at 60 min
     .bright_pct = 100, .dim_pct = 15, .baseline_db = -60,
 };
 static portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
