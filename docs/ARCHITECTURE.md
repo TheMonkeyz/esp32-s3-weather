@@ -21,11 +21,18 @@ The panel's init sequence and pin map come from Waveshare's BSP
 |---|---|---|
 | `main` (app_main) | 0 / 1 | Boot flow, then weather loop: fetch every 10 min; woken early by a location change |
 | `lvgl` | 1 / 4 | `lv_timer_handler()` loop under a recursive mutex (`display_lock()`) |
-| `radar` | 0 / 3, 16 KB stack | Basemap, latest radar frame, history frames; sleeps unless the radar screen is visible |
+| `radar` | 0 / 3, 10 KB stack | Basemap, latest radar frame, history frames; sleeps unless the radar screen is visible |
 | `presence` | 0 / 2 | Reads 100 ms of audio, computes the level, runs the dim/off state machine, fades brightness |
-| httpd (HTTPS :443, HTTP :80) | – | Settings page + JSON API |
+| `diag` | 0 / 1 | Every 60 s logs heap, frame timing, CPU and stack per task; starts `bench` once at 45 s |
+| `bench` | 1 / 4, one-shot | Times full-screen renders of each screen without showing them (UI blocked ~1.5 s) |
+| httpd (HTTPS :443, HTTP :80) | – | Settings page + JSON API. Stacks 7 KB (TLS handshake peaks ~3.3 KB) / 4 KB |
+
+Main task stack is 6 KB. Stack sizes come from the measured high-water marks in `diag: tasks` lines; re-check
+them there after adding work to a task.
 
 **Rule:** any LVGL call from outside the `lvgl` task must be wrapped in `display_lock(-1)` / `display_unlock()`.
+Keep lock holds short: `diag: display` reports the longest hold and which task did it (the radar holds it up to
+~65 ms while swapping frames).
 LVGL timer and event callbacks already run inside the lock.
 
 ## Display pipeline

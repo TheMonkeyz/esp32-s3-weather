@@ -119,13 +119,15 @@ main/
   main.c        boot flow, weather refresh loop, reacts to location changes
   display.c     CO5300 QSPI panel driver + LVGL display port (flush, rounder, LVGL task + mutex)
   touch.c       CST9217 I2C touch -> LVGL pointer
-  ui.c          weather screen, message/QR screens, settings overlay, swipe handling
+  ui.c          weather screen, hourly view, message/QR screens, settings overlay, swipe handling
   radar.c       radar screen: basemap tiles + flash cache, GeoMet frames, animation
   weather.c     Open-Meteo fetch/parse, WMO code -> text/icon
   net.c         Wi-Fi station, setup access point + captive portal (DNS, DHCP option 114), credentials in NVS
   web.c         settings server: HTTPS on the home network, plain-HTTP captive portal on the setup AP, JSON API
   config.c      saved location (NVS) and local-time helper (UTC offset from Open-Meteo)
   presence.c    microphones (ES7210 over I2S) -> presence state machine -> screen brightness
+  diag.c        "diag:" log lines: heap, frame timing, lock contention, CPU/stack per task, render bench
+  lvgl_mem.c    LVGL's allocator, in PSRAM (keeps internal RAM for Wi-Fi, DMA and stacks)
   web/index.html  settings page (embedded)
   certs/        self-signed TLS certificate + key (embedded; see Security)
   montserrat.ttf  font, rendered at runtime with LVGL TinyTTF (supports accents like "é")
@@ -133,6 +135,9 @@ partitions.csv  nvs, phy, factory app (3 MB), mapcache (4 MB: one 512 KB basemap
 sdkconfig.defaults
 components/dns_server/  captive-portal DNS (from the ESP-IDF captive_portal example, CC0)
 docs/ARCHITECTURE.md  how the pieces fit together, memory budget, known issues
+docs/DIAGNOSTICS.md   how to measure memory/CPU/render speed, reference numbers, findings
+tools/diag_summary.py summarises the diag: lines of serial_log.txt
+flash_helper.ps1      flash.request = flash + log, reboot.request = restart + log (no flashing)
 CLAUDE.md       notes for AI-assisted development sessions
 ```
 
