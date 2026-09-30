@@ -18,7 +18,8 @@
 #include "ui.h"
 
 static const char *TAG = "diag";
-void diag_bench(void);
+bool diag_bench(void);
+static volatile bool bench_done;
 #define MAX_TASKS 32
 #define BENCH_AT_S 45     // render benchmark this long after boot (0 = never)
 #define KB(x) ((unsigned)((x) / 1024))
@@ -105,7 +106,7 @@ static void report_tasks(void)
 
 static void bench_task(void *arg)
 {
-    diag_bench();
+    bench_done = diag_bench();
     vTaskDelete(NULL);
 }
 
@@ -122,9 +123,9 @@ static void diag_task(void *arg)
         size_t b = heap_caps_get_largest_free_block(MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
         if (a < int_lg_min) int_lg_min = a;
         if (b < dma_lg_min) dma_lg_min = b;
-        if (tick == BENCH_AT_S) {                                  // once, on the LVGL core, after boot settles
+        // once, on the LVGL core, after boot settles; only while the weather screen is idle (see diag_bench)
+        if (BENCH_AT_S && !bench_done && tick >= BENCH_AT_S && (tick - BENCH_AT_S) % 20 == 0 && tick < 3600)
             xTaskCreatePinnedToCore(bench_task, "bench", 6144, NULL, 4, NULL, 1);
-        }
         if (tick % period) continue;
 
         ESP_LOGI(TAG, "heap: internal %u KB free (min ever %u, largest block now %u / worst %u) | "
@@ -161,13 +162,21 @@ void diag_mark(const char *stage)
 // Full-screen render timing of each screen. Invisible: other screens are rendered without being sent
 // to the panel; the panel transfer is timed by repainting the (unchanged) weather screen.
 // Blocks the UI for about 1.5 s.
-void diag_bench(void)
+bool diag_bench(void)
 {
     lv_obj_t *scr[6];
     const char *name[6];
     const int N = 5;
     display_lock(-1);
     lv_obj_t *was = lv_screen_active();
+    lv_indev_t *in = lv_indev_get_next(NULL);
+    // Only while the weather screen is idle: the last step repaints it on the panel, which would flash
+    // over any other screen (seen once over the hourly view). Otherwise try again 20 s later.
+    if (was != ui_main_screen() || (in && lv_indev_get_state(in) == LV_INDEV_STATE_PRESSED) || lv_anim_count_running()) {
+        display_unlock();
+        ESP_LOGI(TAG, "bench postponed (screen in use)");
+        return false;
+    }
     display_bench_no_panel(true);
     int n = ui_bench_screens(scr, name, 6);
     char line[160];
@@ -186,10 +195,10 @@ void diag_bench(void)
     int64_t t0 = esp_timer_get_time();
     for (int k = 0; k < N; k++) { lv_obj_invalidate(lv_screen_active()); lv_refr_now(NULL); }
     float with_panel = (esp_timer_get_time() - t0) / 1000.0f / N;
-    if (was != ui_main_screen()) lv_screen_load(was);
     display_unlock();
     ESP_LOGI(TAG, "bench render-only full screen:%s", line);
     ESP_LOGI(TAG, "bench weather incl. panel transfer: %.1f ms/frame", with_panel);
+    return true;
 }
 
 void diag_start(int period_s)

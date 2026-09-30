@@ -26,7 +26,7 @@ Change `diag_start(60)` in `main.c` for another report period, or `BENCH_AT_S` i
 |---|---|
 | `diag: reset reason …, flash …, PSRAM …` | once at boot; also app partition size and NVS entries used/free |
 | `diag: mark <stage> internal N KB free (largest N), DMA N KB, PSRAM N KB` | heap after each boot stage (`diag_mark()` calls in `main.c`) |
-| `diag: bench render-only full screen: blank … weather … hourly … radar …` | once, 45 s after boot: time to render each whole screen, not sent to the panel (invisible to the user; blocks the UI ~1.5 s) |
+| `diag: bench render-only full screen: blank … weather … hourly … radar …` | once, from 45 s after boot, when the weather screen is idle (otherwise retried every 20 s; its last step repaints the weather screen, which flashed over the hourly view once): time to render each whole screen, not sent to the panel (invisible to the user; blocks the UI ~1.5 s) |
 | `diag: bench weather incl. panel transfer` | same for the weather screen repainted *with* the SPI transfer; minus the render-only time = cost of the panel |
 | `diag: heap: internal … (min ever …, largest block now … / worst …) \| DMA … \| PSRAM …` | every period. *min ever* is since boot. *worst* largest block is sampled every second |
 | `diag: display: N frames, render avg/max, Mpx sent \| animation fps (frames, worst gap) \| LVGL lock wait max, longest hold by <task>` | per period. *Animation* counts frames rendered less than 250 ms apart. *Lock wait* is how long the LVGL task waited for `display_lock()`; *hold* is the longest time another task kept it |

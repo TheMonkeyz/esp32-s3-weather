@@ -10,7 +10,8 @@ typedef struct {
     char date[12];   // YYYY-MM-DD
 } wx_day_t;
 
-#define WX_HOURS 72          // hourly forecast for today + the next 2 days (starts at 00:00 today)
+#define WX_DAYS  7           // forecast days (the weather screen shows the first 3, the hourly view all)
+#define WX_HOURS (WX_DAYS * 24)   // hourly forecast, starts at 00:00 today
 
 typedef struct {
     float temp, wind;
@@ -20,7 +21,7 @@ typedef struct {
 typedef struct {
     double temp, feels, wind;
     int humidity, code, is_day;
-    wx_day_t day[4];
+    wx_day_t day[WX_DAYS];
     int ndays;
     wx_hour_t hour[WX_HOURS];
     int nhours;
