@@ -12,7 +12,9 @@ static const char *TAG = "weather";
 
 #define URL_FMT "https://api.open-meteo.com/v1/forecast?latitude=%.4f&longitude=%.4f" \
     "&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m,is_day" \
-    "&daily=temperature_2m_max,temperature_2m_min,weather_code&timezone=auto&forecast_days=4"
+    "&daily=temperature_2m_max,temperature_2m_min,weather_code,precipitation_probability_max" \
+    "&hourly=temperature_2m,weather_code,precipitation_probability,wind_speed_10m,is_day" \
+    "&timezone=auto&forecast_days=3"
 
 typedef struct { char *buf; int len; int cap; } rx_t;
 
@@ -33,9 +35,15 @@ static double num(cJSON *o, const char *k)
     return cJSON_IsNumber(v) ? v->valuedouble : 0;
 }
 
+static double num_at(cJSON *a, int i)
+{
+    cJSON *v = cJSON_GetArrayItem(a, i);
+    return cJSON_IsNumber(v) ? v->valuedouble : 0;
+}
+
 bool weather_fetch(weather_t *w)
 {
-    rx_t rx = { .cap = 8192 };
+    rx_t rx = { .cap = 24576 };
     rx.buf = calloc(1, rx.cap);
     if (!rx.buf) return false;
 
@@ -73,17 +81,39 @@ bool weather_fetch(weather_t *w)
             cJSON *codes = cJSON_GetObjectItem(daily, "weather_code");
             cJSON *days = cJSON_GetObjectItem(daily, "time");
             w->ndays = 0;
-            for (int i = 0; i < 4 && i < cJSON_GetArraySize(tmax); i++) {
+            for (int i = 0; i < 3 && i < cJSON_GetArraySize(tmax); i++) {
                 w->day[i].tmax = cJSON_GetArrayItem(tmax, i)->valuedouble;
                 w->day[i].tmin = cJSON_GetArrayItem(tmin, i)->valuedouble;
                 w->day[i].code = cJSON_GetArrayItem(codes, i)->valueint;
                 strlcpy(w->day[i].date, cJSON_GetArrayItem(days, i)->valuestring, sizeof(w->day[i].date));
                 w->ndays++;
             }
+            cJSON *pop = cJSON_GetObjectItem(daily, "precipitation_probability_max");
+            for (int i = 0; i < w->ndays; i++) {
+                cJSON *v = cJSON_GetArrayItem(pop, i);
+                w->day[i].pop = cJSON_IsNumber(v) ? v->valueint : -1;
+            }
+            cJSON *hourly = cJSON_GetObjectItem(root, "hourly");
+            cJSON *ht = cJSON_GetObjectItem(hourly, "temperature_2m");
+            cJSON *hc = cJSON_GetObjectItem(hourly, "weather_code");
+            cJSON *hp = cJSON_GetObjectItem(hourly, "precipitation_probability");
+            cJSON *hw = cJSON_GetObjectItem(hourly, "wind_speed_10m");
+            cJSON *hd = cJSON_GetObjectItem(hourly, "is_day");
+            w->nhours = 0;
+            for (int i = 0; i < WX_HOURS && i < cJSON_GetArraySize(ht); i++) {
+                wx_hour_t *h = &w->hour[i];
+                h->temp = num_at(ht, i);
+                h->code = (unsigned char)num_at(hc, i);
+                h->pop = (unsigned char)num_at(hp, i);
+                h->wind = num_at(hw, i);
+                h->is_day = (unsigned char)num_at(hd, i);
+                w->nhours++;
+            }
             ok = true;
             ESP_LOGI(TAG, "Now %.1f°C (feels %.1f), %s, RH %d%%, wind %.0f km/h, today %.0f/%.0f",
                      w->temp, w->feels, weather_text(w->code), w->humidity, w->wind,
                      w->day[0].tmax, w->day[0].tmin);
+            ESP_LOGI(TAG, "%d hourly points, %d bytes", w->nhours, rx.len);
         } else {
             ESP_LOGW(TAG, "Unexpected response: %.120s", rx.buf);
         }

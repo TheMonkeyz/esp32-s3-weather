@@ -10,14 +10,15 @@ Built with **ESP-IDF v5.4** and **LVGL 9.2**. No API keys needed.
 
 | Screen | What it shows | Interaction |
 |---|---|---|
-| **Weather** | Clock, city, icon and temperature, conditions, feels-like / humidity / wind, 3-day high/low with icons | Swipe **left** for the radar. **Long-press** for the settings QR code; **long-press again** for Wi-Fi setup |
+| **Weather** | Clock, city, icon and temperature, conditions, feels-like / humidity / wind, 3-day high/low with icons | **Tap a day** of the forecast for its hourly view. Swipe **left** for the radar. **Long-press** for the settings QR code; **long-press again** for Wi-Fi setup |
 | **Radar** | Area around the location: dimmed OpenStreetMap map, Environment Canada radar, range ring, clock, radar time and radius | **Tap** to play the last 3 h (15 frames, 3 fps). Swipe **down** to zoom in, **up** to zoom out (≈25 km up to ≈1,550 km radius in 7 doubling steps, animated). Swipe **right** to go back |
+| **Hourly view** | Weekday, conditions and high/low; one row per hour: time, icon, temperature, chance of rain, wind. Today starts at the current hour ("Now") | Drag **up/down** to scroll hours. Drag **left/right** to change day (the page follows the finger and snaps). **Tap** to close |
 | **Settings page** (phone) | Location: *Use my phone's location* (GPS), city search, or manual lat/lon. Screen & presence (live sound meter, calibration, delays, brightness). Wi-Fi network | Opened from the QR code; served over HTTPS |
 | **Presence dimming** | The microphones act as a presence sensor: quiet room → dim → screen off; sustained sound (not a single bang) or a touch → back on | Configured on the settings page |
 
 Data sources:
 
-- Weather: [Open-Meteo](https://open-meteo.com) (current conditions plus 4-day forecast, `timezone=auto`).
+- Weather: [Open-Meteo](https://open-meteo.com) (current conditions, 3-day daily and 72-hour hourly forecast, `timezone=auto`).
 - Radar: [ECCC MSC GeoMet](https://eccc-msc.github.io/open-data/msc-data/obs_radar/readme_radar_geomet_en/) WMS, layer `RADAR_1KM_RRAI` (North America, 1 km, every 6 min, last 3 h).
 - Basemap: OpenStreetMap standard tiles (zoom 4–10, one level per radar zoom step). After boot, any level that isn't cached yet downloads in the
   background (about 45 s for all 7) and is saved in flash, so zooming is instant afterwards. If you open the radar before it's done, a

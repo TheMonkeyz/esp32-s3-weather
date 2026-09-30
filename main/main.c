@@ -89,7 +89,7 @@ void app_main(void)
     web_start(on_location_changed);
     radar_preload_start();      // missing zoom-level maps download in the background
     ui_message("Weather", "Fetching forecast...");
-    weather_t w;
+    static weather_t w;         // ~1 KB of hourly data, keep it off the stack
     while (1) {
         int wait_s = REFRESH_MIN * 60;
         if (net_is_connected() && weather_fetch(&w)) {

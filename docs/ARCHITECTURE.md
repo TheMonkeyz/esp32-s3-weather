@@ -44,6 +44,23 @@ LVGL timer and event callbacks already run inside the lock.
   Decorative objects are made non-clickable so presses bubble up to the screen.
 - Gestures: `LV_EVENT_GESTURE` on both screens → `lv_screen_load_anim` (move left/right).
 - Long-press opens a settings overlay with a QR code (`lv_qrcode`) for `https://<ip>`.
+- Unused swipes call `lv_indev_wait_release()`; otherwise their release is also delivered as a `SHORT_CLICKED`.
+
+## Hourly view (`ui.c`, `weather.c`)
+
+- Open-Meteo `hourly=temperature_2m,weather_code,precipitation_probability,wind_speed_10m,is_day` with
+  `forecast_days=3` → `weather_t.hour[72]` (starts at 00:00 local today). Response is about 4 KB.
+- `SHORT_CLICKED` on the weather screen with y ≥ 296 → forecast column by x → `scr_hour` (move-top animation).
+  `ui_weather()` keeps a copy of the forecast (`wx`) for this screen.
+- `scr_hour` holds a pager: a horizontally scrollable object with three full-screen day pages,
+  `LV_SCROLL_SNAP_CENTER` + `LV_OBJ_FLAG_SCROLL_ONE`, so pages follow the finger, snap, and bounce at the ends.
+  Each page has its own vertically scrollable hour list; LVGL picks the scroll direction from the drag.
+  Page dots update on `LV_EVENT_SCROLL`. A tap closes the view.
+- **Rows are drawn, not created:** each list has one tall object with an `LV_EVENT_DRAW_MAIN` callback that draws
+  only the rows inside the clip area (`lv_draw_label` with `text_local`, `lv_draw_rect`). The weather icons have a
+  painter mode (`P_layer`) that draws the same shapes straight into the layer. 72 rows as real objects would have
+  been several hundred small allocations in internal RAM.
+- Today's page is refilled at each new hour and when new data arrives.
 
 ## Radar (`radar.c`)
 
