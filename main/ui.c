@@ -2,6 +2,7 @@
 #include "ui.h"
 #include <stdio.h>
 #include <string.h>
+#include <math.h>
 #include <stdlib.h>
 #include <time.h>
 #include "display.h"
@@ -18,7 +19,8 @@ extern const uint8_t ttf_start[] asm("_binary_montserrat_ttf_start");
 extern const uint8_t ttf_end[]   asm("_binary_montserrat_ttf_end");
 
 static lv_font_t *f_time, *f_city, *f_big, *f_cond, *f_small, *f_tiny, *f_micro;
-static lv_obj_t *scr_radar;
+static lv_obj_t *scr_radar, *scr_extras;
+static void extras_refresh(void);
 static lv_obj_t *scr_msg, *msg_title, *msg_body, *msg_qr;
 static lv_obj_t *overlay, *ov_qr, *ov_url, *ov_title;
 static int ov_state;          // 0 hidden, 1 settings QR
@@ -211,6 +213,7 @@ static void clock_tick(lv_timer_t *t)
         lv_label_set_text(lbl_time, buf);
         ESP_LOGI("ui", "clock %s", buf);
         if (lv_screen_active() == scr_hour && buf[3] == '0' && buf[4] == '0') hour_fill(0);   // new hour
+        if (lv_screen_active() == scr_extras) extras_refresh();
     }
 }
 
@@ -289,16 +292,16 @@ static lv_obj_t *make_qr(lv_obj_t *parent, int size)
     return qr;
 }
 
-static void page_dots(lv_obj_t *scr, int active)
+static void page_dots(lv_obj_t *scr, int active)   // 0 extras, 1 weather, 2 radar
 {
-    for (int i = 0; i < 2; i++) {
+    for (int i = 0; i < 3; i++) {
         lv_obj_t *d = lv_obj_create(scr);
         lv_obj_remove_style_all(d);
         lv_obj_set_size(d, i == active ? 18 : 7, 7);
         lv_obj_set_style_radius(d, 4, 0);
         lv_obj_set_style_bg_color(d, i == active ? C_TEXT : C_DIM, 0);
         lv_obj_set_style_bg_opa(d, i == active ? LV_OPA_COVER : LV_OPA_60, 0);
-        lv_obj_align(d, LV_ALIGN_BOTTOM_MID, i == 0 ? -10 : 10, -12);
+        lv_obj_align(d, LV_ALIGN_BOTTOM_MID, (i - 1) * 16 + (i < active ? -5 : i > active ? 5 : 0), -12);
     }
 }
 
@@ -552,7 +555,14 @@ static void gesture_cb(lv_event_t *e)
     if (ov_state) return;                                // settings / Wi-Fi setup overlay is open
     LV_LOG_USER("gesture dir %d", dir);
     printf("ui: gesture dir=%d on %s\n", dir, cur == scr_radar ? "radar" : "main");
-    if (cur == scr_main && dir == LV_DIR_LEFT) {
+    if (cur == scr_main && dir == LV_DIR_RIGHT) {
+        extras_refresh();
+        lv_screen_load_anim(scr_extras, LV_SCR_LOAD_ANIM_MOVE_RIGHT, 280, 0, false);
+        lv_indev_wait_release(in);
+    } else if (cur == scr_extras && dir == LV_DIR_LEFT) {
+        lv_screen_load_anim(scr_main, LV_SCR_LOAD_ANIM_MOVE_LEFT, 280, 0, false);
+        lv_indev_wait_release(in);
+    } else if (cur == scr_main && dir == LV_DIR_LEFT) {
         radar_set_visible(true);
         lv_screen_load_anim(scr_radar, LV_SCR_LOAD_ANIM_MOVE_LEFT, 280, 0, false);
         lv_indev_wait_release(in);
@@ -837,6 +847,210 @@ void ui_alerts(const alerts_t *al)
     display_unlock();
 }
 
+/* ---------- Extras page (swipe right from the weather screen) ----------
+ * Sun arc (sunrise -> sunset, the sun at the current time), UV index, moon phase, air quality, pollen. */
+
+static lv_obj_t *ex_moon, *ex_date, *ex_arc, *ex_sun, *ex_rise, *ex_set, *ex_day, *ex_val[4], *ex_key[4];
+static air_t ex_air = { .us_aqi = -1, .pollen = { -1, -1, -1, -1 } };
+static bool have_air;
+#define ARC_R   120
+#define ARC_CX  (DISP_W / 2)
+#define ARC_CY  215
+
+static float moon_k;           // cos(phase angle): 1 = new, -1 = full
+static bool moon_waxing;
+static int hhmm(const char *s) { int h, m; return s && sscanf(s, "%d:%d", &h, &m) == 2 ? h * 60 + m : -1; }
+
+static const char *moon_phase(time_t t, int *illum)
+{
+    const double syn = 29.530588853, new_moon = 947182440.0;   // 2000-01-06 18:14 UTC
+    double age = fmod((t - new_moon) / 86400.0, syn);
+    if (age < 0) age += syn;
+    moon_k = cos(2 * M_PI * age / syn);
+    moon_waxing = age < syn / 2;
+    *illum = (int)round((1 - cos(2 * M_PI * age / syn)) / 2 * 100);
+    static const char *names[8] = { "New moon", "Waxing crescent", "First quarter", "Waxing gibbous",
+                                    "Full moon", "Waning gibbous", "Last quarter", "Waning crescent" };
+    return names[(int)floor(age / syn * 8 + 0.5) % 8];
+}
+
+// Moon drawn row by row: dark disc, then the lit part. k = cos(phase angle) puts the terminator at w*k.
+static void moon_draw(lv_event_t *e)
+{
+    lv_obj_t *o = lv_event_get_target(e);
+    lv_layer_t *layer = lv_event_get_layer(e);
+    lv_area_t c;
+    lv_obj_get_coords(o, &c);
+    int r = lv_area_get_width(&c) / 2, cx = c.x1 + r, cy = c.y1 + r;
+    lv_draw_rect_dsc_t d;
+    lv_draw_rect_dsc_init(&d);
+    d.radius = LV_RADIUS_CIRCLE;
+    d.bg_color = lv_color_hex(0x2A3138);
+    lv_draw_rect(layer, &d, &c);
+    d.radius = 0;
+    d.bg_color = lv_color_hex(0xE8E6F2);
+    for (int y = -r; y < r; y++) {
+        float yy = y + 0.5f, w = sqrtf((float)r * r - yy * yy);
+        float x0 = moon_waxing ? w * moon_k : -w, x1 = moon_waxing ? w : -w * moon_k;
+        if (x1 - x0 < 0.5f) continue;
+        lv_area_t a = { cx + (int)roundf(x0), cy + y, cx + (int)roundf(x1) - 1, cy + y };
+        lv_draw_rect(layer, &d, &a);
+    }
+}
+
+static void ex_row(int i, const char *key, const char *val, lv_color_t c)
+{
+    lv_label_set_text(ex_key[i], key);
+    lv_label_set_text(ex_val[i], val);
+    lv_obj_set_style_text_color(ex_val[i], c, 0);
+}
+
+static void extras_refresh(void)       // display lock held (LVGL task or caller)
+{
+    struct tm tm;
+    time_t now = time(NULL);
+    bool synced = config_local_time((long)now, &tm);
+    char buf[64];
+    if (synced) {                                        // "Wednesday, September 30"
+        strftime(buf, sizeof(buf), "%A, %B", &tm);
+        lv_label_set_text_fmt(ex_date, "%s %d", buf, tm.tm_mday);
+    }
+
+    // Sun
+    int rise = have_wx ? hhmm(wx.day[0].sunrise) : -1, set = have_wx ? hhmm(wx.day[0].sunset) : -1;
+    int cur = synced ? tm.tm_hour * 60 + tm.tm_min : -1;
+    if (rise >= 0 && set > rise) {
+        lv_label_set_text_fmt(ex_rise, "%s", wx.day[0].sunrise);
+        lv_label_set_text_fmt(ex_set, "%s", wx.day[0].sunset);
+        int len = set - rise;
+        if (cur >= rise && cur <= set) {
+            float p = (float)(cur - rise) / len;
+            lv_arc_set_value(ex_arc, (int)(p * 1000));
+            float th = (180 + 180 * p) * M_PI / 180;
+            lv_obj_set_pos(ex_sun, ARC_CX + ARC_R * cosf(th) - 11, ARC_CY + ARC_R * sinf(th) - 11);
+            lv_obj_remove_flag(ex_sun, LV_OBJ_FLAG_HIDDEN);
+            lv_label_set_text_fmt(ex_day, "Daylight\n%d h %02d", len / 60, len % 60);
+        } else {
+            lv_arc_set_value(ex_arc, 0);                      // night: the whole arc dim
+            lv_obj_add_flag(ex_sun, LV_OBJ_FLAG_HIDDEN);
+            const char *next = cur > set && wx.ndays > 1 ? wx.day[1].sunrise : wx.day[0].sunrise;
+            lv_label_set_text_fmt(ex_day, "Sunrise\n%s", next);
+        }
+    }
+
+    // UV
+    if (have_wx) {
+        float uv = wx.uv;
+        const char *lvl = uv < 3 ? "Low" : uv < 6 ? "Moderate" : uv < 8 ? "High" : uv < 11 ? "Very high" : "Extreme";
+        lv_color_t c = lv_color_hex(uv < 3 ? 0x6FD08C : uv < 6 ? 0xFFC83D : uv < 8 ? 0xFF8A3D : uv < 11 ? 0xFF4D4D : 0xC77DFF);
+        snprintf(buf, sizeof(buf), "%.0f  %s  (max %.0f)", uv, lvl, wx.day[0].uv_max);
+        ex_row(0, "UV index", buf, c);
+    }
+
+    // Moon
+    int illum;
+    const char *ph = moon_phase(now, &illum);
+    snprintf(buf, sizeof(buf), "%s  %d%%", ph, illum);
+    ex_row(1, "Moon", buf, C_TEXT);
+    lv_obj_invalidate(ex_moon);
+
+    // Air quality (US AQI, CAMS global)
+    if (have_air && ex_air.us_aqi >= 0) {
+        int q = ex_air.us_aqi;
+        const char *lvl = q <= 50 ? "Good" : q <= 100 ? "Moderate" : q <= 150 ? "Sensitive groups" : q <= 200 ? "Unhealthy" :
+                          q <= 300 ? "Very unhealthy" : "Hazardous";
+        lv_color_t c = lv_color_hex(q <= 50 ? 0x6FD08C : q <= 100 ? 0xFFC83D : q <= 150 ? 0xFF8A3D : q <= 200 ? 0xFF4D4D : 0xC77DFF);
+        snprintf(buf, sizeof(buf), "%s  %d", lvl, q);
+        ex_row(2, "Air quality", buf, c);
+    } else ex_row(2, "Air quality", "-", C_DIM);
+
+    // Pollen (Europe only): the strongest type
+    static const char *pn[4] = { "Alder", "Birch", "Grass", "Ragweed" };
+    int best = -1;
+    for (int i = 0; i < 4; i++) if (ex_air.pollen[i] >= 0 && (best < 0 || ex_air.pollen[i] > ex_air.pollen[best])) best = i;
+    if (have_air && best >= 0) {
+        float v = ex_air.pollen[best];
+        const char *lvl = v < 10 ? "Low" : v < 50 ? "Moderate" : v < 200 ? "High" : "Very high";
+        snprintf(buf, sizeof(buf), "%s  %s", pn[best], lvl);
+        ex_row(3, "Pollen", buf, lv_color_hex(v < 10 ? 0x6FD08C : v < 50 ? 0xFFC83D : v < 200 ? 0xFF8A3D : 0xFF4D4D));
+        lv_obj_remove_flag(ex_key[3], LV_OBJ_FLAG_HIDDEN);
+        lv_obj_remove_flag(ex_val[3], LV_OBJ_FLAG_HIDDEN);
+    } else {                                   // Open-Meteo's pollen data only covers Europe
+        lv_obj_add_flag(ex_key[3], LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(ex_val[3], LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+void ui_air(const air_t *a)
+{
+    display_lock(-1);
+    ex_air = *a;
+    have_air = true;
+    if (lv_screen_active() == scr_extras) extras_refresh();
+    display_unlock();
+}
+
+static void extras_create(void)
+{
+    scr_extras = base_screen();
+    ex_date = label(scr_extras, f_tiny, C_DIM, 40);
+
+    ex_arc = lv_arc_create(scr_extras);
+    lv_obj_set_size(ex_arc, ARC_R * 2, ARC_R * 2);
+    lv_obj_set_pos(ex_arc, ARC_CX - ARC_R, ARC_CY - ARC_R);
+    lv_arc_set_bg_angles(ex_arc, 180, 360);
+    lv_arc_set_range(ex_arc, 0, 1000);
+    lv_arc_set_rotation(ex_arc, 0);
+    lv_arc_set_mode(ex_arc, LV_ARC_MODE_NORMAL);
+    lv_arc_set_angles(ex_arc, 180, 180);
+    lv_obj_set_style_arc_width(ex_arc, 4, LV_PART_MAIN);
+    lv_obj_set_style_arc_color(ex_arc, lv_color_hex(0x2A3138), LV_PART_MAIN);
+    lv_obj_set_style_arc_width(ex_arc, 4, LV_PART_INDICATOR);
+    lv_obj_set_style_arc_color(ex_arc, lv_color_hex(0xFFC83D), LV_PART_INDICATOR);
+    lv_obj_set_style_bg_opa(ex_arc, LV_OPA_TRANSP, LV_PART_KNOB);
+    lv_obj_set_style_pad_all(ex_arc, 0, LV_PART_KNOB);
+    lv_obj_remove_flag(ex_arc, LV_OBJ_FLAG_CLICKABLE);
+
+    ex_sun = lv_obj_create(scr_extras);
+    lv_obj_remove_style_all(ex_sun);
+    lv_obj_set_size(ex_sun, 22, 22);
+    lv_obj_set_style_radius(ex_sun, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(ex_sun, lv_color_hex(0xFFC83D), 0);
+    lv_obj_set_style_bg_opa(ex_sun, LV_OPA_COVER, 0);
+    lv_obj_set_style_shadow_color(ex_sun, lv_color_hex(0xFFB000), 0);
+    lv_obj_set_style_shadow_width(ex_sun, 16, 0);
+    lv_obj_add_flag(ex_sun, LV_OBJ_FLAG_HIDDEN);
+
+    ex_day = label(scr_extras, f_small, C_TEXT, ARC_CY - 70);
+    ex_rise = label(scr_extras, f_tiny, C_DIM, ARC_CY + 8);
+    lv_obj_set_width(ex_rise, 90);
+    lv_obj_align(ex_rise, LV_ALIGN_TOP_MID, -ARC_R, ARC_CY + 8);
+    ex_set = label(scr_extras, f_tiny, C_DIM, ARC_CY + 8);
+    lv_obj_set_width(ex_set, 90);
+    lv_obj_align(ex_set, LV_ALIGN_TOP_MID, ARC_R, ARC_CY + 8);
+
+    for (int i = 0; i < 4; i++) {
+        int y = 260 + i * 36;
+        ex_key[i] = label(scr_extras, f_tiny, C_DIM, y);
+        lv_obj_set_width(ex_key[i], 110);
+        lv_obj_set_style_text_align(ex_key[i], LV_TEXT_ALIGN_LEFT, 0);
+        lv_obj_align(ex_key[i], LV_ALIGN_TOP_LEFT, 72, y);
+        ex_val[i] = label(scr_extras, f_tiny, C_TEXT, y);
+        lv_obj_set_width(ex_val[i], 240);
+        lv_obj_set_style_text_align(ex_val[i], LV_TEXT_ALIGN_RIGHT, 0);
+        lv_obj_align(ex_val[i], LV_ALIGN_TOP_RIGHT, -72, y);
+    }
+    lv_obj_align(ex_val[1], LV_ALIGN_TOP_RIGHT, -106, 260 + 36);   // room for the moon picture
+    ex_moon = lv_obj_create(scr_extras);
+    lv_obj_remove_style_all(ex_moon);
+    lv_obj_set_size(ex_moon, 26, 26);
+    lv_obj_align(ex_moon, LV_ALIGN_TOP_RIGHT, -72, 260 + 36 - 2);
+    lv_obj_add_event_cb(ex_moon, moon_draw, LV_EVENT_DRAW_MAIN, NULL);
+    page_dots(scr_extras, 0);
+    lv_obj_add_event_cb(scr_extras, gesture_cb, LV_EVENT_GESTURE, NULL);
+    extras_refresh();
+}
+
 void ui_init(void)
 {
     display_lock(-1);
@@ -906,10 +1120,10 @@ void ui_init(void)
         lv_obj_set_width(fc_temp[i], 96);
         lv_obj_align(fc_temp[i], LV_ALIGN_TOP_MID, dx, 384);
     }
-    page_dots(scr_main, 0);
+    page_dots(scr_main, 1);
 
     scr_radar = radar_create(f_small, f_small, f_micro);
-    page_dots(scr_radar, 1);
+    page_dots(scr_radar, 2);
     lv_obj_add_event_cb(scr_main, gesture_cb, LV_EVENT_GESTURE, NULL);
     lv_obj_add_event_cb(scr_main, show_settings, LV_EVENT_LONG_PRESSED, NULL);
     lv_obj_add_event_cb(scr_main, main_tap, LV_EVENT_SHORT_CLICKED, NULL);
@@ -939,6 +1153,7 @@ void ui_init(void)
     lv_obj_add_event_cb(scr_radar, gesture_cb, LV_EVENT_GESTURE, NULL);
     setup_create();
     alert_create();
+    extras_create();
     touch_register_lvgl();
 
     lv_timer_create(clock_tick, 1000, NULL);
@@ -1021,6 +1236,7 @@ void ui_weather(const weather_t *w)
     }
     wx = *w;
     have_wx = true;
+    if (lv_screen_active() == scr_extras) extras_refresh();
     if (lv_screen_active() == scr_hour) for (int i = 0; i < WX_DAYS; i++) hour_fill(i);
     clock_tick(NULL);
     if (lv_screen_active() == scr_msg) lv_screen_load(scr_main);

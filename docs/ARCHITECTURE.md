@@ -53,6 +53,20 @@ LVGL timer and event callbacks already run inside the lock.
 - Long-press opens a settings overlay with a QR code (`lv_qrcode`) for `https://<ip>`.
 - Unused swipes call `lv_indev_wait_release()`; otherwise their release is also delivered as a `SHORT_CLICKED`.
 
+## Extras page (`ui.c`, `weather.c`)
+
+- Screens left to right: extras, weather, radar (page dots show 3). `gesture_cb` handles weather ⇄ extras.
+- Data: the weather request adds `current=uv_index` and `daily=sunrise,sunset,uv_index_max`; a second request goes to
+  `air-quality-api.open-meteo.com` (`current=us_aqi,pm2_5,alder_pollen,birch_pollen,grass_pollen,ragweed_pollen`), same
+  10-minute cycle. Pollen comes from CAMS Europe: `null` elsewhere, and the row is hidden.
+- Sun arc: `lv_arc` 180°→360°, indicator = fraction of daylight elapsed, a glowing dot on the arc at that angle.
+  At night the arc is dim and the centre shows the next sunrise.
+- Moon: phase from the mean synodic month (29.530589 d) since the 2000-01-06 18:14 UTC new moon; % lit =
+  (1 − cos φ)/2. The picture is drawn row by row in a draw callback: dark disc, then the lit span from the terminator
+  (`w·cos φ`) to the limb, on the right while waxing and the left while waning.
+- UV and AQI levels use the standard category colours. The weather request's URL is long enough to need
+  `buffer_size_tx = 1024` (the default 512 logged "Buffer length is small to fit all the headers").
+
 ## Weather alerts (`alerts.c`, `ui.c`)
 
 - List: `https://api.weather.gc.ca/collections/weather-alerts/items?f=json&skipGeometry=true&bbox=<±0.005° around

@@ -11,8 +11,8 @@
 static const char *TAG = "weather";
 
 #define URL_FMT "https://api.open-meteo.com/v1/forecast?latitude=%.4f&longitude=%.4f" \
-    "&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m,is_day" \
-    "&daily=temperature_2m_max,temperature_2m_min,weather_code,precipitation_probability_max" \
+    "&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m,is_day,uv_index" \
+    "&daily=temperature_2m_max,temperature_2m_min,weather_code,precipitation_probability_max,sunrise,sunset,uv_index_max" \
     "&hourly=temperature_2m,weather_code,precipitation_probability,wind_speed_10m,is_day" \
     "&minutely_15=precipitation,snowfall&forecast_minutely_15=9" \
     "&timezone=auto&forecast_days=7"
@@ -82,7 +82,7 @@ bool weather_fetch(weather_t *w)
     snprintf(url, sizeof(url), URL_FMT, loc.lat, loc.lon);
     esp_http_client_config_t cfg = {
         .url = url, .event_handler = http_evt, .user_data = &rx,
-        .crt_bundle_attach = esp_crt_bundle_attach, .timeout_ms = 15000,
+        .crt_bundle_attach = esp_crt_bundle_attach, .timeout_ms = 15000, .buffer_size_tx = 1024,   // long URL
     };
     esp_http_client_handle_t c = esp_http_client_init(&cfg);
     esp_err_t err = esp_http_client_perform(c);
@@ -105,6 +105,7 @@ bool weather_fetch(weather_t *w)
             w->wind = num(cur, "wind_speed_10m");
             w->code = (int)num(cur, "weather_code");
             w->is_day = (int)num(cur, "is_day");
+            w->uv = num(cur, "uv_index");
             cJSON *tmax = cJSON_GetObjectItem(daily, "temperature_2m_max");
             cJSON *tmin = cJSON_GetObjectItem(daily, "temperature_2m_min");
             cJSON *codes = cJSON_GetObjectItem(daily, "weather_code");
@@ -118,9 +119,16 @@ bool weather_fetch(weather_t *w)
                 w->ndays++;
             }
             cJSON *pop = cJSON_GetObjectItem(daily, "precipitation_probability_max");
+            cJSON *sr = cJSON_GetObjectItem(daily, "sunrise"), *ss = cJSON_GetObjectItem(daily, "sunset");
+            cJSON *uvm = cJSON_GetObjectItem(daily, "uv_index_max");
             for (int i = 0; i < w->ndays; i++) {
                 cJSON *v = cJSON_GetArrayItem(pop, i);
                 w->day[i].pop = cJSON_IsNumber(v) ? v->valueint : -1;
+                const char *a = cJSON_GetStringValue(cJSON_GetArrayItem(sr, i));   // "YYYY-MM-DDTHH:MM"
+                const char *b = cJSON_GetStringValue(cJSON_GetArrayItem(ss, i));
+                strlcpy(w->day[i].sunrise, a && strlen(a) >= 16 ? a + 11 : "", sizeof(w->day[i].sunrise));
+                strlcpy(w->day[i].sunset, b && strlen(b) >= 16 ? b + 11 : "", sizeof(w->day[i].sunset));
+                w->day[i].uv_max = num_at(uvm, i);
             }
             nowcast(cJSON_GetObjectItem(root, "minutely_15"), w);
             if (w->nc_kind != NC_NONE)
@@ -192,4 +200,46 @@ wx_kind_t weather_kind(int code)
     if (code >= 95) return WX_STORM;
     if (code >= 51) return WX_RAIN;
     return WX_CLOUDY;
+}
+
+bool air_fetch(air_t *a)
+{
+    location_t loc;
+    config_get_location(&loc);
+    char url[300];
+    snprintf(url, sizeof(url), "https://air-quality-api.open-meteo.com/v1/air-quality?latitude=%.4f&longitude=%.4f"
+             "&current=us_aqi,pm2_5,alder_pollen,birch_pollen,grass_pollen,ragweed_pollen&timezone=auto",
+             loc.lat, loc.lon);
+    rx_t rx = { .cap = 4096 };
+    rx.buf = calloc(1, rx.cap);
+    if (!rx.buf) return false;
+    esp_http_client_config_t cfg = {
+        .url = url, .event_handler = http_evt, .user_data = &rx,
+        .crt_bundle_attach = esp_crt_bundle_attach, .timeout_ms = 15000, .buffer_size_tx = 1024,   // long URL
+    };
+    esp_http_client_handle_t c = esp_http_client_init(&cfg);
+    esp_err_t err = esp_http_client_perform(c);
+    int status = esp_http_client_get_status_code(c);
+    esp_http_client_cleanup(c);
+    bool ok = false;
+    cJSON *root = err == ESP_OK && status == 200 ? cJSON_Parse(rx.buf) : NULL;
+    cJSON *cur = cJSON_GetObjectItem(root, "current");
+    if (cur) {
+        cJSON *v = cJSON_GetObjectItem(cur, "us_aqi");
+        a->us_aqi = cJSON_IsNumber(v) ? v->valueint : -1;
+        a->pm25 = num(cur, "pm2_5");
+        static const char *names[4] = { "alder_pollen", "birch_pollen", "grass_pollen", "ragweed_pollen" };
+        for (int i = 0; i < 4; i++) {
+            v = cJSON_GetObjectItem(cur, names[i]);
+            a->pollen[i] = cJSON_IsNumber(v) ? v->valuedouble : -1;
+        }
+        ok = true;
+        ESP_LOGI(TAG, "Air: US AQI %d, PM2.5 %.1f, pollen %.0f/%.0f/%.0f/%.0f", a->us_aqi, a->pm25,
+                 a->pollen[0], a->pollen[1], a->pollen[2], a->pollen[3]);
+    } else {
+        ESP_LOGW(TAG, "Air quality failed: %s, status %d", esp_err_to_name(err), status);
+    }
+    cJSON_Delete(root);
+    free(rx.buf);
+    return ok;
 }

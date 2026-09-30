@@ -8,6 +8,8 @@ typedef struct {
     double tmax, tmin;
     int code, pop;       // pop = max precipitation probability %
     char date[12];   // YYYY-MM-DD
+    char sunrise[6], sunset[6];   // HH:MM local
+    float uv_max;
 } wx_day_t;
 
 #define WX_DAYS  7           // forecast days (the weather screen shows the first 3, the hourly view all)
@@ -21,6 +23,7 @@ typedef struct {
 typedef struct {
     double temp, feels, wind;
     int humidity, code, is_day;
+    float uv;                // UV index now
     wx_day_t day[WX_DAYS];
     int ndays;
     wx_hour_t hour[WX_HOURS];
@@ -31,6 +34,14 @@ typedef struct {
     bool nc_snow;
 } weather_t;
 
+// Air quality (Open-Meteo air-quality API, CAMS). Pollen only exists for Europe: -1 elsewhere.
+typedef struct {
+    int us_aqi;              // -1 unknown
+    float pm25;
+    float pollen[4];         // grains/m³: alder, birch, grass, ragweed (-1 = no data)
+} air_t;
+
 bool weather_fetch(weather_t *w);
+bool air_fetch(air_t *a);
 const char *weather_text(int code);
 wx_kind_t weather_kind(int code);
