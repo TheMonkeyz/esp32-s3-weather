@@ -105,27 +105,47 @@ reference numbers: [docs/DIAGNOSTICS.md](docs/DIAGNOSTICS.md).
 
 ## Web flasher and automatic builds (GitHub Actions)
 
-`.github/workflows/firmware.yml` builds the firmware with ESP-IDF v5.4.2 on every push and pull request.
+The [web flasher](https://themonkeyz.github.io/esp32-s3-weather/) has two channels, like capsule-radar's board
+picker: **Stable** (the latest release) and **Beta** (a release candidate, offered only while it's newer than the
+latest release). `?channel=beta` in the address preselects Beta.
+
+`.github/workflows/firmware.yml` builds the firmware with ESP-IDF v5.4.2 on every push and pull request, but only
+tags publish anything, and the flasher is assembled from the files attached to the releases, so people install
+exactly what was released.
 
 | Event | What happens |
 |---|---|
-| push to `main` | build, then publish the web flasher to GitHub Pages with that build |
-| tag `v*` (e.g. `git tag v1.0.0 && git push origin v1.0.0`) | build + a GitHub Release with the images attached |
-| pull request | build only (catches compile errors) |
-| *Run workflow* button | same as a push to that branch |
+| push to `main`, pull request | build only (compile check); the images are kept as a workflow artifact for testing |
+| tag `vX.Y.Z-rc.N` (anything with a `-`) | GitHub **pre-release**; the flasher's **Beta** channel moves to it |
+| tag `vX.Y.Z` | GitHub Release; the flasher's **Stable** channel moves to it (and Beta disappears until the next candidate) |
+| *Run workflow* on `main` | rebuilds the flasher from the existing releases (after editing `web/flash/index.html`) |
+
+Releasing a new version:
+
+```
+git tag -a v1.1.0-rc.1 -m "Release candidate"      # optional: test it from the Beta channel first
+git push origin main v1.1.0-rc.1
+git tag -a v1.1.0 -m "What's new"                  # same commit once it's good
+git push origin v1.1.0
+```
 
 - The version is `git describe --tags --always` (e.g. `v1.0.0`, `v1.0.0-3-g1a2b3c4` or just a commit hash before
   the first tag). CI writes it to `version.txt`, which ESP-IDF uses as the app version. It appears in the boot log
   (`diag: firmware …`), at the bottom of the settings page and on the flasher page.
+- Release assets: `bootloader.bin`, `partition-table.bin`, `weather_amoled-<version>.bin` (updates keep settings),
+  `weather_amoled-<version>-full.bin` (merged, flash at 0x0; erases settings) and `flash-parts.json` (offsets and
+  version, used to build the flasher).
 - The flasher page is `web/flash/index.html` ([ESP Web Tools](https://esphome.github.io/esp-web-tools/)).
-  `tools/make_flasher_site.py` copies it with the three flash images and writes `manifest.json`. The images are
-  separate parts (bootloader 0x0, partition table 0x8000, app 0x10000) so an update doesn't wipe NVS (Wi-Fi,
-  location, settings); a merged image would.
-- Release assets: `bootloader.bin`, `partition-table.bin`, `weather_amoled-<version>.bin` (updates) and
-  `weather_amoled-<version>-full.bin` (merged, flash at 0x0; erases settings).
-- One-time setup on GitHub: **Settings → Pages → Build and deployment → Source: GitHub Actions**.
-- Preview the site locally after a build: `python3 tools/make_flasher_site.py` then
-  `python3 -m http.server -d _site 8000` and open http://localhost:8000 (Web Serial works on localhost).
+  `tools/make_flasher_site.py` has two steps: `dist` turns a build into release files, `site` assembles the page with
+  `stable/` and `beta/` folders (each with its images and an ESP Web Tools `manifest.json`) and `channels.json`,
+  which the page reads for the picker. The images are separate parts (bootloader 0x0, partition table 0x8000, app
+  0x10000) so an update doesn't wipe NVS (Wi-Fi, location, settings, TLS certificate); a merged image would.
+- One-time setup on GitHub: **Settings → Pages → Build and deployment → Source: GitHub Actions**, and
+  **Settings → Environments → github-pages → Deployment branches and tags → Add deployment branch or tag rule →
+  Tag, `v*`** (by default only `main` may deploy to Pages, which would make releases fail at the Pages step).
+- Preview locally after a build: `python3 tools/make_flasher_site.py dist && python3 tools/make_flasher_site.py site
+  --stable dist`, then `python3 -m http.server -d _site 8000` and open http://localhost:8000 (Web Serial works on
+  localhost).
 
 ## Building from source
 
@@ -166,7 +186,7 @@ components/dns_server/  captive-portal DNS (from the ESP-IDF captive_portal exam
 docs/ARCHITECTURE.md  how the pieces fit together, memory budget, known issues
 docs/DIAGNOSTICS.md   how to measure memory/CPU/render speed, reference numbers, findings
 tools/diag_summary.py summarises the diag: lines of serial_log.txt
-tools/make_flasher_site.py  builds the web-flasher site (_site/) from a firmware build
+tools/make_flasher_site.py  release files (dist) and the web-flasher site with Stable/Beta channels (site)
 web/flash/            web flasher page (ESP Web Tools) + screenshots
 .github/workflows/firmware.yml  CI: build, GitHub Pages flasher, releases
 flash_helper.ps1      flash.request = flash + log, reboot.request = restart + log (no flashing)

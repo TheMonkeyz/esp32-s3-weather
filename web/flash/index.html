@@ -25,6 +25,18 @@ a{color:var(--accent)}
 .install{display:flex;flex-wrap:wrap;gap:20px;align-items:center;justify-content:space-between}
 .ver{color:var(--dim);font-size:14px}
 .ver b{color:var(--text);font-weight:600}
+.install-main{display:flex;flex-direction:column;align-items:flex-start;gap:14px}
+.channels{display:inline-flex;background:#0d1217;border:1px solid var(--line);border-radius:12px;padding:4px;gap:4px}
+.channels label{position:relative;cursor:pointer}
+.channels input{position:absolute;opacity:0;pointer-events:none}
+.channels span{display:block;padding:8px 16px;border-radius:9px;color:var(--dim);font-size:15px;white-space:nowrap}
+.channels span small{display:block;font-size:12px;opacity:.85}
+.channels input:checked+span{background:#1f3350;color:var(--text)}
+.channels input:focus-visible+span{outline:2px solid var(--accent);outline-offset:2px}
+.channels input:disabled+span{opacity:.45;cursor:not-allowed}
+.beta-warn{display:none;border-left:3px solid var(--warn);padding:8px 12px;background:#221d10;border-radius:6px;
+  color:#f4e3b5;font-size:14px;max-width:34em}
+.beta-warn.on{display:block}
 esp-web-install-button button,.btn{background:var(--accent);color:#04121f;border:0;border-radius:10px;padding:14px 26px;
   font:600 17px system-ui,sans-serif;cursor:pointer}
 esp-web-install-button button:hover{filter:brightness(1.08)}
@@ -58,11 +70,17 @@ footer{color:var(--dim);font-size:14px;margin-top:32px;border-top:1px solid var(
   </section>
 
   <section class="card install">
-    <div>
-      <h2>Install the firmware</h2>
+    <div class="install-main">
+      <h2 style="margin:0">Install the firmware</h2>
+      <div class="channels" role="radiogroup" aria-label="Firmware channel">
+        <label><input type="radio" name="ch" value="stable" checked><span>Stable<small id="verStable">…</small></span></label>
+        <label><input type="radio" name="ch" value="beta" disabled><span>Beta<small id="verBeta">none right now</small></span></label>
+      </div>
       <div class="ver" id="ver">Loading version…</div>
+      <div class="beta-warn" id="betaWarn">Beta builds are release candidates for testing the next version and may have
+        bugs. You can go back to Stable at any time the same way (leave <i>Erase device</i> unticked).</div>
     </div>
-    <esp-web-install-button manifest="manifest.json">
+    <esp-web-install-button id="installBtn" manifest="stable/manifest.json">
       <button slot="activate">Connect &amp; install</button>
       <span slot="unsupported">Your browser can't talk to USB devices. Use <b>Chrome</b> or <b>Edge</b> on a computer.</span>
       <span slot="not-allowed">This page must be opened over HTTPS (or on localhost) to flash.</span>
@@ -115,11 +133,29 @@ footer{color:var(--dim);font-size:14px;margin-top:32px;border-top:1px solid var(
   </footer>
 </main>
 <script>
-fetch('manifest.json', {cache: 'no-store'}).then(r => r.json()).then(m => {
-  const el = document.getElementById('ver');
-  el.innerHTML = 'Firmware <b></b>' + (m.built ? ' · built ' + m.built : '');
-  el.querySelector('b').textContent = m.version;
-}).catch(() => { document.getElementById('ver').textContent = 'Firmware version unavailable'; });
+// channels.json is written by tools/make_flasher_site.py: {stable:{version,built,manifest}, beta:{...}|null}
+const $ = id => document.getElementById(id);
+let channels = null;
+function pick(name) {
+  const c = channels && channels[name];
+  if (!c) return;
+  $('installBtn').setAttribute('manifest', c.manifest);
+  $('ver').innerHTML = 'Firmware <b></b> · built ' + c.built;
+  $('ver').querySelector('b').textContent = c.version;
+  $('betaWarn').classList.toggle('on', name === 'beta');
+}
+fetch('channels.json', {cache: 'no-store'}).then(r => r.json()).then(ch => {
+  channels = ch;
+  $('verStable').textContent = ch.stable.version;
+  if (ch.beta) {
+    $('verBeta').textContent = ch.beta.version;
+    document.querySelector('input[value=beta]').disabled = false;
+  }
+  const want = new URLSearchParams(location.search).get('channel') === 'beta' && ch.beta ? 'beta' : 'stable';
+  document.querySelector(`input[value=${want}]`).checked = true;
+  pick(want);
+}).catch(() => { $('ver').textContent = 'Firmware version unavailable'; });
+document.querySelectorAll('input[name=ch]').forEach(r => r.addEventListener('change', () => pick(r.value)));
 </script>
 </body>
 </html>
