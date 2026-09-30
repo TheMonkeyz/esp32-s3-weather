@@ -10,6 +10,7 @@
 #include "esp_log.h"
 #include "esp_heap_caps.h"
 #include "cJSON.h"
+#include "esp_app_desc.h"
 #include "config.h"
 #include "net.h"
 #include "presence.h"
@@ -81,6 +82,7 @@ static esp_err_t config_get(httpd_req_t *req)
     cJSON_AddNumberToObject(j, "lat", loc.lat);
     cJSON_AddNumberToObject(j, "lon", loc.lon);
     cJSON_AddStringToObject(j, "ssid", ssid);
+    cJSON_AddStringToObject(j, "version", esp_app_get_description()->version);
     return send_json(req, j);
 }
 

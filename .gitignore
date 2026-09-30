@@ -23,3 +23,8 @@ flash.running
 flash.done
 flash.status
 flash_helper.log
+
+# Web flasher / CI outputs
+_site/
+dist/
+version.txt

@@ -13,6 +13,7 @@
 #include "esp_psram.h"
 #include "esp_flash.h"
 #include "nvs.h"
+#include "esp_app_desc.h"
 #include "display.h"
 #include "ui.h"
 
@@ -47,6 +48,8 @@ static void startup_info(void)
 {
     uint32_t flash = 0;
     esp_flash_get_size(NULL, &flash);
+    ESP_LOGI(TAG, "firmware %s (built %s %s)", esp_app_get_description()->version,
+             esp_app_get_description()->date, esp_app_get_description()->time);
     ESP_LOGI(TAG, "reset reason %s, flash %u MB, PSRAM %u KB", reset_reason(), (unsigned)(flash >> 20),
              KB(esp_psram_get_size()));
     const esp_partition_t *app = esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_ANY, NULL);

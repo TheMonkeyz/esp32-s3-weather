@@ -157,6 +157,14 @@ LVGL timer and event callbacks already run inside the lock.
 - Location is stored in NVS namespace `loc`. `config_local_time()` uses Open-Meteo's `utc_offset_seconds`, which
   handles any time zone and DST; before the first fetch it falls back to the `EST5EDT` TZ rule.
 
+## Release pipeline
+
+`firmware.yml` (GitHub Actions) → `espressif/esp-idf-ci-action` (ESP-IDF v5.4.2, component manager) →
+`tools/make_flasher_site.py` (site + `manifest.json` from `build/flasher_args.json`) → GitHub Pages on `main`,
+GitHub Release on `v*` tags. ESP Web Tools flashes the parts at their offsets; `new_install_prompt_erase` offers an
+erase on the first install. The firmware version (`esp_app_get_description()->version`) is logged by `diag.c` and
+returned by `GET /api/config` as `version`.
+
 ## Memory budget (approximate)
 
 | Item | Where | Size |

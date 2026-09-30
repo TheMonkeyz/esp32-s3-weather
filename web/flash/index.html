@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Weather Display – Web Flasher</title>
+<meta name="description" content="Install the weather display firmware on a Waveshare ESP32-S3-Touch-AMOLED-1.75 from your browser.">
+<script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+<style>
+:root{--bg:#0b0e12;--card:#141a21;--line:#232c36;--text:#eef2f6;--dim:#93a0ae;--accent:#5ab0ff;--ok:#6fd08c;--warn:#ffc83d;
+  --radius:14px;color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:880px;margin:0 auto;padding:40px 20px 56px}
+h1{font-size:clamp(28px,5vw,40px);line-height:1.15;margin:0 0 8px;letter-spacing:-.01em}
+h2{font-size:20px;margin:0 0 12px}
+p{margin:0 0 12px}
+a{color:var(--accent)}
+.lead{color:var(--dim);font-size:18px;max-width:40em}
+.hero{display:grid;grid-template-columns:1fr auto;gap:32px;align-items:center;margin-bottom:28px}
+.shots{display:flex;gap:14px}
+.shots img{width:170px;height:170px;border-radius:50%;box-shadow:0 0 0 6px #1b222b,0 12px 40px #0008}
+.shots img+img{margin-top:60px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:22px 24px;margin:16px 0}
+.install{display:flex;flex-wrap:wrap;gap:20px;align-items:center;justify-content:space-between}
+.ver{color:var(--dim);font-size:14px}
+.ver b{color:var(--text);font-weight:600}
+esp-web-install-button button,.btn{background:var(--accent);color:#04121f;border:0;border-radius:10px;padding:14px 26px;
+  font:600 17px system-ui,sans-serif;cursor:pointer}
+esp-web-install-button button:hover{filter:brightness(1.08)}
+esp-web-install-button:not(:defined) [slot=unsupported],esp-web-install-button:not(:defined) [slot=not-allowed]{display:none}
+.note{margin-top:16px;border-left:3px solid var(--warn);padding:10px 14px;background:#221d10;border-radius:6px;color:#f4e3b5;font-size:15px}
+ol{margin:0;padding-left:22px}
+ol li{margin:0 0 10px}
+ol li::marker{color:var(--accent);font-weight:700}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.grid .card{margin:0}
+ul.plain{margin:0;padding-left:18px;color:var(--dim)}
+ul.plain li{margin:4px 0}
+kbd{background:#222b35;border:1px solid #33404d;border-radius:5px;padding:1px 6px;font-size:14px}
+footer{color:var(--dim);font-size:14px;margin-top:32px;border-top:1px solid var(--line);padding-top:18px}
+@media (max-width:720px){.hero{grid-template-columns:1fr}.shots{justify-content:center}.shots img{width:140px;height:140px}
+  .grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<main>
+  <section class="hero">
+    <div>
+      <h1>Weather Display</h1>
+      <p class="lead">Current weather, a 3-day and hourly forecast, and an animated rain radar on a round AMOLED screen,
+        for the <b>Waveshare ESP32-S3-Touch-AMOLED-1.75</b>. Install it straight from this page.</p>
+    </div>
+    <div class="shots" aria-hidden="true">
+      <img src="img/weather.png" alt="">
+      <img src="img/hourly.png" alt="">
+    </div>
+  </section>
+
+  <section class="card install">
+    <div>
+      <h2>Install the firmware</h2>
+      <div class="ver" id="ver">Loading version…</div>
+    </div>
+    <esp-web-install-button manifest="manifest.json">
+      <button slot="activate">Connect &amp; install</button>
+      <span slot="unsupported">Your browser can't talk to USB devices. Use <b>Chrome</b> or <b>Edge</b> on a computer.</span>
+      <span slot="not-allowed">This page must be opened over HTTPS (or on localhost) to flash.</span>
+    </esp-web-install-button>
+  </section>
+
+  <section class="card">
+    <h2>Steps</h2>
+    <ol>
+      <li>Plug the board into this computer with a USB-C <b>data</b> cable.</li>
+      <li>Click <b>Connect &amp; install</b> and pick the port named <i>USB JTAG/serial debug unit</i> (or the COM port
+        that appears when you plug it in).</li>
+      <li>First install: tick <b>Erase device</b>. Updating: leave it unticked to keep your Wi-Fi and settings.</li>
+      <li>When it's done the display restarts and shows a <b>Wi-Fi setup</b> QR code. Scan it with your phone: it joins
+        the display's <i>Weather-Setup</i> network and the setup page opens by itself. Pick your home Wi-Fi.</li>
+      <li>Set your location later: long-press the weather screen for the settings QR code.</li>
+    </ol>
+  </section>
+
+  <section class="grid">
+    <div class="card">
+      <h2>Using it</h2>
+      <ul class="plain">
+        <li>Tap a forecast day for its hourly view; drag sideways for other days.</li>
+        <li>Swipe left for the radar; tap to animate the last 3 hours, swipe down/up to zoom.</li>
+        <li>Long-press for the settings page (location, Wi-Fi, screen dimming).</li>
+        <li>The microphones dim the screen when the room is quiet and wake it on sustained sound.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h2>If it doesn't connect</h2>
+      <ul class="plain">
+        <li>No port listed: try another cable or USB port; some cables only charge.</li>
+        <li>Still nothing: hold <kbd>BOOT</kbd>, tap <kbd>RESET</kbd>, release <kbd>BOOT</kbd>, then try again.</li>
+        <li>Close other programs using the port (serial monitors, the flash helper).</li>
+        <li>After flashing in BOOT mode, tap <kbd>RESET</kbd> once to start the firmware.</li>
+      </ul>
+    </div>
+  </section>
+
+  <p class="note" id="radarNote">The rain radar uses Environment Canada data, so it covers Canada and the northern US
+    border region.</p>
+
+  <footer>
+    <p>Source code, releases and documentation:
+      <a href="https://github.com/TheMonkeyz/esp32-s3-weather">github.com/TheMonkeyz/esp32-s3-weather</a>.
+      Downloads for other tools: <a href="https://github.com/TheMonkeyz/esp32-s3-weather/releases">releases</a>.</p>
+    <p>Weather: Open-Meteo. Radar: Environment and Climate Change Canada (GeoMet). Map © OpenStreetMap contributors.
+      Flashing by ESP Web Tools.</p>
+  </footer>
+</main>
+<script>
+fetch('manifest.json', {cache: 'no-store'}).then(r => r.json()).then(m => {
+  const el = document.getElementById('ver');
+  el.innerHTML = 'Firmware <b></b>' + (m.built ? ' · built ' + m.built : '');
+  el.querySelector('b').textContent = m.version;
+}).catch(() => { document.getElementById('ver').textContent = 'Firmware version unavailable'; });
+</script>
+</body>
+</html>
