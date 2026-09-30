@@ -2,6 +2,7 @@
 #include "ui.h"
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 #include <time.h>
 #include "display.h"
 #include "weather.h"
@@ -9,7 +10,9 @@
 #include "radar.h"
 #include "config.h"
 #include "net.h"
+#include "alerts.h"
 #include "esp_log.h"
+#include "esp_attr.h"
 
 extern const uint8_t ttf_start[] asm("_binary_montserrat_ttf_start");
 extern const uint8_t ttf_end[]   asm("_binary_montserrat_ttf_end");
@@ -22,6 +25,10 @@ static int ov_state;          // 0 hidden, 1 settings QR
 static lv_obj_t *scr_hour;       // hourly detail screen
 static int hr_day;
 static void hour_fill(int day);
+static lv_obj_t *al_pill, *al_pill_lbl, *scr_alert, *al_title, *al_sub, *al_body, *al_map;
+static lv_image_dsc_t al_map_dsc;
+static uint16_t *al_map_buf;
+static EXT_RAM_BSS_ATTR alerts_t alerts;           // ~4 KB, in PSRAM
 static lv_obj_t *scr_main, *lbl_time, *lbl_city, *icon_box, *lbl_temp, *lbl_cond, *lbl_detail, *lbl_nowcast;
 static lv_obj_t *fc_day[3], *fc_temp[3], *fc_icon[3], *hero;
 
@@ -308,7 +315,7 @@ typedef struct {
 } day_page_t;
 static day_page_t pg[WX_DAYS];
 static lv_obj_t *hr_pager, *hr_dot[WX_DAYS];
-static weather_t wx;                 // copy of the last forecast
+static EXT_RAM_BSS_ATTR weather_t wx;   // copy of the last forecast (PSRAM)
 static bool have_wx;
 
 static void draw_text(lv_layer_t *layer, lv_font_t *f, lv_color_t c, int x, int y, int w,
@@ -420,6 +427,11 @@ static void main_tap(lv_event_t *e)
     if (!in || ov_state || !have_wx) return;
     lv_point_t p;
     lv_indev_get_point(in, &p);
+    if (p.y < 200 && alerts.n) {                        // top half with an alert: its details
+        printf("ui: tap alert\n");
+        lv_screen_load_anim(scr_alert, LV_SCR_LOAD_ANIM_MOVE_TOP, 260, 0, false);
+        return;
+    }
     if (p.y < 296) return;                              // only the forecast row
     int col = p.x < DISP_W / 2 - 49 ? 0 : p.x > DISP_W / 2 + 49 ? 2 : 1;
     if (col >= wx.ndays) return;
@@ -700,6 +712,131 @@ void ui_wifi_setup_end(void)
     display_unlock();
 }
 
+/* ---------- Weather alerts ---------- */
+
+static lv_color_t alert_colour(char c)
+{
+    return c == 'r' ? lv_color_hex(0xFF4D4D) : c == 'o' ? lv_color_hex(0xFF8A3D) :
+           c == 'y' ? lv_color_hex(0xFFC83D) : lv_color_hex(0x8B95A1);
+}
+
+static void fmt_until(time_t t, char *out, size_t n)
+{
+    struct tm tm;
+    if (t && config_local_time((long)t, &tm)) strftime(out, n, "Until %a %H:%M", &tm);
+    else out[0] = 0;
+}
+
+static void alert_close(lv_event_t *e) { lv_screen_load_anim(scr_main, LV_SCR_LOAD_ANIM_MOVE_BOTTOM, 260, 0, false); }
+
+static void alert_gesture(lv_event_t *e)
+{
+    lv_indev_t *in = lv_indev_active();
+    if (in) lv_indev_wait_release(in);                  // a swipe is not a tap (= close)
+}
+
+static lv_obj_t *al_label(lv_obj_t *parent, lv_font_t *f, lv_color_t c)
+{
+    lv_obj_t *l = lv_label_create(parent);
+    lv_obj_set_width(l, lv_pct(100));
+    lv_obj_set_style_text_font(l, f, 0);
+    lv_obj_set_style_text_color(l, c, 0);
+    lv_label_set_long_mode(l, LV_LABEL_LONG_WRAP);
+    lv_obj_add_flag(l, LV_OBJ_FLAG_EVENT_BUBBLE | LV_OBJ_FLAG_GESTURE_BUBBLE);
+    return l;
+}
+
+// Title fixed at the top; when, where and the text scroll together in one column, so a long area name
+// wraps instead of running into the text.
+static void alert_create(void)
+{
+    scr_alert = base_screen();
+    al_title = label(scr_alert, f_city, C_TEXT, 40);
+    lv_obj_set_width(al_title, 300);
+    lv_obj_t *box = lv_obj_create(scr_alert);
+    lv_obj_remove_style_all(box);
+    lv_obj_set_size(box, 310, 340);
+    lv_obj_align(box, LV_ALIGN_TOP_MID, 0, 80);
+    lv_obj_set_flex_flow(box, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_row(box, 4, 0);
+    lv_obj_set_style_pad_bottom(box, 90, 0);            // the last lines can scroll above the round edge
+    lv_obj_set_scroll_dir(box, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(box, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_add_flag(box, LV_OBJ_FLAG_EVENT_BUBBLE | LV_OBJ_FLAG_GESTURE_BUBBLE);
+    al_map = lv_image_create(box);                      // region map, when available
+    lv_obj_set_style_radius(al_map, 16, 0);
+    lv_obj_set_style_clip_corner(al_map, true, 0);
+    lv_obj_set_style_margin_bottom(al_map, 8, 0);
+    lv_obj_add_flag(al_map, LV_OBJ_FLAG_HIDDEN | LV_OBJ_FLAG_EVENT_BUBBLE | LV_OBJ_FLAG_GESTURE_BUBBLE);
+    al_sub = al_label(box, f_tiny, C_DIM);
+    lv_obj_set_style_text_align(al_sub, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_pad_bottom(al_sub, 10, 0);
+    al_body = al_label(box, f_tiny, C_TEXT);
+    lv_obj_add_event_cb(scr_alert, alert_close, LV_EVENT_SHORT_CLICKED, NULL);
+    lv_obj_add_event_cb(scr_alert, alert_gesture, LV_EVENT_GESTURE, NULL);
+}
+
+void ui_alert_map(uint16_t *buf, int w, int h)
+{
+    display_lock(-1);
+    uint16_t *old = al_map_buf;
+    al_map_buf = buf;
+    if (buf) {
+        memset(&al_map_dsc, 0, sizeof(al_map_dsc));
+        al_map_dsc.header.magic = LV_IMAGE_HEADER_MAGIC;
+        al_map_dsc.header.cf = LV_COLOR_FORMAT_RGB565;
+        al_map_dsc.header.w = w;
+        al_map_dsc.header.h = h;
+        al_map_dsc.header.stride = w * 2;
+        al_map_dsc.data = (const uint8_t *)buf;
+        al_map_dsc.data_size = w * h * 2;
+        lv_image_cache_drop(&al_map_dsc);
+        lv_image_set_src(al_map, &al_map_dsc);
+        lv_obj_remove_flag(al_map, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(al_map, LV_OBJ_FLAG_HIDDEN);
+    }
+    display_unlock();
+    free(old);
+}
+
+void ui_alerts(const alerts_t *al)
+{
+    display_lock(-1);
+    alerts = *al;
+    if (!alerts.n) {
+        lv_obj_add_flag(al_map, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(al_pill, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_remove_flag(lbl_city, LV_OBJ_FLAG_HIDDEN);
+        if (lv_screen_active() == scr_alert) lv_screen_load(scr_main);
+        display_unlock();
+        return;
+    }
+    const alert_t *a = &alerts.a[0];
+    lv_color_t c = alert_colour(a->colour);
+    lv_obj_set_style_bg_color(al_pill, c, 0);
+    lv_obj_set_style_text_color(al_pill_lbl, a->colour == 'r' ? lv_color_white() : lv_color_black(), 0);
+    if (alerts.n > 1) lv_label_set_text_fmt(al_pill_lbl, "%s +%d", a->name, alerts.n - 1);
+    else lv_label_set_text(al_pill_lbl, a->name);
+    lv_obj_remove_flag(al_pill, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(lbl_city, LV_OBJ_FLAG_HIDDEN);
+
+    char until[32];
+    fmt_until(a->ends, until, sizeof(until));
+    lv_label_set_text(al_title, a->name);
+    lv_obj_set_style_text_color(al_title, c, 0);
+    lv_label_set_text_fmt(al_sub, "%s%s%s", until, until[0] && a->area[0] ? "\n" : "", a->area);
+    lv_obj_scroll_to_y(lv_obj_get_parent(al_body), 0, LV_ANIM_OFF);
+    static EXT_RAM_BSS_ATTR char body[ALERTS_MAX * 960];
+    int len = snprintf(body, sizeof(body), "%s", a->text);
+    for (int i = 1; i < alerts.n && len < (int)sizeof(body); i++) {
+        fmt_until(alerts.a[i].ends, until, sizeof(until));
+        len += snprintf(body + len, sizeof(body) - len, "\n\nAlso: %s (%s)\n\n%s", alerts.a[i].name, until, alerts.a[i].text);
+    }
+    lv_label_set_text(al_body, body);
+    display_unlock();
+}
+
 void ui_init(void)
 {
     display_lock(-1);
@@ -714,6 +851,18 @@ void ui_init(void)
     scr_main = base_screen();
     lbl_time = label(scr_main, f_time, C_DIM, 38);
     lbl_city = label(scr_main, f_city, C_TEXT, 72);
+    // Weather alert pill, in place of the city name while an alert is active (tap for details)
+    al_pill = lv_obj_create(scr_main);
+    lv_obj_remove_style_all(al_pill);
+    lv_obj_set_size(al_pill, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    lv_obj_set_style_radius(al_pill, 16, 0);
+    lv_obj_set_style_bg_opa(al_pill, LV_OPA_COVER, 0);
+    lv_obj_set_style_pad_hor(al_pill, 16, 0);
+    lv_obj_set_style_pad_ver(al_pill, 4, 0);
+    lv_obj_align(al_pill, LV_ALIGN_TOP_MID, 0, 70);
+    al_pill_lbl = lv_label_create(al_pill);
+    lv_obj_set_style_text_font(al_pill_lbl, f_small, 0);
+    lv_obj_add_flag(al_pill, LV_OBJ_FLAG_HIDDEN);
     location_t loc;
     config_get_location(&loc);
     lv_label_set_text(lbl_city, loc.name);
@@ -789,6 +938,7 @@ void ui_init(void)
 
     lv_obj_add_event_cb(scr_radar, gesture_cb, LV_EVENT_GESTURE, NULL);
     setup_create();
+    alert_create();
     touch_register_lvgl();
 
     lv_timer_create(clock_tick, 1000, NULL);

@@ -4,7 +4,6 @@ Backlog of possible features (2026-09-30). ⭐ = suggested first. Move an item t
 
 ## Weather
 
-- [ ] **Weather warnings** — Environment Canada watches/warnings for the location as a coloured banner.
 - [ ] **Temperature graph** — the day's temperature curve at the top of each hourly-view page.
 - [ ] **Extras page** — sunrise/sunset, UV index, air quality and pollen (Open-Meteo), as a third swipe screen.
 - [ ] **Lightning on the radar** — Environment Canada lightning layer over the rain.
@@ -32,3 +31,5 @@ charging (AXP2101).
 
 - [x] **Rain starting soon** — "Rain around 14:45" / "Rain until about 15:30" on the weather screen, from
   Open-Meteo's 15-minute forecast (2026-09-30).
+- [x] **Weather warnings** — Environment Canada alerts: coloured pill on the weather screen, details screen
+  with a map of the affected region (2026-09-30).

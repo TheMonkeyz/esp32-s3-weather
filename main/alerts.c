@@ -1,0 +1,285 @@
+// Environment Canada weather alerts from the MSC GeoMet OGC API (collection "weather-alerts").
+// A tiny bounding box around the location selects the alert regions that contain it (the server intersects
+// it with the real region shapes); skipGeometry keeps the response to a few KB.
+#include "alerts.h"
+#include <string.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <ctype.h>
+#include "esp_http_client.h"
+#include "esp_crt_bundle.h"
+#include "esp_log.h"
+#include "esp_heap_caps.h"
+#include "cJSON.h"
+
+static const char *TAG = "alerts";
+
+typedef struct { char *buf; int len; int cap; } rx_t;
+
+static esp_err_t http_evt(esp_http_client_event_t *e)
+{
+    rx_t *rx = e->user_data;
+    if (e->event_id == HTTP_EVENT_ON_DATA && rx->len + e->data_len < rx->cap) {
+        memcpy(rx->buf + rx->len, e->data, e->data_len);
+        rx->len += e->data_len;
+        rx->buf[rx->len] = 0;
+    }
+    return ESP_OK;
+}
+
+// "2026-10-01T16:55:00.000Z" -> UTC epoch
+static time_t parse_utc(const char *s)
+{
+    int y, mo, d, h, mi, se;
+    if (!s || sscanf(s, "%d-%d-%dT%d:%d:%d", &y, &mo, &d, &h, &mi, &se) != 6) return 0;
+    y -= mo <= 2;                                               // days from civil (H. Hinnant)
+    int era = y / 400, yoe = y - era * 400;
+    int doy = (153 * (mo + (mo > 2 ? -3 : 9)) + 2) / 5 + d - 1;
+    int doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    long days = era * 146097L + doe - 719468;
+    return (time_t)(days * 86400L + h * 3600 + mi * 60 + se);
+}
+
+static const char *str(cJSON *o, const char *k)
+{
+    const char *v = cJSON_GetStringValue(cJSON_GetObjectItem(o, k));
+    return v ? v : "";
+}
+
+static int severity(char c) { return c == 'r' ? 3 : c == 'o' ? 2 : c == 'y' ? 1 : 0; }
+
+static int by_severity(const void *a, const void *b)
+{
+    return severity(((const alert_t *)b)->colour) - severity(((const alert_t *)a)->colour);
+}
+
+bool alerts_fetch(double lat, double lon, alerts_t *out)
+{
+    char url[300];
+    const double d = 0.005;                                     // ~500 m box around the point
+    snprintf(url, sizeof(url), "https://api.weather.gc.ca/collections/weather-alerts/items"
+             "?f=json&lang=en&skipGeometry=true&limit=20&bbox=%.4f,%.4f,%.4f,%.4f",
+             lon - d, lat - d, lon + d, lat + d);
+    rx_t rx = { .cap = 65536 };
+    rx.buf = heap_caps_calloc(1, rx.cap, MALLOC_CAP_SPIRAM);
+    if (!rx.buf) return false;
+    esp_http_client_config_t cfg = {
+        .url = url, .event_handler = http_evt, .user_data = &rx,
+        .crt_bundle_attach = esp_crt_bundle_attach, .timeout_ms = 15000, .buffer_size = 2048,
+    };
+    esp_http_client_handle_t c = esp_http_client_init(&cfg);
+    esp_err_t err = esp_http_client_perform(c);
+    int status = esp_http_client_get_status_code(c);
+    esp_http_client_cleanup(c);
+    if (err != ESP_OK || status != 200) {
+        ESP_LOGW(TAG, "request failed: %s, status %d", esp_err_to_name(err), status);
+        free(rx.buf);
+        return false;
+    }
+    cJSON *root = cJSON_Parse(rx.buf);
+    free(rx.buf);
+    cJSON *features = cJSON_GetObjectItem(root, "features");
+    if (!cJSON_IsArray(features)) { cJSON_Delete(root); ESP_LOGW(TAG, "unexpected response"); return false; }
+
+    time_t now = time(NULL);
+    out->n = 0;
+    cJSON *f;
+    cJSON_ArrayForEach(f, features) {
+        cJSON *p = cJSON_GetObjectItem(f, "properties");
+        const char *st = str(p, "status_en");
+        if (!strcmp(st, "ended") || !strcmp(st, "cancelled")) continue;
+        time_t ends = parse_utc(str(p, "event_end_datetime"));
+        time_t expires = parse_utc(str(p, "expiration_datetime"));
+        if (now > 1700000000 && ((ends && ends < now) || (expires && expires < now))) continue;
+        const char *name = str(p, "alert_name_en");
+        bool dup = false;                                       // same alert, neighbouring region
+        for (int i = 0; i < out->n; i++) if (!strcasecmp(out->a[i].name, name)) dup = true;
+        if (dup || !name[0] || out->n >= ALERTS_MAX) continue;
+        alert_t *a = &out->a[out->n++];
+        strlcpy(a->id, cJSON_GetStringValue(cJSON_GetObjectItem(f, "id")) ?: "", sizeof(a->id));
+        strlcpy(a->name, name, sizeof(a->name));
+        a->name[0] = toupper((unsigned char)a->name[0]);
+        const char *col = str(p, "risk_colour_en");
+        a->colour = !strcmp(col, "red") ? 'r' : !strcmp(col, "orange") ? 'o' : !strcmp(col, "yellow") ? 'y' : 'g';
+        a->ends = ends;
+        strlcpy(a->area, str(p, "feature_name_en"), sizeof(a->area));
+        strlcpy(a->text, str(p, "alert_text_en"), sizeof(a->text));
+        char *boiler = strstr(a->text, "\n\nPlease continue to monitor");   // standard closing paragraph
+        if (boiler) *boiler = 0;
+    }
+    cJSON_Delete(root);
+    qsort(out->a, out->n, sizeof(alert_t), by_severity);
+    if (out->n) ESP_LOGI(TAG, "%d alert(s): %s (%c)%s", out->n, out->a[0].name, out->a[0].colour, out->n > 1 ? " ..." : "");
+    else ESP_LOGI(TAG, "no alerts");
+    return true;
+}
+
+/* ---------------- region map ---------------- */
+
+#include <math.h>
+#include "radar.h"
+#include "display.h"
+
+#define MAX_PTS 6000
+typedef struct { float *x, *y; int n; int *ring_end; int nrings; } shape_t;   // world px at one zoom later
+
+// Pull every [lon, lat] position out of the "geometry" of a GeoJSON feature (Polygon or MultiPolygon)
+// without building a cJSON tree (a detailed region has thousands of points). Rings end where an array of
+// positions closes.
+static bool parse_shape(const char *js, shape_t *sh, float *lon, float *lat)
+{
+    const char *p = strstr(js, "\"coordinates\"");
+    if (!p || !(p = strchr(p, '['))) return false;
+    int depth = 0, nums = 0;
+    double v[2];
+    bool had_pos = false;                    // current array holds positions
+    sh->n = sh->nrings = 0;
+    for (; *p; p++) {
+        if (*p == '[') { depth++; nums = 0; had_pos = false; }
+        else if (*p == ']') {
+            if (nums == 2) {                 // closed a position
+                if (sh->n < MAX_PTS) { lon[sh->n] = v[0]; lat[sh->n] = v[1]; sh->n++; }
+                had_pos = true;
+            } else if (had_pos) {            // closed a ring
+                if (sh->nrings < 64) sh->ring_end[sh->nrings++] = sh->n;
+                had_pos = false;
+            }
+            nums = 0;
+            if (--depth == 0) break;
+        } else if (*p == '-' || (*p >= '0' && *p <= '9')) {
+            char *end;
+            double d = strtod(p, &end);
+            if (nums < 2) v[nums] = d;
+            nums++;
+            p = end - 1;
+        }
+    }
+    return sh->n >= 3 && sh->nrings > 0;
+}
+
+static inline uint16_t blend565(uint16_t a, uint16_t b, int alpha)   // alpha 0..255 of b over a
+{
+    int r = ((a >> 11) * (255 - alpha) + (b >> 11) * alpha) / 255;
+    int g = (((a >> 5) & 63) * (255 - alpha) + ((b >> 5) & 63) * alpha) / 255;
+    int bl = ((a & 31) * (255 - alpha) + (b & 31) * alpha) / 255;
+    return (r << 11) | (g << 5) | bl;
+}
+
+static void put(uint16_t *img, int w, int h, int x, int y, uint16_t c)
+{
+    if (x >= 0 && y >= 0 && x < w && y < h) img[y * w + x] = c;
+}
+
+static void line(uint16_t *img, int w, int h, float x0, float y0, float x1, float y1, uint16_t c)
+{
+    int steps = (int)fmaxf(fabsf(x1 - x0), fabsf(y1 - y0)) + 1;
+    if (steps > 4000) return;                                    // way off screen
+    for (int i = 0; i <= steps; i++) {
+        int x = (int)(x0 + (x1 - x0) * i / steps), y = (int)(y0 + (y1 - y0) * i / steps);
+        put(img, w, h, x, y, c); put(img, w, h, x + 1, y, c); put(img, w, h, x, y + 1, c);
+    }
+}
+
+static int cmp_float(const void *a, const void *b) { float d = *(float *)a - *(float *)b; return (d > 0) - (d < 0); }
+
+uint16_t *alerts_map(const alert_t *a, double lat, double lon, int w, int h)
+{
+    if (!a->id[0]) return NULL;
+    char url[200];
+    snprintf(url, sizeof(url), "https://api.weather.gc.ca/collections/weather-alerts/items/%s?f=json", a->id);
+    rx_t rx = { .cap = 512 * 1024 };
+    rx.buf = heap_caps_calloc(1, rx.cap, MALLOC_CAP_SPIRAM);
+    float *plon = heap_caps_malloc(MAX_PTS * sizeof(float) * 4, MALLOC_CAP_SPIRAM);
+    int ring_end[64];
+    shape_t sh = { .ring_end = ring_end };
+    uint16_t *full = heap_caps_malloc(DISP_W * DISP_H * 2, MALLOC_CAP_SPIRAM);
+    uint16_t *img = heap_caps_malloc(w * h * 2, MALLOC_CAP_SPIRAM);
+    float *xs = heap_caps_malloc(MAX_PTS * sizeof(float), MALLOC_CAP_SPIRAM);
+    bool ok = rx.buf && plon && full && img && xs;
+    float *plat = plon + MAX_PTS;
+    if (ok) {
+        esp_http_client_config_t cfg = {
+            .url = url, .event_handler = http_evt, .user_data = &rx,
+            .crt_bundle_attach = esp_crt_bundle_attach, .timeout_ms = 20000, .buffer_size = 2048,
+        };
+        esp_http_client_handle_t c = esp_http_client_init(&cfg);
+        esp_err_t err = esp_http_client_perform(c);
+        int status = esp_http_client_get_status_code(c);
+        esp_http_client_cleanup(c);
+        ok = err == ESP_OK && status == 200 && rx.len < rx.cap - 1 && parse_shape(rx.buf, &sh, plon, plat);
+        ESP_LOGI(TAG, "region shape: %d bytes, %d points, %d rings%s", rx.len, sh.n, sh.nrings, ok ? "" : " (failed)");
+    }
+    if (ok) {
+        // Biggest zoom where the region (plus a margin) fits in the crop, else the widest map
+        sh.x = plon + 2 * MAX_PTS; sh.y = plon + 3 * MAX_PTS;
+        int z = RADAR_ZOOM_MAX;
+        double lat_r = lat * M_PI / 180.0;
+        for (; z >= RADAR_ZOOM_MIN; z--) {
+            double n = 256.0 * (1 << z);
+            double cx = (lon + 180.0) / 360.0 * n, cy = (1.0 - log(tan(lat_r) + 1.0 / cos(lat_r)) / M_PI) / 2.0 * n;
+            float dx = 0, dy = 0;
+            for (int i = 0; i < sh.n; i++) {
+                double la = plat[i] * M_PI / 180.0;
+                double x = (plon[i] + 180.0) / 360.0 * n, y = (1.0 - log(tan(la) + 1.0 / cos(la)) / M_PI) / 2.0 * n;
+                dx = fmaxf(dx, fabs(x - cx)); dy = fmaxf(dy, fabs(y - cy));
+            }
+            if ((dx < w / 2 - 12 && dy < h / 2 - 12) || z == RADAR_ZOOM_MIN) break;
+        }
+        if (z > RADAR_ZOOM_MIN) z--;                             // one level out: the region plus its surroundings
+        double nz = 256.0 * (1 << z), ox, oy, mx, my;          // map origin for this location (as radar.c)
+        ox = floor((lon + 180.0) / 360.0 * nz) - DISP_W / 2;
+        oy = floor((1.0 - log(tan(lat_r) + 1.0 / cos(lat_r)) / M_PI) / 2.0 * nz) - DISP_H / 2;
+        bool have_map = radar_basemap_read(z, full, &mx, &my) && mx == ox && my == oy;
+        int cx0 = (DISP_W - w) / 2, cy0 = (DISP_H - h) / 2;      // crop of the centred map
+        if (have_map) {
+            for (int y = 0; y < h; y++)
+                for (int x = 0; x < w; x++) img[y * w + x] = full[(y + cy0) * DISP_W + x + cx0];
+        } else {
+            radar_osm_render(z, ox + cx0, oy + cy0, img, w, h);  // not cached (e.g. zoom 4-10 not all loaded yet)
+        }
+        double n = 256.0 * (1 << z);
+        for (int i = 0; i < sh.n; i++) {                         // to crop pixels
+            double la = plat[i] * M_PI / 180.0;
+            sh.x[i] = (plon[i] + 180.0) / 360.0 * n - ox - cx0;
+            sh.y[i] = (1.0 - log(tan(la) + 1.0 / cos(la)) / M_PI) / 2.0 * n - oy - cy0;
+        }
+        uint16_t col = a->colour == 'r' ? 0xFA69 : a->colour == 'o' ? 0xFC47 : a->colour == 'y' ? 0xFE47 : 0x8CB4;
+        for (int y = 0; y < h; y++) {                            // even-odd scanline fill, 35 %
+            int nx = 0, start = 0;
+            float fy = y + 0.5f;
+            for (int r = 0; r < sh.nrings; r++) {
+                int end = sh.ring_end[r];
+                for (int i = start; i < end; i++) {
+                    int j = i + 1 < end ? i + 1 : start;
+                    float y0 = sh.y[i], y1 = sh.y[j];
+                    if ((y0 <= fy) != (y1 <= fy) && nx < MAX_PTS)
+                        xs[nx++] = sh.x[i] + (fy - y0) / (y1 - y0) * (sh.x[j] - sh.x[i]);
+                }
+                start = end;
+            }
+            qsort(xs, nx, sizeof(float), cmp_float);
+            for (int k = 0; k + 1 < nx; k += 2) {
+                int x0 = (int)fmaxf(0, ceilf(xs[k] - 0.5f)), x1 = (int)fminf(w - 1, floorf(xs[k + 1] - 0.5f));
+                for (int x = x0; x <= x1; x++) img[y * w + x] = blend565(img[y * w + x], col, 90);
+            }
+        }
+        int start = 0;
+        for (int r = 0; r < sh.nrings; r++) {                    // outline
+            int end = sh.ring_end[r];
+            for (int i = start; i < end; i++) {
+                int j = i + 1 < end ? i + 1 : start;
+                line(img, w, h, sh.x[i], sh.y[i], sh.x[j], sh.y[j], col);
+            }
+            start = end;
+        }
+        for (int y = -6; y <= 6; y++)                            // location dot
+            for (int x = -6; x <= 6; x++) {
+                int d = x * x + y * y;
+                if (d <= 36) put(img, w, h, w / 2 + x, h / 2 + y, d <= 16 ? 0xFFFF : 0x0000);
+            }
+        ESP_LOGI(TAG, "region map at zoom %d%s", z, have_map ? "" : " (no cached basemap)");
+    }
+    free(rx.buf); free(plon); free(full); free(xs);
+    if (!ok) { free(img); return NULL; }
+    return img;
+}
