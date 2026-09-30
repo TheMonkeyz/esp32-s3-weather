@@ -1,7 +1,20 @@
-# Builds the firmware on every push and pull request.
-#  - push to main  -> publishes the web flasher (GitHub Pages) with the new build
-#  - tag v*        -> also creates a GitHub Release with the flash images attached
-# One-time setup: Settings -> Pages -> Build and deployment -> Source = "GitHub Actions".
+# Firmware CI, releases and the web flasher.
+#
+#  push to main / pull request -> build only (compile check). The images are kept as a workflow
+#                                 artifact for testing; nothing is published.
+#  tag vX.Y.Z                  -> GitHub Release; the flasher's Stable channel moves to it.
+#  tag vX.Y.Z-rc.N (any "-")   -> GitHub pre-release; the flasher's Beta channel moves to it.
+#  Run workflow (main)         -> rebuilds the flasher site from the existing releases (e.g. after
+#                                 editing web/flash/index.html).
+#
+# The flasher site is always assembled from the files attached to the releases, so people install
+# exactly what was released. Beta is offered only while the newest pre-release is newer than the
+# newest stable release.
+#
+# One-time setup on GitHub:
+#  - Settings -> Pages -> Build and deployment -> Source = "GitHub Actions"
+#  - Settings -> Environments -> github-pages -> Deployment branches and tags -> add a Tag rule "v*"
+#    (by default only main may deploy to Pages)
 name: Firmware
 
 on:
@@ -16,6 +29,7 @@ permissions:
 
 jobs:
   build:
+    if: github.event_name != 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.ver.outputs.version }}
@@ -28,7 +42,7 @@ jobs:
         id: ver
         run: |
           v=$(git describe --tags --always)
-          echo "$v" > version.txt   # ESP-IDF uses version.txt as the app version (shown in logs + settings page)
+          echo "$v" > version.txt   # ESP-IDF uses version.txt as the app version (boot log, settings page)
           echo "version=$v" >> "$GITHUB_OUTPUT"
           echo "Firmware version: $v"
 
@@ -40,52 +54,24 @@ jobs:
           path: "."
           command: idf.py build
 
-      - name: Assemble web flasher site
-        run: |
-          sudo chown -R "$(id -u)" build
-          python3 tools/make_flasher_site.py --build build --out _site --version "${{ steps.ver.outputs.version }}"
-
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
       - name: Release files
         run: |
-          pip install --quiet "esptool>=4.8,<5"
-          mkdir -p dist
+          sudo chown -R "$(id -u)" build
           v="${{ steps.ver.outputs.version }}"
-          cp build/bootloader/bootloader.bin build/partition_table/partition-table.bin dist/
-          cp build/weather_amoled.bin "dist/weather_amoled-$v.bin"
+          python3 tools/make_flasher_site.py dist --build build --out dist --version "$v"
           # Full image for a first install with esptool (flash at 0x0). Overwrites saved settings.
-          cd build && python3 -m esptool --chip esp32s3 merge_bin -o "../dist/weather_amoled-$v-full.bin" @flash_args
-          cd .. && ls -l dist
+          pip install --quiet "esptool>=4.8,<5"
+          (cd build && python3 -m esptool --chip esp32s3 merge_bin -o "../dist/weather_amoled-$v-full.bin" @flash_args)
+          ls -l dist
 
       - uses: actions/upload-artifact@v4
         with:
           name: firmware-${{ steps.ver.outputs.version }}
           path: dist/
-
-      - uses: actions/upload-pages-artifact@v3
-        if: github.event_name != 'pull_request'
-        with:
-          path: _site
-
-  pages:
-    needs: build
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
-    permissions:
-      pages: write
-      id-token: write
-    concurrency:
-      group: pages
-      cancel-in-progress: false
-    environment:
-      name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
-    steps:
-      - id: deploy
-        uses: actions/deploy-pages@v4
 
   release:
     needs: build
@@ -101,12 +87,63 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           files: dist/*
+          prerelease: ${{ contains(github.ref_name, '-') }}
           generate_release_notes: true
           body: |
-            Install from the browser: https://themonkeyz.github.io/esp32-s3-weather/
+            Install from the browser: https://themonkeyz.github.io/esp32-s3-weather/${{ contains(github.ref_name, '-') && '?channel=beta' || '' }}
 
             Or with esptool, first install (erases saved settings):
             `esptool.py --chip esp32s3 write_flash 0x0 weather_amoled-${{ needs.build.outputs.version }}-full.bin`
 
             Update keeping settings:
             `esptool.py --chip esp32s3 write_flash 0x0 bootloader.bin 0x8000 partition-table.bin 0x10000 weather_amoled-${{ needs.build.outputs.version }}.bin`
+
+  pages:
+    needs: release
+    # after every release, or by hand from main
+    if: always() && (needs.release.result == 'success' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download the latest stable release and any newer pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release list --exclude-drafts --limit 100 --json tagName,isPrerelease,publishedAt > releases.json
+          read -r stable beta < <(python3 - <<'EOF'
+          import json
+          rs = sorted(json.load(open("releases.json")), key=lambda r: r["publishedAt"], reverse=True)
+          stable = next((r for r in rs if not r["isPrerelease"]), None)
+          beta = next((r for r in rs if r["isPrerelease"]), None)
+          if beta and stable and beta["publishedAt"] < stable["publishedAt"]:
+              beta = None                     # an older release candidate: nothing to offer
+          print(stable["tagName"] if stable else "-", beta["tagName"] if beta else "-")
+          EOF
+          )
+          echo "stable=$stable beta=$beta"
+          if [ "$stable" = "-" ]; then echo "::error::No stable release yet: tag vX.Y.Z first"; exit 1; fi
+          gh release download "$stable" --dir "rel/stable" --pattern "*.bin" --pattern "flash-parts.json"
+          args="--stable rel/stable"
+          if [ "$beta" != "-" ]; then
+            gh release download "$beta" --dir "rel/beta" --pattern "*.bin" --pattern "flash-parts.json"
+            args="$args --beta rel/beta"
+          fi
+          python3 tools/make_flasher_site.py site $args --out _site
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - id: deploy
+        uses: actions/deploy-pages@v4
