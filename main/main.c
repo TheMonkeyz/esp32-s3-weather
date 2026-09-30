@@ -133,6 +133,8 @@ void app_main(void)
                     if (m) { ui_alert_map(m, ALERT_MAP_W, ALERT_MAP_H); strlcpy(map_id, al.a[0].id, sizeof(map_id)); }
                 }
             }
+            static air_t air;
+            if (air_fetch(&air)) ui_air(&air);
             static bool first = true;
             if (first) { first = false; diag_mark("first weather"); }
         } else {
