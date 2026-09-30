@@ -20,6 +20,9 @@ static lv_obj_t *scr_msg, *msg_title, *msg_body, *msg_qr;
 static lv_obj_t *overlay, *ov_qr, *ov_url, *ov_title;
 static int ov_state;          // 0 hidden, 1 settings QR, 2 Wi-Fi setup AP running
 static lv_timer_t *ap_timer;
+static lv_obj_t *scr_hour;       // hourly detail screen
+static int hr_day;
+static void hour_fill(int day);
 static lv_obj_t *scr_main, *lbl_time, *lbl_city, *icon_box, *lbl_temp, *lbl_cond, *lbl_detail;
 static lv_obj_t *fc_day[3], *fc_temp[3], *fc_icon[3], *hero;
 
@@ -58,8 +61,24 @@ static lv_obj_t *base_screen(void)
 static int S;  // current scale in percent
 #define SC(v) ((v) * S / 100)
 
+// Painter mode: when P_layer is set, icons are drawn straight into a layer (no LVGL objects).
+// Used by the hourly list, which would otherwise need hundreds of small objects.
+static lv_layer_t *P_layer;
+static int P_x, P_y;
+static lv_color_t icon_bg;     // colour behind the icon (for the moon's cut-out)
+
 static lv_obj_t *blob(lv_obj_t *p, int x, int y, int w, int h, lv_color_t c, int radius)
 {
+    if (P_layer) {
+        lv_draw_rect_dsc_t d;
+        lv_draw_rect_dsc_init(&d);
+        d.bg_color = c;
+        d.bg_opa = LV_OPA_COVER;
+        d.radius = radius == LV_RADIUS_CIRCLE ? radius : SC(radius);
+        lv_area_t a = { P_x + SC(x), P_y + SC(y), P_x + SC(x) + SC(w) - 1, P_y + SC(y) + SC(h) - 1 };
+        lv_draw_rect(P_layer, &d, &a);
+        return NULL;
+    }
     lv_obj_t *o = lv_obj_create(p);
     lv_obj_remove_style_all(o);
     lv_obj_set_pos(o, SC(x), SC(y));
@@ -86,6 +105,7 @@ static void passthrough(lv_obj_t *o)
 static void sun(lv_obj_t *p, int x, int y, int d)
 {
     lv_obj_t *s = blob(p, x, y, d, d, lv_color_hex(0xFFC83D), LV_RADIUS_CIRCLE);
+    if (!s) return;
     lv_obj_set_style_shadow_color(s, lv_color_hex(0xFFB000), 0);
     lv_obj_set_style_shadow_width(s, SC(30), 0);
     lv_obj_set_style_shadow_opa(s, LV_OPA_40, 0);
@@ -94,7 +114,7 @@ static void sun(lv_obj_t *p, int x, int y, int d)
 static void moon(lv_obj_t *p, int x, int y, int d)
 {
     blob(p, x, y, d, d, lv_color_hex(0xE8E6F2), LV_RADIUS_CIRCLE);
-    blob(p, x + d / 3, y - d / 8, d, d, C_BG, LV_RADIUS_CIRCLE);
+    blob(p, x + d / 3, y - d / 8, d, d, icon_bg, LV_RADIUS_CIRCLE);
 }
 
 static void cloud(lv_obj_t *p, int x, int y, lv_color_t c)
@@ -110,7 +130,7 @@ static lv_point_precise_t bolt_pts[4][4];
 static void draw_icon(lv_obj_t *box, wx_kind_t k, bool day, int pct, int slot)
 {
     S = pct;
-    lv_obj_clean(box);
+    if (!P_layer) { lv_obj_clean(box); icon_bg = C_BG; }
     lv_color_t cl = lv_color_hex(0xCFD8E3), dark = lv_color_hex(0x7D8896);
     switch (k) {
     case WX_CLEAR:
@@ -137,6 +157,19 @@ static void draw_icon(lv_obj_t *box, wx_kind_t k, bool day, int pct, int slot)
             for (int i = 0; i < 3; i++) blob(box, 34 + i * 24, 86 + (i % 2) * 8, 8, 20, lv_color_hex(0x4DA3FF), 4);
         } else {
             static const int bx[4] = {62, 48, 64, 52}, by[4] = {76, 98, 98, 120};
+            if (P_layer) {
+                lv_draw_line_dsc_t d;
+                lv_draw_line_dsc_init(&d);
+                d.width = SC(8) < 3 ? 3 : SC(8);
+                d.round_start = d.round_end = 1;
+                d.color = lv_color_hex(0xFFD23D);
+                for (int i = 0; i < 3; i++) {
+                    d.p1.x = P_x + SC(bx[i]);     d.p1.y = P_y + SC(by[i]);
+                    d.p2.x = P_x + SC(bx[i + 1]); d.p2.y = P_y + SC(by[i + 1]);
+                    lv_draw_line(P_layer, &d);
+                }
+                break;
+            }
             for (int i = 0; i < 4; i++) { bolt_pts[slot][i].x = SC(bx[i]); bolt_pts[slot][i].y = SC(by[i]); }
             lv_obj_t *l = lv_line_create(box);
             lv_line_set_points(l, bolt_pts[slot], 4);
@@ -171,6 +204,7 @@ static void clock_tick(lv_timer_t *t)
         strcpy(shown, buf);
         lv_label_set_text(lbl_time, buf);
         ESP_LOGI("ui", "clock %s", buf);
+        if (lv_screen_active() == scr_hour && buf[3] == '0' && buf[4] == '0') hour_fill(0);   // new hour
     }
 }
 
@@ -265,6 +299,234 @@ static void page_dots(lv_obj_t *scr, int active)
     }
 }
 
+/* ---------- Hourly detail (tap a forecast day) ----------
+ * Three day pages side by side in a horizontal scroller that snaps one page at a time,
+ * so the pages follow the finger. Each page's hour list scrolls vertically and is drawn
+ * by one draw callback (no per-row objects). */
+
+#define ROW_H   46
+#define LIST_W  316
+typedef struct {
+    lv_obj_t *page, *title, *sum, *list, *content;
+    int first, count, now;           // hour indexes into wx.hour
+} day_page_t;
+static day_page_t pg[3];
+static lv_obj_t *hr_pager, *hr_dot[3];
+static weather_t wx;                 // copy of the last forecast
+static bool have_wx;
+
+static void draw_text(lv_layer_t *layer, lv_font_t *f, lv_color_t c, int x, int y, int w,
+                      lv_text_align_t align, const char *txt)
+{
+    lv_draw_label_dsc_t d;
+    lv_draw_label_dsc_init(&d);
+    d.font = f;
+    d.color = c;
+    d.align = align;
+    d.text = txt;
+    d.text_local = 1;                                // txt lives on the stack
+    int lh = lv_font_get_line_height(f);
+    lv_area_t a = { x, y + (ROW_H - lh) / 2, x + w - 1, y + (ROW_H + lh) / 2 };
+    lv_draw_label(layer, &d, &a);
+}
+
+// Draws only the rows inside the clip area
+static void hr_draw(lv_event_t *e)
+{
+    lv_obj_t *o = lv_event_get_target(e);
+    day_page_t *dp = lv_event_get_user_data(e);
+    lv_layer_t *layer = lv_event_get_layer(e);
+    lv_area_t c;
+    lv_obj_get_coords(o, &c);
+    const lv_area_t *clip = &layer->_clip_area;
+    char buf[16];
+    for (int r = 0; r < dp->count; r++) {
+        int y = c.y1 + r * ROW_H;
+        if (y + ROW_H <= clip->y1 || y > clip->y2) continue;
+        int i = dp->first + r;
+        const wx_hour_t *h = &wx.hour[i];
+        bool now = i == dp->now;
+        icon_bg = C_BG;
+        if (now) {
+            lv_draw_rect_dsc_t d;
+            lv_draw_rect_dsc_init(&d);
+            d.bg_color = icon_bg = lv_color_hex(0x16283A);
+            d.radius = 14;
+            lv_area_t a = { c.x1, y + 2, c.x2, y + ROW_H - 3 };
+            lv_draw_rect(layer, &d, &a);
+        }
+        if (now) strcpy(buf, "Now"); else snprintf(buf, sizeof(buf), "%02d:00", i % 24);
+        draw_text(layer, f_tiny, now ? C_ACCENT : C_DIM, c.x1 + 10, y, 64, LV_TEXT_ALIGN_LEFT, buf);
+        P_layer = layer; P_x = c.x1 + 76; P_y = y + (ROW_H - 37) / 2;
+        draw_icon(NULL, weather_kind(h->code), h->is_day, 30, 0);
+        P_layer = NULL;
+        snprintf(buf, sizeof(buf), "%d°", (int)(h->temp < 0 ? h->temp - 0.5f : h->temp + 0.5f));
+        draw_text(layer, f_small, C_TEXT, c.x1 + 118, y, 56, LV_TEXT_ALIGN_RIGHT, buf);
+        snprintf(buf, sizeof(buf), "%d%%", h->pop);
+        draw_text(layer, f_tiny, h->pop >= 30 ? C_ACCENT : C_DIM, c.x1 + 180, y, 54, LV_TEXT_ALIGN_RIGHT, buf);
+        snprintf(buf, sizeof(buf), "%.0f km/h", h->wind);
+        draw_text(layer, f_micro, C_DIM, c.x1 + 236, y, 72, LV_TEXT_ALIGN_RIGHT, buf);
+    }
+}
+
+static void set_dots(int day)
+{
+    hr_day = day;
+    for (int i = 0; i < 3; i++) {
+        lv_obj_set_size(hr_dot[i], i == day ? 18 : 7, 7);
+        lv_obj_set_style_bg_color(hr_dot[i], i == day ? C_TEXT : C_DIM, 0);
+    }
+}
+
+static void fill_page(int day)
+{
+    day_page_t *dp = &pg[day];
+    if (day >= wx.ndays) { lv_obj_add_flag(dp->page, LV_OBJ_FLAG_HIDDEN); dp->count = 0; return; }
+    lv_obj_remove_flag(dp->page, LV_OBJ_FLAG_HIDDEN);
+    struct tm now;
+    int cur_h = config_local_time((long)time(NULL), &now) ? now.tm_hour : 0;
+    dp->first = day * 24 + (day == 0 ? cur_h : 0);
+    int end = day * 24 + 24;
+    if (end > wx.nhours) end = wx.nhours;
+    dp->count = end > dp->first ? end - dp->first : 0;
+    dp->now = day == 0 ? dp->first : -1;
+
+    const wx_day_t *d = &wx.day[day];
+    struct tm tm = {0};
+    char name[16] = "-";
+    if (sscanf(d->date, "%d-%d-%d", &tm.tm_year, &tm.tm_mon, &tm.tm_mday) == 3) {
+        tm.tm_year -= 1900; tm.tm_mon -= 1; tm.tm_hour = 12;
+        mktime(&tm);
+        strftime(name, sizeof(name), "%A", &tm);        // weekday name, today included
+    }
+    lv_label_set_text(dp->title, name);
+    lv_label_set_text_fmt(dp->sum, "%s  ·  %.0f° / %.0f°", weather_text(d->code), d->tmax, d->tmin);
+    lv_obj_set_height(dp->content, dp->count * ROW_H);
+    lv_obj_invalidate(dp->page);
+}
+
+static void hour_fill(int day)       // refresh one day's page (new data / new hour)
+{
+    fill_page(day);
+}
+
+static void hour_close(void)
+{
+    lv_screen_load_anim(scr_main, LV_SCR_LOAD_ANIM_MOVE_BOTTOM, 260, 0, false);
+}
+
+// Tap on a forecast column of the weather screen
+static void main_tap(lv_event_t *e)
+{
+    lv_indev_t *in = lv_indev_active();
+    if (!in || ov_state || !have_wx) return;
+    lv_point_t p;
+    lv_indev_get_point(in, &p);
+    if (p.y < 296) return;                              // only the forecast row
+    int col = p.x < DISP_W / 2 - 49 ? 0 : p.x > DISP_W / 2 + 49 ? 2 : 1;
+    if (col >= wx.ndays) return;
+    printf("ui: tap forecast day %d\n", col);
+    for (int i = 0; i < 3; i++) {
+        fill_page(i);
+        lv_obj_scroll_to_y(pg[i].list, 0, LV_ANIM_OFF);
+    }
+    lv_obj_update_layout(hr_pager);
+    lv_obj_scroll_to_x(hr_pager, col * DISP_W, LV_ANIM_OFF);
+    set_dots(col);
+    lv_screen_load_anim(scr_hour, LV_SCR_LOAD_ANIM_MOVE_TOP, 260, 0, false);
+}
+
+static void hour_tap(lv_event_t *e)
+{
+    printf("ui: hourly view closed (tap)\n");
+    hour_close();
+}
+
+// A swipe that didn't scroll anything (e.g. vertical on a short list): its release is not a tap
+static void hour_gesture(lv_event_t *e)
+{
+    lv_indev_t *in = lv_indev_active();
+    if (in) lv_indev_wait_release(in);
+}
+
+static void pager_scrolled(lv_event_t *e)
+{
+    int x = lv_obj_get_scroll_x(hr_pager);
+    int day = (x + DISP_W / 2) / DISP_W;
+    if (day < 0) day = 0;
+    if (day > 2) day = 2;
+    if (day != hr_day) set_dots(day);
+    if (lv_event_get_code(e) == LV_EVENT_SCROLL_END)
+        ESP_LOGI("ui", "hourly view: day %d, %d rows", day, pg[day].count);
+}
+
+static void hour_create(void)
+{
+    scr_hour = base_screen();
+    hr_pager = lv_obj_create(scr_hour);
+    lv_obj_remove_style_all(hr_pager);
+    lv_obj_set_size(hr_pager, DISP_W, DISP_H);
+    lv_obj_set_scroll_dir(hr_pager, LV_DIR_HOR);
+    lv_obj_set_scroll_snap_x(hr_pager, LV_SCROLL_SNAP_CENTER);
+    lv_obj_add_flag(hr_pager, LV_OBJ_FLAG_SCROLL_ONE | LV_OBJ_FLAG_EVENT_BUBBLE);
+    lv_obj_set_scrollbar_mode(hr_pager, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_add_event_cb(hr_pager, pager_scrolled, LV_EVENT_SCROLL, NULL);
+    lv_obj_add_event_cb(hr_pager, pager_scrolled, LV_EVENT_SCROLL_END, NULL);
+
+    for (int d = 0; d < 3; d++) {
+        day_page_t *dp = &pg[d];
+        dp->page = lv_obj_create(hr_pager);
+        lv_obj_remove_style_all(dp->page);
+        lv_obj_set_size(dp->page, DISP_W, DISP_H);
+        lv_obj_set_pos(dp->page, d * DISP_W, 0);
+        lv_obj_remove_flag(dp->page, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_add_flag(dp->page, LV_OBJ_FLAG_EVENT_BUBBLE | LV_OBJ_FLAG_GESTURE_BUBBLE);
+        dp->title = label(dp->page, f_city, C_ACCENT, 34);
+        dp->sum = label(dp->page, f_tiny, C_DIM, 68);
+        lv_obj_set_width(dp->sum, 340);
+        lv_label_set_long_mode(dp->sum, LV_LABEL_LONG_DOT);
+
+        // Column headers, aligned with the columns drawn in hr_draw()
+        static const struct { int x, w; const char *t; } hdr[] = {
+            { 118, 56, "Temp" }, { 180, 54, "Rain" }, { 236, 72, "Wind" },
+        };
+        for (int i = 0; i < 3; i++) {
+            lv_obj_t *h = label(dp->page, f_micro, i == 1 ? C_ACCENT : C_DIM, 0);
+            lv_obj_set_width(h, hdr[i].w);
+            lv_obj_set_style_text_align(h, LV_TEXT_ALIGN_RIGHT, 0);
+            lv_label_set_text(h, hdr[i].t);
+            lv_obj_align(h, LV_ALIGN_TOP_LEFT, (DISP_W - LIST_W) / 2 + hdr[i].x, 100);
+        }
+
+        dp->list = lv_obj_create(dp->page);
+        lv_obj_remove_style_all(dp->list);
+        lv_obj_set_size(dp->list, LIST_W, 290);
+        lv_obj_align(dp->list, LV_ALIGN_TOP_MID, 0, 120);
+        lv_obj_set_scroll_dir(dp->list, LV_DIR_VER);
+        lv_obj_set_scrollbar_mode(dp->list, LV_SCROLLBAR_MODE_OFF);
+        lv_obj_add_flag(dp->list, LV_OBJ_FLAG_EVENT_BUBBLE | LV_OBJ_FLAG_GESTURE_BUBBLE);
+
+        dp->content = lv_obj_create(dp->list);
+        lv_obj_remove_style_all(dp->content);
+        lv_obj_set_size(dp->content, LIST_W, ROW_H);
+        lv_obj_remove_flag(dp->content, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_add_flag(dp->content, LV_OBJ_FLAG_EVENT_BUBBLE | LV_OBJ_FLAG_GESTURE_BUBBLE);
+        lv_obj_add_event_cb(dp->content, hr_draw, LV_EVENT_DRAW_MAIN, dp);
+    }
+
+    for (int i = 0; i < 3; i++) {
+        hr_dot[i] = lv_obj_create(scr_hour);
+        lv_obj_remove_style_all(hr_dot[i]);
+        lv_obj_set_size(hr_dot[i], 7, 7);
+        lv_obj_set_style_radius(hr_dot[i], 4, 0);
+        lv_obj_set_style_bg_opa(hr_dot[i], LV_OPA_COVER, 0);
+        lv_obj_align(hr_dot[i], LV_ALIGN_BOTTOM_MID, (i - 1) * 16, -16);
+        lv_obj_remove_flag(hr_dot[i], LV_OBJ_FLAG_CLICKABLE);
+    }
+    lv_obj_add_event_cb(scr_hour, hour_tap, LV_EVENT_SHORT_CLICKED, NULL);
+    lv_obj_add_event_cb(scr_hour, hour_gesture, LV_EVENT_GESTURE, NULL);
+}
+
 static void gesture_cb(lv_event_t *e)
 {
     lv_indev_t *in = lv_indev_active();
@@ -285,6 +547,8 @@ static void gesture_cb(lv_event_t *e)
         radar_set_visible(false);
         lv_screen_load_anim(scr_main, LV_SCR_LOAD_ANIM_MOVE_RIGHT, 280, 0, false);
         lv_indev_wait_release(in);
+    } else {
+        lv_indev_wait_release(in);      // unused swipe: don't let its release open the hourly view
     }
 }
 
@@ -349,6 +613,8 @@ void ui_init(void)
     page_dots(scr_radar, 1);
     lv_obj_add_event_cb(scr_main, gesture_cb, LV_EVENT_GESTURE, NULL);
     lv_obj_add_event_cb(scr_main, show_settings, LV_EVENT_LONG_PRESSED, NULL);
+    lv_obj_add_event_cb(scr_main, main_tap, LV_EVENT_SHORT_CLICKED, NULL);
+    hour_create();
     passthrough(scr_main);          // before the (clickable) overlay is added
 
     overlay = lv_obj_create(scr_main);
@@ -445,6 +711,9 @@ void ui_weather(const weather_t *w)
             draw_icon(fc_icon[i], weather_kind(w->day[i].code), true, 36, i + 1);
         }
     }
+    wx = *w;
+    have_wx = true;
+    if (lv_screen_active() == scr_hour) for (int i = 0; i < 3; i++) hour_fill(i);
     clock_tick(NULL);
     if (lv_screen_active() == scr_msg) lv_screen_load(scr_main);
     display_unlock();
