@@ -9,7 +9,7 @@ How to write an entry: add a `## vX.Y.Z - YYYY-MM-DD` section at the top **befor
 their own `## vX.Y.Z-rc.N` section. Those are shown only to Beta users, while the final release's section should
 list everything again.
 
-## v1.3.1 - 2026-10-01
+## v1.3.1 - 2026-09-30
 - The update screen and the settings page now show what's new before you install.
 
 ## v1.3.0 - 2026-09-30
