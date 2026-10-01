@@ -7,6 +7,7 @@
 #include "cJSON.h"
 #include "esp_log.h"
 #include "config.h"
+#include "i18n.h"
 #include "svc.h"
 #include "esp_timer.h"
 
@@ -166,31 +167,7 @@ bool weather_fetch(const location_t *loc, weather_t *w)
     return ok;
 }
 
-const char *weather_text(int code)
-{
-    switch (code) {
-    case 0: return "Clear sky";
-    case 1: return "Mainly clear";
-    case 2: return "Partly cloudy";
-    case 3: return "Overcast";
-    case 45: case 48: return "Fog";
-    case 51: case 53: case 55: return "Drizzle";
-    case 56: case 57: return "Freezing drizzle";
-    case 61: return "Light rain";
-    case 63: return "Rain";
-    case 65: return "Heavy rain";
-    case 66: case 67: return "Freezing rain";
-    case 71: return "Light snow";
-    case 73: return "Snow";
-    case 75: return "Heavy snow";
-    case 77: return "Snow grains";
-    case 80: case 81: case 82: return "Rain showers";
-    case 85: case 86: return "Snow showers";
-    case 95: return "Thunderstorm";
-    case 96: case 99: return "Thunderstorm, hail";
-    default: return "—";
-    }
-}
+const char *weather_text(int code) { return tr_weather(code); }   // display language (i18n.c)
 
 wx_kind_t weather_kind(int code)
 {
@@ -241,7 +218,7 @@ bool air_fetch(air_t *a)
         ESP_LOGI(TAG, "Air: US AQI %d, PM2.5 %.1f, pollen %.0f/%.0f/%.0f/%.0f", a->us_aqi, a->pm25,
                  a->pollen[0], a->pollen[1], a->pollen[2], a->pollen[3]);
     } else {
-        if (err == ESP_OK && status == 200) svc_fail(SVC_AIR, "Bad response", t0);
+        if (err == ESP_OK && status == 200) svc_fail(SVC_AIR, tr(T_ERR_BAD_REPLY), t0);
         ESP_LOGW(TAG, "Air quality failed: %s, status %d", esp_err_to_name(err), status);
     }
     cJSON_Delete(root);

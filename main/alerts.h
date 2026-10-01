@@ -4,14 +4,18 @@
 
 // Environment Canada weather alerts (watches, warnings, advisories, statements) for one point.
 #define ALERTS_MAX 4
+#define ALERT_LANGS 2         // Environment Canada sends English and French (index = lang_t: 0 en, 1 fr)
+#define ALERT_LANGS 2         // Environment Canada sends English and French (index = lang_t: 0 en, 1 fr)
+#define ALERT_LANGS 2         // Environment Canada sends English and French (index = lang_t: 0 en, 1 fr)
+#define ALERT_LANGS 2         // Environment Canada sends English and French (index = lang_t: 0 en, 1 fr)
 
 typedef struct {
     char id[80];          // feature id (for the region shape)
-    char name[48];        // "Frost advisory"
+    char name[ALERT_LANGS][48];    // "Frost advisory" / "Avis de gel"
     char colour;          // 'r' red, 'o' orange, 'y' yellow, 'g' grey (unknown / statement)
     time_t ends;          // event end (UTC epoch), 0 if unknown
-    char area[72];        // "City of Québec"
-    char text[900];       // description (English)
+    char area[ALERT_LANGS][72];    // "City of Québec" / "Ville de Québec"
+    char text[ALERT_LANGS][900];   // description
 } alert_t;
 
 typedef struct {

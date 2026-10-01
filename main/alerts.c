@@ -13,6 +13,7 @@
 #include "cJSON.h"
 #include "esp_timer.h"
 #include "svc.h"
+#include "i18n.h"
 
 static const char *TAG = "alerts";
 
@@ -86,7 +87,7 @@ bool alerts_fetch(double lat, double lon, alerts_t *out)
     if (!cJSON_IsArray(features)) {
         cJSON_Delete(root);
         ESP_LOGW(TAG, "unexpected response");
-        svc_fail(SVC_ALERTS, "Bad response", t0);
+        svc_fail(SVC_ALERTS, tr(T_ERR_BAD_REPLY), t0);
         return false;
     }
 
@@ -102,23 +103,31 @@ bool alerts_fetch(double lat, double lon, alerts_t *out)
         if (now > 1700000000 && ((ends && ends < now) || (expires && expires < now))) continue;
         const char *name = str(p, "alert_name_en");
         bool dup = false;                                       // same alert, neighbouring region
-        for (int i = 0; i < out->n; i++) if (!strcasecmp(out->a[i].name, name)) dup = true;
+        for (int i = 0; i < out->n; i++) if (!strcasecmp(out->a[i].name[0], name)) dup = true;
         if (dup || !name[0] || out->n >= ALERTS_MAX) continue;
         alert_t *a = &out->a[out->n++];
         strlcpy(a->id, cJSON_GetStringValue(cJSON_GetObjectItem(f, "id")) ?: "", sizeof(a->id));
-        strlcpy(a->name, name, sizeof(a->name));
-        a->name[0] = toupper((unsigned char)a->name[0]);
+        static const char *const suffix[ALERT_LANGS] = { "en", "fr" };
+        for (int l = 0; l < ALERT_LANGS; l++) {                 // both languages, so a switch is instant
+            char k[24];
+            snprintf(k, sizeof(k), "alert_name_%s", suffix[l]);
+            strlcpy(a->name[l], l == 0 ? name : str(p, k), sizeof(a->name[l]));
+            if (!a->name[l][0]) strlcpy(a->name[l], name, sizeof(a->name[l]));
+            a->name[l][0] = toupper((unsigned char)a->name[l][0]);   // ASCII only: "avis de gel" -> "Avis de gel"
+            snprintf(k, sizeof(k), "feature_name_%s", suffix[l]);
+            strlcpy(a->area[l], str(p, k), sizeof(a->area[l]));
+            snprintf(k, sizeof(k), "alert_text_%s", suffix[l]);
+            strlcpy(a->text[l], str(p, k), sizeof(a->text[l]));
+            char *boiler = strstr(a->text[l], l == 0 ? "\n\nPlease continue to monitor" : "\n\nVeuillez continuer");
+            if (boiler) *boiler = 0;                                // standard closing paragraph
+        }
         const char *col = str(p, "risk_colour_en");
         a->colour = !strcmp(col, "red") ? 'r' : !strcmp(col, "orange") ? 'o' : !strcmp(col, "yellow") ? 'y' : 'g';
         a->ends = ends;
-        strlcpy(a->area, str(p, "feature_name_en"), sizeof(a->area));
-        strlcpy(a->text, str(p, "alert_text_en"), sizeof(a->text));
-        char *boiler = strstr(a->text, "\n\nPlease continue to monitor");   // standard closing paragraph
-        if (boiler) *boiler = 0;
     }
     cJSON_Delete(root);
     qsort(out->a, out->n, sizeof(alert_t), by_severity);
-    if (out->n) ESP_LOGI(TAG, "%d alert(s): %s (%c)%s", out->n, out->a[0].name, out->a[0].colour, out->n > 1 ? " ..." : "");
+    if (out->n) ESP_LOGI(TAG, "%d alert(s): %s (%c)%s", out->n, out->a[0].name[0], out->a[0].colour, out->n > 1 ? " ..." : "");
     else ESP_LOGI(TAG, "no alerts");
     return true;
 }

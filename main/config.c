@@ -7,6 +7,7 @@
 #include "freertos/semphr.h"
 #include "nvs.h"
 #include "esp_log.h"
+#include "i18n.h"
 
 static const char *TAG = "config";
 static portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
@@ -168,14 +169,17 @@ static void units_load(void)
     if (units_loaded) return;
     units_loaded = true;
     nvs_handle_t h;
-    if (nvs_open("units", NVS_READONLY, &h) != ESP_OK) return;
+    if (nvs_open("units", NVS_READONLY, &h) != ESP_OK) { i18n_set(LANG_EN); return; }
     uint8_t v;
     if (nvs_get_u8(h, "temp", &v) == ESP_OK) units.fahrenheit = v == 1;
     if (nvs_get_u8(h, "wind", &v) == ESP_OK && v <= WIND_MS) units.wind = v;
     if (nvs_get_u8(h, "h12", &v) == ESP_OK) units.h12 = v == 1;
+    if (nvs_get_u8(h, "lang", &v) == ESP_OK && v < LANG_COUNT) units.lang = v;
     nvs_close(h);
-    ESP_LOGI(TAG, "Units: %s, %s, %s", units.fahrenheit ? "F" : "C",
-             units.wind == WIND_MPH ? "mph" : units.wind == WIND_MS ? "m/s" : "km/h", units.h12 ? "12 h" : "24 h");
+    i18n_set(units.lang);
+    ESP_LOGI(TAG, "Units: %s, %s, %s, %s", units.fahrenheit ? "F" : "C",
+             units.wind == WIND_MPH ? "mph" : units.wind == WIND_MS ? "m/s" : "km/h", units.h12 ? "12 h" : "24 h",
+             i18n_code(units.lang));
 }
 
 void config_get_units(units_t *out)
@@ -188,20 +192,26 @@ void config_get_units(units_t *out)
 
 bool config_set_units(const units_t *u)
 {
-    if (u->wind > WIND_MS) return false;
+    if (u->wind > WIND_MS || u->lang >= LANG_COUNT) return false;
     nvs_handle_t h;
     if (nvs_open("units", NVS_READWRITE, &h) != ESP_OK) return false;
     nvs_set_u8(h, "temp", u->fahrenheit);
     nvs_set_u8(h, "wind", u->wind);
     nvs_set_u8(h, "h12", u->h12);
+    nvs_set_u8(h, "lang", u->lang);
+    nvs_set_u8(h, "lang", u->lang);
+    nvs_set_u8(h, "lang", u->lang);
+    nvs_set_u8(h, "lang", u->lang);
     nvs_commit(h);
     nvs_close(h);
     units_load();
     taskENTER_CRITICAL(&mux);
     units = *u;
     taskEXIT_CRITICAL(&mux);
-    ESP_LOGI(TAG, "Saved units: %s, %s, %s", u->fahrenheit ? "F" : "C",
-             u->wind == WIND_MPH ? "mph" : u->wind == WIND_MS ? "m/s" : "km/h", u->h12 ? "12 h" : "24 h");
+    i18n_set(u->lang);
+    ESP_LOGI(TAG, "Saved units: %s, %s, %s, %s", u->fahrenheit ? "F" : "C",
+             u->wind == WIND_MPH ? "mph" : u->wind == WIND_MS ? "m/s" : "km/h", u->h12 ? "12 h" : "24 h",
+             i18n_code(u->lang));
     return true;
 }
 

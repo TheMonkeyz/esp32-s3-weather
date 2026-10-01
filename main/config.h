@@ -29,6 +29,7 @@ typedef struct {
     bool fahrenheit;
     unsigned char wind;      // wind_unit_t
     bool h12;                // 12-hour clock
+    unsigned char lang;      // lang_t (i18n.h): display and settings page language
 } units_t;
 void config_get_units(units_t *out);                       // defaults: °C, km/h, 24-hour
 bool config_set_units(const units_t *u);                   // saves to NVS

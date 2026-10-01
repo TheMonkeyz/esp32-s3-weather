@@ -22,6 +22,7 @@
 #include "cJSON.h"
 #include "net.h"
 #include "svc.h"
+#include "i18n.h"
 #include "esp_timer.h"
 
 static const char *TAG = "ota";
@@ -117,7 +118,7 @@ static cJSON *get_json(const char *url, int cap)
     int status = esp_http_client_get_status_code(c);
     esp_http_client_cleanup(c);
     cJSON *j = err == ESP_OK && status == 200 ? cJSON_Parse(rx.buf) : NULL;
-    if (err == ESP_OK && status == 200 && !j) svc_fail(SVC_UPDATES, "Bad response", t0);
+    if (err == ESP_OK && status == 200 && !j) svc_fail(SVC_UPDATES, tr(T_ERR_BAD_REPLY), t0);
     else svc_http(SVC_UPDATES, err, status, t0);
     if (!j) ESP_LOGW(TAG, "GET %s: %s, status %d", url, esp_err_to_name(err), status);
     free(rx.buf);
@@ -126,8 +127,6 @@ static cJSON *get_json(const char *url, int cap)
 
 /* ---------- release notes ---------- */
 
-static const char *MONTHS[] = { "January", "February", "March", "April", "May", "June", "July", "August",
-                                "September", "October", "November", "December" };
 
 // Keeps the releases newer than the running version, up to the offered one. When a release is offered,
 // release-candidate sections are skipped: the release's own section lists everything.
@@ -148,7 +147,7 @@ static void fetch_notes(const ver_t *cur, bool cur_ok, const ver_t *lat)
         char date[32] = "";
         int y, mo, dd;
         if (d && sscanf(d, "%d-%d-%d", &y, &mo, &dd) == 3 && mo >= 1 && mo <= 12)
-            snprintf(date, sizeof(date), "%s %d, %d", MONTHS[mo - 1], dd, y);
+            tr_date_ymd(y, mo, dd, date, sizeof(date));                // "September 30, 2026" / "30 septembre 2026"
         int need = snprintf(NULL, 0, "%s%s|%s\n", kept ? "\n" : "", v, date);
         if (n + need >= NOTES_MAX - 32) break;
         n += snprintf(buf + n, NOTES_MAX - n, "%s%s|%s\n", kept ? "\n" : "", v, date);
@@ -190,7 +189,7 @@ static void check(void)
 {
     set_state(OTA_CHECKING, "");
     cJSON *ch = get_json(OTA_SITE "channels.json", 8192);
-    if (!ch) { set_state(OTA_FAILED, "Can't reach the update site"); return; }
+    if (!ch) { set_state(OTA_FAILED, tr(T_OTA_NO_SITE)); return; }
     char chan[8];
     xSemaphoreTake(mux, portMAX_DELAY);
     strlcpy(chan, st.channel, sizeof(chan));
@@ -222,7 +221,7 @@ static void check(void)
         cJSON *off = cJSON_GetObjectItem(p, "offset");
         if (cJSON_IsNumber(off) && off->valueint == 0x10000) path = cJSON_GetStringValue(cJSON_GetObjectItem(p, "path"));
     }
-    if (!path) { cJSON_Delete(m); set_state(OTA_FAILED, "No app image in the manifest"); return; }
+    if (!path) { cJSON_Delete(m); set_state(OTA_FAILED, tr(T_OTA_NO_IMAGE)); return; }
     char *slash = strrchr(url, '/');
     if (slash) slash[1] = 0;
     xSemaphoreTake(mux, portMAX_DELAY);
@@ -251,14 +250,14 @@ static void install(void)
     esp_https_ota_config_t cfg = { .http_config = &http };
     esp_https_ota_handle_t h = NULL;
     esp_err_t err = esp_https_ota_begin(&cfg, &h);
-    if (err != ESP_OK) { set_state(OTA_FAILED, "Download failed to start"); return; }
+    if (err != ESP_OK) { set_state(OTA_FAILED, tr(T_OTA_NO_START)); return; }
 
     esp_app_desc_t desc;
     if (esp_https_ota_get_img_desc(h, &desc) != ESP_OK ||
         strcmp(desc.project_name, esp_app_get_description()->project_name)) {
         ESP_LOGE(TAG, "Not this project's firmware (%s)", desc.project_name);
         esp_https_ota_abort(h);
-        set_state(OTA_FAILED, "Wrong firmware image");
+        set_state(OTA_FAILED, tr(T_OTA_WRONG));
         return;
     }
     int total = esp_https_ota_get_image_size(h), last = -1;
@@ -275,13 +274,13 @@ static void install(void)
     if (err != ESP_OK || !esp_https_ota_is_complete_data_received(h)) {
         ESP_LOGE(TAG, "Download failed: %s", esp_err_to_name(err));
         esp_https_ota_abort(h);
-        set_state(OTA_FAILED, "Download interrupted");
+        set_state(OTA_FAILED, tr(T_OTA_INTERRUPTED));
         return;
     }
     err = esp_https_ota_finish(h);                  // verifies the image and selects it for the next boot
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Image rejected: %s", esp_err_to_name(err));
-        set_state(OTA_FAILED, "Downloaded image is invalid");
+        set_state(OTA_FAILED, tr(T_OTA_INVALID));
         return;
     }
     ESP_LOGI(TAG, "Update installed, restarting");
