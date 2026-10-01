@@ -191,6 +191,10 @@ Windows build gets both from `main/idf_component.yml`. `components/dns_server` *
   `sound: new alert (o): quiet hours` (if inside quiet hours), at 60 s only alert 2 sounds (`alert sound, level
   2`); the fake ids' region maps give HTTP 404 (expected). Then restore quiet hours, `git checkout main/main.c`, and
   flash a clean build.
+- **Lightning on the radar** (October 1): GeoMet `Lightning_2.5km_Density`, see ARCHITECTURE "Radar". There was no
+  lightning in Canada while it was built: test with fake marks at fixed **lat/lon** in a throwaway build (fixed
+  screen positions don't follow zooms, which looked like a bug). Check `diag: heap` against a baseline build after
+  touching `frame_t`: it is copied ~46 times in internal RAM.
 - **Motion sensor (QMI8658 at I2C 0x6B):** register notes are at the top of `main/imu.c`. Real numbers from this
   board, for tuning: still 0.001–0.005 g, firm table bump ~0.07 g, pick-up 0.14–0.33 g (threshold 0.10 g). The
   presence log prints `motion peak X g` every 5 s and `picked up / moved (X g): wake`; the page shows a live meter.

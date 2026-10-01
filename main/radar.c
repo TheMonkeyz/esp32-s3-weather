@@ -368,12 +368,20 @@ static void fmt_local(time_t t, char *out, size_t n)
 #define NFRAMES   15
 #define STEP_S    (12 * 60)
 
+#define LTG_MAX   64        // lightning marks per frame
+#define LTG_BLOCK 20        // one mark per 20x20 px block that has lightning (same look at every zoom)
+
 typedef struct {
     time_t t;
     bool ok;
     uint8_t *idx;           // W*H palette indices, 0 = no echo
     uint8_t r[256], g[256], b[256], a[256];
+    uint8_t nltg;           // lightning marks: centres of the blocks with flashes, at LTG_X(f) / LTG_Y(f)
 } frame_t;
+// The marks live after the pixels in the same PSRAM buffer (idx is W*H + 2*LTG_MAX), so they move with it in
+// plan_frames(). Not in frame_t: it is copied ~46 times in internal RAM (frames, plan_frames, load_frame).
+#define LTG_X(f) ((f)->idx + W * H)                 // in 2 px units (466 / 2 fits a byte)
+#define LTG_Y(f) ((f)->idx + W * H + LTG_MAX)
 
 static frame_t frames[NFRAMES];     // [NFRAMES-1] is the latest (live) frame
 static lv_timer_t *play_timer;
@@ -402,21 +410,77 @@ static time_t latest_radar_time(void)
     return t;
 }
 
-static bool fetch_frame(time_t t, frame_t *f)
+// GetMap of a GeoMet layer for the current view at time t (466x466, Web Mercator, transparent PNG)
+static void geomet_url(char *url, size_t n, const char *layer, time_t t, char *iso, size_t isz)
 {
     double res = 2 * MERC_MAX / (256.0 * (1 << zoom));
     double minx = view_x * res - MERC_MAX, maxx = (view_x + W) * res - MERC_MAX;
     double maxy = MERC_MAX - view_y * res, miny = MERC_MAX - (view_y + H) * res;
-    char iso[24];
     struct tm tm;
     gmtime_r(&t, &tm);
-    strftime(iso, sizeof(iso), "%Y-%m-%dT%H:%M:%SZ", &tm);
-    char url[420];
-    snprintf(url, sizeof(url),
+    strftime(iso, isz, "%Y-%m-%dT%H:%M:%SZ", &tm);
+    snprintf(url, n,
              "https://geo.weather.gc.ca/geomet?service=WMS&version=1.3.0&request=GetMap"
-             "&layers=RADAR_1KM_RRAI&styles=&crs=EPSG:3857&bbox=%.1f,%.1f,%.1f,%.1f"
+             "&layers=%s&styles=&crs=EPSG:3857&bbox=%.1f,%.1f,%.1f,%.1f"
              "&width=%d&height=%d&format=image/png&transparent=true&time=%s",
-             minx, miny, maxx, maxy, W, H, iso);
+             layer, minx, miny, maxx, maxy, W, H, iso);
+}
+
+/* Lightning (Canadian Lightning Detection Network via GeoMet, Lightning_2.5km_Density): flashes of the last
+ * 10 minutes on a 2.5 km grid, published every 10 min, kept 3 h, Canada + 250 km. The image (density colours on
+ * small squares) would be lost in the rain, so each 20x20 px block with any flash becomes one bolt mark at the
+ * flashes' centre. Optional: a failed request leaves the frame without marks. */
+static void fetch_lightning(time_t t, frame_t *f)
+{
+    f->nltg = 0;
+    time_t lt = t / 600 * 600;                  // the 10-min window the radar time falls in
+    char url[420], iso[24];
+    lv_draw_buf_t *db = NULL;
+    for (int k = 0; k < 2 && !db; k++, lt -= 600) {   // the newest window may not be published yet
+        geomet_url(url, sizeof(url), "Lightning_2.5km_Density", lt, iso, sizeof(iso));
+        dl_t d;
+        if (!http_fetch(&geo_h, url, &d)) continue;
+        unsigned rw, rh;
+        bool png = d.len > 8 && !memcmp(d.buf, "\x89PNG", 4);   // else an XML error: time not published yet
+        db = png ? decode_png(d.buf, d.len, &rw, &rh) : NULL;
+        free(d.buf);
+        if (db && ((int)rw != W || (int)rh != H)) { lv_draw_buf_destroy(db); db = NULL; }
+    }
+    if (!db) { ESP_LOGW(TAG, "Lightning %s: not available", iso); return; }
+    enum { BW = (W + LTG_BLOCK - 1) / LTG_BLOCK, BH = (H + LTG_BLOCK - 1) / LTG_BLOCK };
+    uint32_t *sx = heap_caps_calloc(3 * BW * BH, sizeof(uint32_t), MALLOC_CAP_SPIRAM);   // internal RAM is scarce
+    if (!sx) { lv_draw_buf_destroy(db); return; }
+    uint32_t *sy = sx + BW * BH, *cnt = sy + BW * BH;
+    const uint8_t *px = db->data;
+    for (int y = 0; y < H; y++) {
+        if ((y & 63) == 63) vTaskDelay(1);
+        const uint8_t *row = px + y * db->header.stride;
+        for (int x = 0; x < W; x++) {
+            if (!row[x * 4 + 3]) continue;
+            int b = (y / LTG_BLOCK) * BW + x / LTG_BLOCK;
+            sx[b] += x; sy[b] += y; cnt[b]++;
+        }
+    }
+    lv_draw_buf_destroy(db);
+    int flashes = 0;
+    uint8_t *lx = LTG_X(f), *ly = LTG_Y(f);
+    for (int b = 0; b < BW * BH; b++) {
+        if (!cnt[b]) continue;
+        flashes += cnt[b];
+        if (f->nltg < LTG_MAX) {
+            lx[f->nltg] = sx[b] / cnt[b] / 2;
+            ly[f->nltg] = sy[b] / cnt[b] / 2;
+            f->nltg++;
+        }
+    }
+    free(sx);
+    ESP_LOGI(TAG, "Lightning %s: %d px, %d marks", iso, flashes, f->nltg);
+}
+
+static bool fetch_frame(time_t t, frame_t *f)
+{
+    char iso[24], url[420];
+    geomet_url(url, sizeof(url), "RADAR_1KM_RRAI", t, iso, sizeof(iso));
     dl_t d;
     bool got = false;
     for (int attempt = 0; attempt < 2 && !got; attempt++) got = http_fetch(&geo_h, url, &d);
@@ -460,7 +524,53 @@ static bool fetch_frame(time_t t, frame_t *f)
     lv_draw_buf_destroy(db);
     f->t = t;
     ESP_LOGI(TAG, "Frame %s: %d px with echoes, %d colours", iso, echoes, npal - 1);
+    fetch_lightning(t, f);
     return true;
+}
+
+// Lightning bolt, 13x17: yellow, with a 1 px dark outline so it shows on rain and on the map
+static const char *const BOLT[] = {
+    ".......######",
+    "......######.",
+    ".....######..",
+    ".....#####...",
+    "....#####....",
+    "...#####.....",
+    "...##########",
+    "..##########.",
+    "..#########..",
+    "......####...",
+    ".....####....",
+    ".....###.....",
+    "....###......",
+    "....##.......",
+    "...##........",
+    "...#.........",
+    "..#..........",
+};
+#define BOLT_W 13
+#define BOLT_H 17
+
+static bool bolt_at(int x, int y)
+{
+    return x >= 0 && y >= 0 && x < BOLT_W && y < BOLT_H && BOLT[y][x] == '#';
+}
+
+static void draw_bolt(int cx, int cy)
+{
+    const uint16_t fill = rgb565(0xFF, 0xD8, 0x2A), edge = rgb565(0x20, 0x18, 0x00);
+    int x0 = cx - BOLT_W / 2, y0 = cy - BOLT_H / 2;
+    for (int y = -1; y <= BOLT_H; y++) {
+        for (int x = -1; x <= BOLT_W; x++) {
+            int px = x0 + x, py = y0 + y;
+            if (px < 0 || py < 0 || px >= W || py >= H) continue;
+            if (bolt_at(x, y)) { out565[py * W + px] = fill; continue; }
+            bool near = false;
+            for (int dy = -1; dy <= 1 && !near; dy++)
+                for (int dx = -1; dx <= 1 && !near; dx++) near = bolt_at(x + dx, y + dy);
+            if (near) out565[py * W + px] = edge;
+        }
+    }
 }
 
 // base565 + frame -> out565 (caller holds the display lock)
@@ -478,6 +588,7 @@ static void compose(const frame_t *f)
                            (f->g[ix] * a + bg * (255 - a)) / 255,
                            (f->b[ix] * a + bb * (255 - a)) / 255);
     }
+    for (int k = 0; k < f->nltg; k++) draw_bolt(LTG_X(f)[k] * 2, LTG_Y(f)[k] * 2);
 }
 
 #define ZOOM_ANIM_MS 300
@@ -862,7 +973,7 @@ lv_obj_t *radar_create(lv_font_t *f_title, lv_font_t *f_small, lv_font_t *f_micr
     assert(base565 && out565);
     for (int i = 0; i < W * H; i++) base565[i] = out565[i] = rgb565(18, 20, 24);
     for (int i = 0; i < NFRAMES; i++) {
-        frames[i].idx = heap_caps_malloc(W * H, MALLOC_CAP_SPIRAM);
+        frames[i].idx = heap_caps_malloc(W * H + 2 * LTG_MAX, MALLOC_CAP_SPIRAM);   // + lightning marks
         assert(frames[i].idx);
     }
 
