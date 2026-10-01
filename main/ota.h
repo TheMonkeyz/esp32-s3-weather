@@ -1,5 +1,6 @@
 #pragma once
 #include <stdbool.h>
+#include <stddef.h>
 
 // Firmware updates over Wi-Fi from the web-flasher site (GitHub Pages): channels.json says which version each
 // channel (stable / beta) offers, the channel's manifest.json gives the app image. Checks shortly after boot and
@@ -22,6 +23,7 @@ typedef struct {
     char channel[8];    // "stable" / "beta"
     char error[64];
     int progress;       // percent while downloading
+    int notes_id;       // changes whenever the release notes change (see ota_get_notes)
 } ota_status_t;
 
 typedef void (*ota_listener_t)(const ota_status_t *st);   // called from the OTA task on every change
@@ -31,3 +33,7 @@ void ota_check_now(void);
 bool ota_install(void);                    // false if nothing to install or already busy
 void ota_set_channel(const char *channel); // saved; triggers a check
 void ota_get_status(ota_status_t *out);
+// What's new between the running version and the offered one, from the site's notes.json (CHANGELOG.md):
+// sections separated by a blank line, each a "vX.Y.Z|Month D, YYYY" header line then one line per change.
+// Empty if nothing is offered or the notes couldn't be read.
+void ota_get_notes(char *out, size_t size);

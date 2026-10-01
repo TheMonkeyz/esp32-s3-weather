@@ -28,3 +28,6 @@ flash_helper.log
 _site/
 dist/
 version.txt
+
+# Files copied in by Claude sessions
+firmware/in/

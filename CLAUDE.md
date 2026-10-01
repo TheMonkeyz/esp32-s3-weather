@@ -105,6 +105,8 @@ Windows build gets both from `main/idf_component.yml`. `components/dns_server` *
   Hand the file to the user to save there (or edit it on GitHub).
 - Releases: `vX.Y.Z-rc.N` tags feed the flasher's Beta channel, `vX.Y.Z` tags the Stable one; pushes to main only
   build. The Pages site is rebuilt from release assets (`flash-parts.json`), never from a branch.
+- Before a release is tagged, `CHANGELOG.md` needs its `## vX.Y.Z - YYYY-MM-DD` section (user-facing wording): it
+  becomes the "What's new" list on the display's update screen and the settings page.
 - CI (`.github/workflows/firmware.yml`) builds with the component manager, unlike the cloud recipe above
   (vendored components). If CI fails but the cloud build works, suspect `main/idf_component.yml` versions.
 - The app version comes from `version.txt` (CI) or `git describe`; a build outside a git checkout shows `1`.

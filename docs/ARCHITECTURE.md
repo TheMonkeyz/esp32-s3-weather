@@ -64,6 +64,12 @@ LVGL timer and event callbacks already run inside the lock.
 - **Versions**: `vX.Y.Z[-rc.N | -N-gHASH | -other]`; rc < release < dev build (git describe) of the same X.Y.Z; other
   suffixes count as pre-releases. Offered only if strictly newer; an unparsable local version (plain hash) is offered
   any release.
+- **Release notes**: once an update is found, `notes.json` (from `CHANGELOG.md`, built by `make_flasher_site.py
+  site`) is fetched and filtered to the releases newer than the running version, up to the offered one; when a
+  release is offered, `-rc` sections are skipped (the release's section repeats them). Result: up to 3 KB of
+  "vX|Month D, YYYY" header lines and one line per change, in PSRAM; `notes_id` in the status changes when it does.
+  The update screen (`update_notes()`) builds an accent header and a bulleted label per release in its scrolling
+  column; `GET /api/update` adds `notes` while an update is available. Missing notes don't block an update.
 - **Task** `ota` (core 0, prio 2): first check 60 s after boot, then every 6 h, or on request. `ota_install()` →
   `esp_https_ota` (begin / perform / finish), progress to the listener, project name must match, restart 2.5 s later.
 - **Rollback**: `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE`. A new image boots `PENDING_VERIFY`; after 60 s running the
@@ -271,7 +277,7 @@ LVGL timer and event callbacks already run inside the lock.
 2. **release** (`v*` tags): GitHub Release with those files; `prerelease` when the tag contains `-`.
 3. **pages** (after a release, or *Run workflow* on `main`): `gh release list` → newest stable release and the newest
    pre-release if it's newer than that; downloads their assets; `make_flasher_site.py site` → `stable/`, `beta/`,
-   `channels.json`; deploys to GitHub Pages. The site always reflects released files, never a branch build.
+   `channels.json`, `notes.json` (from the checked-out `CHANGELOG.md`); deploys to GitHub Pages. The site always reflects released files, never a branch build.
 
 ESP Web Tools resolves part paths relative to the manifest, so each channel folder is self-contained. The page swaps
 the install button's `manifest` attribute when the channel changes. `new_install_prompt_erase` offers an erase on

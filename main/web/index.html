@@ -118,6 +118,7 @@ select{width:100%;padding:11px 12px;border-radius:10px;border:1px solid var(--li
     <option value="beta">Beta (release candidates)</option>
   </select>
   <div id="fwState" class="muted" style="margin-top:8px">–</div>
+  <div id="fwNotes" style="display:none;margin-top:8px"></div>
   <div class="meter" id="fwMeter" style="display:none"><div class="fill" id="fwBar"></div></div>
   <button class="sec" id="fwCheck">Check for updates</button>
   <button id="fwInstall" style="display:none">Install update</button>
@@ -324,6 +325,7 @@ function fwShow(u){
     failed: 'Update check failed: ' + (u.error || 'unknown error') + '.'
   }[u.state] || u.state;
   $('fwState').textContent = txt;
+  fwNotes(u.state === 'available' ? u.notes : '');
   $('fwMeter').style.display = u.state === 'downloading' || u.state === 'done' ? 'block' : 'none';
   $('fwBar').style.width = (u.state === 'done' ? 100 : u.progress) + '%';
   $('fwInstall').style.display = u.state === 'available' ? 'block' : 'none';
@@ -331,6 +333,28 @@ function fwShow(u){
   $('fwCheck').disabled = busy;
   if (busy && !fwPoll) fwPoll = setInterval(fwLoad, 1500);
   if (!busy && fwPoll) { clearInterval(fwPoll); fwPoll = null; }
+}
+// "vX|Month D, YYYY" header lines, one line per change, blank line between releases
+function fwNotes(t){
+  const box = $('fwNotes');
+  box.style.display = t ? 'block' : 'none';
+  if (!t || box.dataset.t === t) return;
+  box.dataset.t = t;
+  box.replaceChildren();
+  const h = document.createElement('div'); h.textContent = "What's new"; h.style.fontWeight = '600'; box.append(h);
+  let ul = null;
+  for (const line of t.split('\n')) {
+    if (!line) { ul = null; continue; }
+    const m = line.match(/^(v\S+)\|(.*)$/);
+    if (m) {
+      const d = document.createElement('div');
+      d.className = 'muted'; d.style.marginTop = '6px';
+      d.textContent = m[1] + (m[2] ? ' · ' + m[2] : '');
+      box.append(d); ul = null; continue;
+    }
+    if (!ul) { ul = document.createElement('ul'); ul.style.margin = '4px 0 0'; ul.style.paddingLeft = '20px'; box.append(ul); }
+    const li = document.createElement('li'); li.textContent = line; ul.append(li);
+  }
 }
 async function fwLoad(){ try { fwShow(await (await fetch('/api/update')).json()); } catch(e) {} }
 async function fwPost(body){

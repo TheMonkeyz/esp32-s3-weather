@@ -58,10 +58,10 @@ page's *Password saved on your phone? Copy it* tip explains how to copy it: Sett
 From **v1.3.0**, the display updates itself from the [web flasher site](https://themonkeyz.github.io/esp32-s3-weather/):
 
 - It checks a minute after starting and then every 6 hours. When a newer version exists, a blue **Update vX.Y.Z**
-  pill appears at the bottom of the weather screen. Tap it, then **Install**. It downloads, restarts, and keeps all
-  settings. Nothing installs without you asking.
+  pill appears at the bottom of the weather screen. Tap it to see **what's new** since your version, then
+  **Install**. It downloads, restarts, and keeps all settings. Nothing installs without you asking.
 - The settings page has a **Firmware** card: installed version, **Updates: Stable releases / Beta (release
-  candidates)**, *Check for updates* and *Install*, with a progress bar.
+  candidates)**, *Check for updates*, what's new, and *Install*, with a progress bar.
 - **Beta** follows the flasher's Beta channel (`vX.Y.Z-rc.N` tags) and falls back to Stable when there's no newer
   release candidate.
 - Safety: the new version is checked (image header, SHA-256, same project) before it's selected, and if it doesn't
@@ -159,7 +159,9 @@ exactly what was released.
 | tag `vX.Y.Z` | GitHub Release; the flasher's **Stable** channel moves to it (and Beta disappears until the next candidate) |
 | *Run workflow* on `main` | rebuilds the flasher from the existing releases (after editing `web/flash/index.html`) |
 
-Releasing a new version:
+Releasing a new version: first add a section to [`CHANGELOG.md`](CHANGELOG.md) (`## vX.Y.Z - YYYY-MM-DD`, one
+`- ` line per change, written for the person holding the display) and commit it. The display shows the sections
+between its version and the offered one before installing.
 
 ```
 git tag -a v1.1.0-rc.1 -m "Release candidate"      # optional: test it from the Beta channel first
@@ -177,8 +179,8 @@ git push origin v1.1.0
   standard file names and offsets for it.
 - The flasher page is `web/flash/index.html` ([ESP Web Tools](https://esphome.github.io/esp-web-tools/)).
   `tools/make_flasher_site.py` has two steps: `dist` turns a build into release files, `site` assembles the page with
-  `stable/` and `beta/` folders (each with its images and an ESP Web Tools `manifest.json`) and `channels.json`,
-  which the page reads for the picker. The images are separate parts (bootloader 0x0, partition table 0x8000, app
+  `stable/` and `beta/` folders (each with its images and an ESP Web Tools `manifest.json`), `channels.json`,
+  which the page reads for the picker, and `notes.json` (the 15 newest `CHANGELOG.md` sections, plain text). The images are separate parts (bootloader 0x0, partition table 0x8000, app
   0x10000) so an update doesn't wipe NVS (Wi-Fi, location, settings, TLS certificate); a merged image would.
 - One-time setup on GitHub: **Settings → Pages → Build and deployment → Source: GitHub Actions**, and
   **Settings → Environments → github-pages → Deployment branches and tags → Add deployment branch or tag rule →
