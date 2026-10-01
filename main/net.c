@@ -1,6 +1,7 @@
 // Wi-Fi station with credentials in NVS, plus a SoftAP setup page to enter them
 #include "net.h"
 #include "svc.h"
+#include <stdio.h>
 #include <string.h>
 #include <time.h>
 #include <stdlib.h>
@@ -17,6 +18,7 @@
 #include "esp_timer.h"
 #include "dns_server.h"
 #include "esp_dpp.h"
+#include "esp_idf_version.h"
 
 static const char *TAG = "net";
 static EventGroupHandle_t ev;
@@ -35,14 +37,34 @@ int net_ap_clients(void)
     return ap_active && esp_wifi_ap_get_sta_list(&l) == ESP_OK ? l.num : 0;
 }
 
-// Reconnect attempts never stop (the router may come back after a power cut), they just slow down:
-// 1 s for the first 8, then 3 s, then every 30 s. A connection attempt makes the radio hop channels,
-// which drops phones joined to the setup network, so while someone is on it we wait.
+// Reconnect attempts slow down (1 s for the first 8, then 3 s, then every 30 s) but don't give up: the router may
+// come back after a power cut. They pause while a setup mode is on (setup network, Easy Connect, first-time
+// portal): an attempt makes the radio hop channels, so phones couldn't join the setup network or reach Easy
+// Connect. Closing setup tries the saved network again (resume_saved).
+static bool setup_on(void) { return portal_mode || dpp_active || ap_active; }
+
 static void retry_cb(void *arg)
 {
-    if (portal_mode || dpp_active || net_is_connected()) return;
-    if (net_ap_clients() > 0) { esp_timer_start_once(retry_timer, 10 * 1000000ULL); return; }
+    if (setup_on() || net_is_connected()) return;
     esp_wifi_connect();
+}
+
+static void pause_saved(void)                                // a setup mode starts: no more attempts
+{
+    esp_timer_stop(retry_timer);
+    if (!net_is_connected()) {
+        esp_wifi_disconnect();                               // also cancels an attempt in progress
+        ESP_LOGI(TAG, "Setup open: not trying the saved network meanwhile");
+    }
+}
+
+static void resume_saved(void)                               // a setup mode ends
+{
+    if (setup_on() || net_is_connected()) return;
+    retries = 0;
+    ESP_LOGI(TAG, "Setup closed: trying the saved network again");
+    esp_timer_stop(retry_timer);                             // after 1 s: switching setup pages stops one mode
+    esp_timer_start_once(retry_timer, 1000 * 1000ULL);       // and starts the other just after
 }
 
 static void ntp_synced(struct timeval *tv) { svc_ok(SVC_NTP, 0); }
@@ -50,10 +72,10 @@ static void ntp_synced(struct timeval *tv) { svc_ok(SVC_NTP, 0); }
 static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data)
 {
     if (base == WIFI_EVENT && id == WIFI_EVENT_STA_START) {
-        if (!portal_mode && !dpp_active) esp_wifi_connect();
+        if (!setup_on()) esp_wifi_connect();
     } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
         xEventGroupClearBits(ev, BIT_GOT_IP);
-        if (portal_mode || dpp_active) return;
+        if (setup_on()) return;
         retries++;
         if (retries == 8) xEventGroupSetBits(ev, BIT_FAIL);      // net_wait() gives up; retries go on
         int ms = retries < 8 ? 1000 : retries < 20 ? 3000 : 30000;
@@ -199,6 +221,7 @@ static void ap_up(void)
         dns = start_dns_server(&cfg);
     }
     ap_active = true;
+    pause_saved();
 }
 
 void net_start_portal(void)
@@ -221,10 +244,12 @@ void net_setup_ap_start(void)
 static void ap_down(void)
 {
     if (!ap_active) return;
-    if (dns) { stop_dns_server(dns); dns = NULL; }
+    // The DNS server stays up: stop_dns_server() deletes its task without closing the socket, so port 53 stayed
+    // taken and the next setup network had no DNS (no captive portal). It only answers phones on the setup AP.
     esp_wifi_set_mode(WIFI_MODE_STA);
     ap_active = false;
     ESP_LOGI(TAG, "Setup AP stopped");
+    resume_saved();
 }
 
 void net_setup_ap_stop(void)
@@ -239,7 +264,35 @@ void net_setup_ap_stop_any(void) { ap_down(); }
  * the network it's connected to (SSID + password). Needs STA mode without connection attempts, so the
  * setup AP and our reconnects are paused while it listens. */
 
-#define DPP_CHANNELS "1,6,11"
+// Listen on ONE channel, the one the phone is most likely on: the saved network's if it is in range, else the
+// strongest network's. The phone stays on its own network's channel; the display needs ~0.3 s to answer, and a
+// phone that had hopped to another channel to talk to us was already back home (Auth Confirm timeout). Online,
+// the display was on the router's channel anyway, which is why Easy Connect only worked then.
+static char dpp_chan[4] = "6";
+
+static void dpp_pick_channel(void)
+{
+    char saved[33] = "", pass[65];
+    net_load_creds(saved, sizeof(saved), pass, sizeof(pass));
+    wifi_scan_config_t sc = { .scan_type = WIFI_SCAN_TYPE_ACTIVE,
+                              .scan_time.active = { .min = 40, .max = 80 } };   // ~1 s for 13 channels
+    uint16_t n = 16;
+    wifi_ap_record_t *r = calloc(n, sizeof(*r));
+    int ch = 0;
+    const char *why = "default";
+    if (r && esp_wifi_scan_start(&sc, true) == ESP_OK && esp_wifi_scan_get_ap_records(&n, r) == ESP_OK) {
+        for (int i = 0; i < n && !ch; i++)
+            if (saved[0] && !strcmp((char *)r[i].ssid, saved)) { ch = r[i].primary; why = "saved network"; }
+        if (!ch && n) { ch = r[0].primary; why = "strongest network"; }   // records come sorted by signal
+    } else {
+        n = 0;
+    }
+    free(r);
+    if (ch < 1 || ch > 13) ch = 6;
+    snprintf(dpp_chan, sizeof(dpp_chan), "%d", ch);
+    ESP_LOGI(TAG, "Easy Connect: channel %d (%s, %d networks seen)", ch, why, n);
+}
+
 static net_dpp_uri_cb_t dpp_uri_cb;
 static net_dpp_done_cb_t dpp_done_cb;
 static bool dpp_inited;
@@ -251,7 +304,7 @@ static void dpp_event(esp_supp_dpp_event_t evt, void *data)
     switch (evt) {
     case ESP_SUPP_DPP_URI_READY:
         if (data) {
-            ESP_LOGI(TAG, "Easy Connect: QR code ready, listening on channels " DPP_CHANNELS);
+            ESP_LOGI(TAG, "Easy Connect: QR code ready, listening on channel %s", dpp_chan);
             if (dpp_uri_cb) dpp_uri_cb((const char *)data);
             // bootstrap_gen() is asynchronous: listening is only possible once the code exists
             esp_err_t e = dpp_active ? esp_supp_dpp_start_listen() : ESP_OK;
@@ -270,11 +323,17 @@ static void dpp_event(esp_supp_dpp_event_t evt, void *data)
         }
         break;
     }
-    case ESP_SUPP_DPP_FAIL:
-        ESP_LOGW(TAG, "Easy Connect failed (%s), listening again", esp_err_to_name((int)(intptr_t)data));
+    case ESP_SUPP_DPP_FAIL: {
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 5, 0)
+        int why = data ? ((wifi_event_dpp_failed_t *)data)->failure_reason : ESP_FAIL;   // an event struct since 5.5
+#else
+        int why = (int)(intptr_t)data;
+#endif
+        ESP_LOGW(TAG, "Easy Connect failed (%s, 0x%x), listening again", esp_err_to_name(why), why);
         if (dpp_done_cb) dpp_done_cb(false, "");
         if (dpp_active) esp_supp_dpp_start_listen();
         break;
+    }
     default:
         break;
     }
@@ -288,13 +347,15 @@ bool net_dpp_start(net_dpp_uri_cb_t on_uri, net_dpp_done_cb_t on_done)
     dpp_active = true;
     esp_timer_stop(retry_timer);
     esp_wifi_disconnect();                                 // listening needs the radio (also cancels an attempt)
+    ESP_LOGI(TAG, "Easy Connect: not trying the saved network meanwhile");
     esp_wifi_set_mode(WIFI_MODE_STA);
+    dpp_pick_channel();
     esp_err_t err = ESP_OK;
     if (!dpp_inited) {
         err = esp_supp_dpp_init(dpp_event);
         dpp_inited = err == ESP_OK;
     }
-    if (err == ESP_OK) err = esp_supp_dpp_bootstrap_gen(DPP_CHANNELS, DPP_BOOTSTRAP_QR_CODE, NULL, NULL);
+    if (err == ESP_OK) err = esp_supp_dpp_bootstrap_gen(dpp_chan, DPP_BOOTSTRAP_QR_CODE, NULL, NULL);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Easy Connect unavailable: %s", esp_err_to_name(err));
         net_dpp_stop();
@@ -313,10 +374,7 @@ void net_dpp_stop(void)
     dpp_uri_cb = NULL;
     dpp_done_cb = NULL;
     ESP_LOGI(TAG, "Easy Connect stopped");
-    if (!portal_mode && !net_is_connected()) {             // resume trying the saved network
-        retries = 0;
-        esp_wifi_connect();
-    }
+    resume_saved();
 }
 
 bool net_dpp_active(void) { return dpp_active; }

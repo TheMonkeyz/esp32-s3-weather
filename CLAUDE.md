@@ -113,6 +113,13 @@ Windows build gets both from `main/idf_component.yml`. `components/dns_server` *
     separate touch zone. Snapshots can't show this: ask the user to tap through a new screen during a log window.
 19. **Sliders must act while dragging:** the user expects the screen to change under the finger
     (`presence_preview_brightness()`); save on release.
+20. **Wi-Fi setup while offline (October 1):** three separate causes, each found from the log, not by guessing.
+    (a) Reconnect attempts to the saved network made the radio hop channels, so phones dropped off the setup AP and
+    Easy Connect: now no attempts while any setup mode is on. (b) `stop_dns_server()` leaks its socket: the DNS
+    server now runs forever, else the next setup AP has no captive portal. (c) Easy Connect timed out
+    (`ESP_ERR_DPP_AUTH_TIMEOUT`) unless the display listened on the phone's own channel: scan and listen on the saved
+    (or strongest) network's channel. To see DPP steps, set `CONFIG_WPA_DEBUG_PRINT=y` in `build\v55\sdkconfig`
+    only (lines `wpa: DPP: …`). Reproduce with the bogus-SSID throwaway build (see Useful facts).
 
 - Internal RAM ran out silently (10 KB free, 0 KB min ever) because LVGL's small allocations went to internal RAM
   first. Fixed with `lvgl_mem.c` (LVGL heap in PSRAM). Font kerning cost 71% of render time; fonts now use

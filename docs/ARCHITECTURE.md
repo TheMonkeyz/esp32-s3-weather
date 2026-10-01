@@ -291,33 +291,45 @@ LVGL timer and event callbacks already run inside the lock.
 
 - **Boot** (`main.c`): no saved network → `portal()` (AP only, until credentials are saved and the board
   restarts). Saved network → `net_begin()` + `web_start()` right away, then `net_wait(30000)`. If that fails,
-  `offline_setup()` shows the Wi-Fi QR, starts the AP next to the station and waits for a connection; once connected
-  (and no phone is on the AP, max 2 min) it stops the AP and continues.
-- **Reconnects never stop** (`net.c`): each disconnect schedules `esp_wifi_connect()` on an `esp_timer` (1 s for the
-  first 8 tries, then 3 s, then 30 s; formerly a `vTaskDelay` inside the event handler). `BIT_FAIL` only ends
-  `net_wait()`. A connection attempt makes the radio scan other channels, which drops phones on the setup AP, so the
-  retry is postponed while `net_ap_clients() > 0`. SNTP starts on the first `GOT_IP`, whenever that happens.
+  `offline_setup()` loops: open the Wi-Fi setup screen; when it closes (a tap, or 5 idle minutes), show
+  *Connecting to …* and wait 30 s for the saved network; still nothing → setup again. New credentials restart the board.
+- **Reconnects pause while a setup mode is on** (`net.c`, `setup_on()` = first-time portal, setup AP or Easy
+  Connect): each disconnect schedules `esp_wifi_connect()` on an `esp_timer` (1 s for the first 8 tries, then 3 s,
+  then 30 s). `ap_up()` and `net_dpp_start()` stop the timer and cancel an attempt in progress (`pause_saved()`);
+  `ap_down()` and `net_dpp_stop()` call `resume_saved()`, which retries after 1 s (switching setup pages stops one
+  mode and starts the other in between). **Why:** an attempt makes the radio hop channels, so phones couldn't join
+  the setup network and Easy Connect failed (October 1 bug). The old rule (wait only while a phone was joined) wasn't
+  enough. `BIT_FAIL` only ends `net_wait()`. SNTP starts on the first `GOT_IP`, whenever that happens.
 - **Status screens** (`scr_msg`) take a long-press too: it starts the AP and shows the Wi-Fi QR (not in first-boot
   setup, which already shows it). A 10-minute timer stops that AP only once the board is online.
 - On the weather screen, a long-press while offline skips the Settings screen (useless without a network) and opens
   the Wi-Fi setup screen directly.
 - **Wi-Fi setup screen** (`scr_setup` in `ui.c`, `ui_wifi_setup(note)`): used by first-time setup, offline setup,
   status-screen long-press, the Settings screen's *Wi-Fi network* row and the QR overlay's long-press. Page 1 = setup AP QR (`net_setup_ap_start()`),
-  page 2 = Wi-Fi Easy Connect; swipe switches. A tap closes it only if it was opened while online; a 10-minute timer
-  closes it once online.
+  page 2 = Wi-Fi Easy Connect; swipe switches. A tap closes it (except in first-time setup); offline the note says
+  *Tap to try again*, because closing it lets the saved network be tried. Timer: 10 min online; 5 min offline unless a
+  phone is on the setup AP (so a display whose router was rebooting gets back online by itself). `ui_wifi_setup_open()`
+  tells `main.c` when it closed.
 - **Easy Connect (DPP enrollee, `net.c`)**: `CONFIG_ESP_WIFI_DPP_SUPPORT=y`, `wpa_supplicant` in REQUIRES. The radio
   can't serve the AP and listen at once, so page 2 stops the AP (`net_setup_ap_stop_any()`, even in first-time setup),
-  disconnects the station and pauses our reconnects (`dpp_active`). `esp_supp_dpp_bootstrap_gen("1,6,11", QR)` is
+  disconnects the station and pauses our reconnects (`dpp_active`). It then scans (~1.7 s) and listens on **one
+  channel**: the saved network's if in range, else the strongest network's (`dpp_pick_channel()`). The phone stays on
+  its own network's channel and the display needs ~0.3 s to answer its Authentication Request: on another channel the
+  phone had already left and the exchange ended in `ESP_ERR_DPP_AUTH_TIMEOUT` (with "1,6,11" or "6"). It only worked
+  online because the station was already on the router's channel. `esp_supp_dpp_bootstrap_gen(channel, QR)` is
   **asynchronous**: `esp_supp_dpp_start_listen()` must be called from the `ESP_SUPP_DPP_URI_READY` callback (calling
   it right after bootstrap_gen returns `ESP_FAIL`, which was the first bug). `ESP_SUPP_DPP_CFG_RECVD` gives a
-  `wifi_config_t`: saved with `net_save_creds()`, restart after 2.5 s. `ESP_SUPP_DPP_FAIL` re-listens. Leaving page 2
+  `wifi_config_t`: saved with `net_save_creds()`, restart after 2.5 s. `ESP_SUPP_DPP_FAIL` re-listens; its data is
+  the error code on IDF 5.4 but a `wifi_event_dpp_failed_t *` on 5.5 (`failure_reason`). Leaving page 2
   deinitialises DPP and resumes reconnects.
 - **Settings overlay state machine** (`ui.c`): 0 = hidden, 1 = settings QR (`https://<ip>`), 2 = Wi-Fi setup.
   The Settings screen's *More on your phone* goes to 1; a long-press on the overlay opens the Wi-Fi setup screen.
   Gestures are ignored while the overlay is open.
 - **Access point:** `ap_up()` switches to APSTA, so the station connection stays up and the AP follows its channel.
   It sets DHCP option 114 (captive-portal URI `http://192.168.4.1/`) and starts the DNS server
-  (`components/dns_server`), which answers every name with the AP's IP. First-boot setup (`net_start_portal()`) uses
+  (`components/dns_server`), which answers every name with the AP's IP. The DNS server is started once and **never
+  stopped**: `stop_dns_server()` deletes its task without closing the socket, so port 53 stayed taken and every later
+  setup network had no DNS, hence no captive portal (bind `errno 112` in the log). First-boot setup (`net_start_portal()`) uses
   the same function.
 - **HTTP :80 decides by interface** (`from_setup_ap()` looks at the socket's local address):
   - On the setup AP it *is* the portal. `/` serves the page over plain HTTP, because phone sign-in browsers reject the

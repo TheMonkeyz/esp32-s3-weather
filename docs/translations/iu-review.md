@@ -157,13 +157,14 @@ anything that reads wrong.
 | `fw:T_WIFI_DPP_TITLE` | Android: Easy Connect | Android: Easy Connect | `Android: Easy Connect` | high | product names |
 | `fw:T_WIFI_DPP_HOW` | In Wi-Fi settings, tap the QR icon ⏎ and scan this. ⏎ Your phone sends its network. ⏎ Swipe right for other phones | Wi-Fi ᐋᖅᑭᔅᓯᒪᐅᑎᓂ ᓇᕿᓪᓕ QR ⏎ ᐊᒻᒪᓗ ᐊᔾᔨᓕᐅᕐᓗᒍ. ⏎ ᐅᖄᓚᐅᑎᕋᓛᖅ ᑲᓱᖃᑎᒌᓐᓂᒃ ᑐᓃᔪᖅ. ⏎ ᓂᕈᓗᓪᓕ ᑕᓕᖅᐱᒧᑦ: ᐊᓯᖏᑦ | `Wi-Fi` aaqqissimautini naqilli `QR` ⏎ ammalu ajjiliurlugu. ⏎ Uqaalautiralaaq kasuqatigiinnik tuniijuq. ⏎ Nirululli taliqpimut: asingit | low | tuniijuq = gives; asingit = the others |
 | `fw:T_WIFI_DPP_NONE` | Easy Connect isn't available. ⏎ Swipe right for other phones. | Easy Connect ᐊᑐᐃᓐᓇᐅᙱᑦᑐᖅ. ⏎ ᓂᕈᓗᓪᓕ ᑕᓕᖅᐱᒧᑦ: ᐊᓯᖏᑦ. | `Easy Connect` atuinnaunngittuq. ⏎ Nirululli taliqpimut: asingit. | low | Microsoft Inuktitut terminology (Pirurvik): available = atuinnaq |
+| `fw:T_TAP_RETRY` | Tap to try again | ᓇᕿᓪᓕ: ᑲᓱᒃᑲᓐᓂᕐᓕ | Naqilli: kasukkannirli | low | "tap: connect again" (kasur- connect, -kanniq- again; Microsoft: connect = kasurli) |
 | `fw:T_TAP_CANCEL` | Tap to cancel | ᓇᕿᓪᓕ: ᖁᔭᓈᕐᓕ | Naqilli: qujanaarli | medium | Microsoft Inuktitut terminology (Pirurvik): cancel = qujanaarli |
 | `fw:T_WEATHER` | Weather | ᓯᓚ | Sila | high | Tusaalanga glossary: sila = weather |
 | `fw:T_STARTING` | Starting... | ᐱᒋᐊᖅᑐᖅ... | Pigiaqtuq... | medium | "starting" |
 | `fw:T_CONNECTING` | Connecting to ⏎ %s ⏎  ⏎ Long-press for Wi-Fi setup | ᑲᓱᖅᑐᖅ ⏎ %s ⏎  ⏎ ᓇᕿᓪᓗᒍ ᓇᕿᒻᒥᓕ: Wi-Fi | Kasuqtuq ⏎ %s ⏎  ⏎ Naqillugu naqimmili: `Wi-Fi` | medium | Microsoft Inuktitut terminology (Pirurvik): connect |
 | `fw:T_FETCHING` | Fetching forecast... ⏎  ⏎ Long-press for Wi-Fi setup | ᓯᓚᒥᒃ ᖃᐅᔨᓴᖅᑐᖅ... ⏎  ⏎ ᓇᕿᓪᓗᒍ ᓇᕿᒻᒥᓕ: Wi-Fi | Silamik qaujisaqtuq... ⏎  ⏎ Naqillugu naqimmili: `Wi-Fi` | low | "looking up the weather" |
 | `fw:T_CONNECTED` | Connected | ᑲᓱᖅᓯᒪᔪᖅ | Kasuqsimajuq | high | Microsoft Inuktitut terminology (Pirurvik): online = kasuqsimajuq |
-| `fw:T_CANT_REACH` | Can't reach %s ⏎ (still trying) | %s ᑲᓱᕈᓐᓇᙱᑦᑐᖅ ⏎ (ᓱᓕ ᐱᓕᕆᐊᖅᑐᖅ) | %s kasurunnanngittuq ⏎ (suli piliriaqtuq) | low | "cannot reach %s (still trying)" |
+| `fw:T_CANT_REACH` | Can't reach %s ⏎ Tap to try again | %s ᑲᓱᕈᓐᓇᙱᑦᑐᖅ ⏎ ᓇᕿᓪᓕ: ᑲᓱᒃᑲᓐᓂᕐᓕ | %s kasurunnanngittuq ⏎ Naqilli: kasukkannirli | low | "cannot reach %s / tap: connect again" |
 | `fw:T_FIRST_SETUP` | First-time setup | ᓯᕗᓪᓕᖅ ᐋᖅᑭᒃᓱᐃᓂᖅ | Sivulliq aaqqiksuiniq | low | "first arrangement" |
 | `fw:T_RADAR` | Radar | Radar | `Radar` | medium | kept as is |
 | `fw:T_RADAR_AT` | Radar %s  ·  %s | Radar %s  ·  %s | `Radar` %s  ·  %s | medium |  |

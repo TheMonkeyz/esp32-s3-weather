@@ -775,7 +775,8 @@ static void gesture_cb(lv_event_t *e)
 
 static lv_obj_t *scr_setup, *su_title, *su_note, *su_qr, *su_body, *su_dot[2];
 static int su_page;
-static bool su_can_close;           // opened while online: a tap closes it
+static bool su_can_close;           // a tap closes it (not in first-time setup: there is no saved network)
+static volatile bool su_open;
 static lv_timer_t *su_timer;
 static char su_note_text[96];
 static const char su_ap_qr[] = "WIFI:T:WPA;S:" SETUP_AP_SSID ";P:" SETUP_AP_PASS ";;";
@@ -837,6 +838,7 @@ static void su_show_page(int page)
 static void su_close(void)
 {
     ESP_LOGI("ui", "Wi-Fi setup closed");
+    su_open = false;
     if (su_timer) { lv_timer_delete(su_timer); su_timer = NULL; }
     net_dpp_stop();
     net_setup_ap_stop();
@@ -844,9 +846,12 @@ static void su_close(void)
     back_to_cfg = false;
 }
 
+// Online: close after 10 min. Offline: close after 5 idle min so the saved network is tried again (setup
+// pauses those attempts, and the router may just have been rebooting); main.c reopens setup if it still fails.
 static void su_timeout(lv_timer_t *t)
 {
-    if (!su_can_close && !net_is_connected()) return;   // still offline: keep offering setup
+    if (!su_can_close) return;                          // first-time setup stays
+    if (!net_is_connected() && net_ap_clients() > 0) return;   // a phone is on the setup network
     su_close();
 }
 
@@ -891,16 +896,21 @@ void ui_wifi_setup(const char *note)
     display_lock(-1);
     if (note) strlcpy(su_note_text, note, sizeof(su_note_text));
     else su_note_text[0] = 0;
-    su_can_close = net_is_connected() && !net_in_portal();
-    lv_label_set_text(su_note, su_note_text[0] ? su_note_text : su_can_close ? tr(T_TAP_CANCEL) : "");
+    su_can_close = !net_in_portal();
+    bool online = net_is_connected();
+    lv_label_set_text(su_note, su_note_text[0] ? su_note_text : !su_can_close ? "" :
+                               online ? tr(T_TAP_CANCEL) : tr(T_TAP_RETRY));
+    su_open = true;
     su_show_page(0);
     if (su_timer) lv_timer_delete(su_timer);
-    su_timer = lv_timer_create(su_timeout, 10 * 60 * 1000, NULL);   // closes after 10 min once online
+    su_timer = lv_timer_create(su_timeout, (online ? 10 : 5) * 60 * 1000, NULL);
     if (lv_screen_active() != scr_setup) lv_screen_load(scr_setup);
     lv_indev_t *in = lv_indev_active();
     if (in) lv_indev_wait_release(in);                              // the long-press isn't also a tap
     display_unlock();
 }
+
+bool ui_wifi_setup_open(void) { return su_open; }
 
 void ui_wifi_setup_end(void)
 {
