@@ -2,6 +2,7 @@
 //   ACTIVE --(quiet for dim_s)--> DIM --(quiet for off_s more)--> OFF
 //   DIM/OFF --(noise sustained for wake_s)--> ACTIVE      (a single bang doesn't wake it)
 //   A touch always wakes it (and the touch that wakes an OFF screen is swallowed).
+//   Picking the display up or moving it (QMI8658 accelerometer) wakes it too, and counts as activity while on.
 #include "presence.h"
 #include <math.h>
 #include <string.h>
@@ -16,6 +17,7 @@
 #include "esp_codec_dev_defaults.h"
 #include "display.h"
 #include "touch.h"
+#include "imu.h"
 
 static const char *TAG = "presence";
 
@@ -28,6 +30,7 @@ static const char *TAG = "presence";
 #define PIN_DIN       10                         // ES7210 -> ESP32 (the BSP calls it DSIN)
 #define ES7210_ADDR   0x80                       // 8-bit address as esp_codec_dev expects
 #define CALIB_MAX     600                        // up to 60 s of 100 ms samples
+#define MOTION_G      0.10f                      // default pick-up threshold: change from the resting position (g)
 
 static presence_cfg_t cfg = {
     .enabled = true, .margin_db = 10, .wake_s = 3, .dim_s = 600, .off_s = 3000,   // "Normal" preset: dim 10 min, off at 60 min
@@ -44,6 +47,12 @@ static volatile bool calibrating;
 static volatile int calib_left_ticks;
 static float *calib_buf;
 static int calib_n;
+static bool imu_ok;
+// Wake on pick-up settings: NVS "presence"/"motion" and "motion_mg", separate from the cfg blob (its size must not
+// change, or saved settings would be dropped as unreadable).
+static volatile bool motion_wake = true;
+static volatile float motion_thr = MOTION_G;
+static volatile float motion_g, motion_show;      // now; recent peak for the settings page meter
 
 /* ---------------- settings ---------------- */
 
@@ -54,6 +63,10 @@ static void load_cfg(void)
     presence_cfg_t c = cfg;
     size_t len = sizeof(c);
     if (nvs_get_blob(h, "cfg", &c, &len) == ESP_OK && len == sizeof(c)) cfg = c;
+    uint8_t m;
+    if (nvs_get_u8(h, "motion", &m) == ESP_OK) motion_wake = m;
+    uint16_t mg;
+    if (nvs_get_u16(h, "motion_mg", &mg) == ESP_OK && mg >= 20 && mg <= 500) motion_thr = mg / 1000.0f;
     nvs_close(h);
 }
 
@@ -62,6 +75,8 @@ static void save_cfg(void)
     nvs_handle_t h;
     if (nvs_open("presence", NVS_READWRITE, &h) != ESP_OK) return;
     nvs_set_blob(h, "cfg", &cfg, sizeof(cfg));
+    nvs_set_u8(h, "motion", motion_wake);
+    nvs_set_u16(h, "motion_mg", (uint16_t)(motion_thr * 1000 + 0.5f));
     nvs_commit(h);
     nvs_close(h);
 }
@@ -108,6 +123,21 @@ void presence_get_status(presence_status_t *st)
     st->calib_left_s = calib_left_ticks * TICK_MS / 1000.0f;
     st->mic_ok = mic_ok;
     st->brightness = cur_pct < 0 ? 0 : cur_pct;
+    st->imu_ok = imu_ok;
+    st->motion_g = motion_show;
+    st->motion_thr = motion_thr;
+}
+
+bool presence_motion_wake(void) { return motion_wake; }
+
+void presence_set_motion(bool on, float threshold_g)
+{
+    if (threshold_g < 0.02f) threshold_g = 0.02f;
+    if (threshold_g > 0.5f) threshold_g = 0.5f;
+    motion_wake = on;
+    motion_thr = threshold_g;
+    save_cfg();
+    ESP_LOGI(TAG, "wake on pick-up %s, threshold %.2f g", on ? "on" : "off", threshold_g);
 }
 
 bool presence_calibrate(int seconds)
@@ -194,9 +224,12 @@ static void presence_task(void *arg)
     calib_buf = heap_caps_malloc(CALIB_MAX * sizeof(float), MALLOC_CAP_SPIRAM);
     mic_ok = buf && calib_buf && mic_init();
     ESP_LOGI(TAG, "microphones %s, baseline %.1f dBFS", mic_ok ? "ready" : "NOT available", cfg.baseline_db);
+    imu_ok = imu_init(touch_i2c_bus());
     const float dt = TICK_MS / 1000.0f;
     uint32_t log_tick = 0;
     presence_state_t last_state = state;
+    float rest[3] = {0}, motion_peak = 0;                     // resting acceleration, follows in ~2 s
+    int imu_skip = 10;                                        // the first second of samples is junk (3.7 g seen)
 
     while (1) {
         if (mic_ok) {
@@ -229,9 +262,28 @@ static void presence_task(void *arg)
             }
         }
 
+        // Motion: distance from the resting position (a slow average), so tilting or lifting it counts and
+        // lying still in any position doesn't
+        bool moved = false;
+        float a[3];
+        if (imu_ok && imu_read(a)) {
+            if (imu_skip > 0) {
+                if (--imu_skip == 0) for (int i = 0; i < 3; i++) rest[i] = a[i];
+            } else {
+                float d2 = 0;
+                for (int i = 0; i < 3; i++) { float e = a[i] - rest[i]; d2 += e * e; rest[i] += e * 0.05f; }
+                motion_g = sqrtf(d2);
+                motion_show = motion_g > motion_show * 0.85f ? motion_g : motion_show * 0.85f;   // meter: peak, decays
+                if (motion_g > motion_peak) motion_peak = motion_g;
+                moved = motion_wake && motion_g > motion_thr;
+            }
+        }
+
         presence_cfg_t c;
         presence_get_config(&c);
         bool loud = mic_ok && !calibrating && level_db > c.baseline_db + c.margin_db;
+        if (moved && state != PRESENCE_ACTIVE)
+            ESP_LOGI(TAG, "picked up / moved (%.2f g): wake", motion_g);
 
         // Sustained-noise score: rises while loud, falls at half speed while quiet
         float s = score + (loud ? dt : -dt * 0.5f);
@@ -243,16 +295,16 @@ static void presence_task(void *arg)
         } else {
             switch (state) {
             case PRESENCE_ACTIVE:
-                quiet_s = loud ? 0 : quiet_s + dt;
+                quiet_s = loud || moved ? 0 : quiet_s + dt;
                 if (quiet_s >= c.dim_s) state = PRESENCE_DIM;
                 break;
             case PRESENCE_DIM:
-                if (score >= c.wake_s) { state = PRESENCE_ACTIVE; quiet_s = 0; break; }
+                if (score >= c.wake_s || moved) { state = PRESENCE_ACTIVE; quiet_s = 0; break; }
                 quiet_s = loud ? c.dim_s : quiet_s + dt;         // a short noise restarts the off countdown
                 if (quiet_s >= c.dim_s + c.off_s) state = PRESENCE_OFF;
                 break;
             case PRESENCE_OFF:
-                if (score >= c.wake_s) { state = PRESENCE_ACTIVE; quiet_s = 0; }
+                if (score >= c.wake_s || moved) { state = PRESENCE_ACTIVE; quiet_s = 0; }
                 break;
             }
         }
@@ -264,9 +316,11 @@ static void presence_task(void *arg)
         }
         apply_brightness(state == PRESENCE_ACTIVE ? c.bright_pct : state == PRESENCE_DIM ? c.dim_pct : 0);
 
-        if (++log_tick % 50 == 0)                              // every 5 s
-            ESP_LOGI(TAG, "level %.1f dB (threshold %.1f), score %.1f/%.1f, quiet %.0f s",
-                     level_db, c.baseline_db + c.margin_db, score, c.wake_s, quiet_s);
+        if (++log_tick % 50 == 0) {                            // every 5 s
+            ESP_LOGI(TAG, "level %.1f dB (threshold %.1f), score %.1f/%.1f, quiet %.0f s, motion peak %.3f g",
+                     level_db, c.baseline_db + c.margin_db, score, c.wake_s, quiet_s, motion_peak);
+            motion_peak = 0;
+        }
     }
 }
 

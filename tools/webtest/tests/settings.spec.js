@@ -17,3 +17,31 @@ test('changing a unit saves it on the display', async ({ page, request }) => {
   await expect(page.locator('#umsg')).toHaveText('Saved');
   expect((await state(request)).units.temp).toBe('f');
 });
+
+test('wake on pick-up can be turned off', async ({ page, request }) => {
+  await page.goto('/');
+  await expect(page.locator('#pMotion')).toBeChecked();
+  await page.locator('#pMotion').uncheck();
+  await page.getByRole('button', { name: 'Save screen settings' }).click();
+  await expect(page.locator('#pmsg')).toHaveText('Saved.');
+  expect((await state(request)).presence.motion_wake).toBe(false);
+});
+
+test('no pick-up option without a motion sensor', async ({ page, request }) => {
+  await request.post('/api/presence', { data: { imu_ok: false } });
+  await page.goto('/');
+  await expect(page.locator('#pState')).not.toHaveText('…');
+  await expect(page.locator('#pMotionBox')).toBeHidden();
+});
+
+test('pick-up sensitivity is saved, the meter shows the threshold', async ({ page, request }) => {
+  await page.goto('/');
+  await expect(page.locator('#pMvTxt')).toHaveText('Movement 0.01 g · wakes at 0.10 g');
+  await expect(page.locator('#pMotionSens')).toHaveValue('0.1');
+  await page.locator('#pMotionSens').selectOption('0.2');
+  await page.getByRole('button', { name: 'Save screen settings' }).click();
+  await expect(page.locator('#pmsg')).toHaveText('Saved.');
+  expect((await state(request)).presence.motion_thr).toBe(0.2);
+  await page.locator('#locCard').scrollIntoViewIfNeeded();
+  await page.locator('#presCard').screenshot({ path: 'shots/review_presence_card.png' });
+});

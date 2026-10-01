@@ -13,7 +13,6 @@ charging (AXP2101).
 
 - [ ] **Night clock** — when dimmed, a very dim large clock instead of a black screen.
 - [ ] **Alarm / chime** — sound through the speaker, e.g. for a weather warning.
-- [ ] **Wake on pick-up** — the motion sensor wakes the screen on a tap or when lifted, alongside the microphones.
 - [ ] **Battery level** — when running on a battery.
 
 ## Everyday use
@@ -37,3 +36,5 @@ charging (AXP2101).
   settings page (v1.5.0).
 - [x] **Several places** — up to 4, one weather page each, drag up/down to switch; everything follows the place
   shown (v1.5.0).
+- [x] **Wake on pick-up** — the motion sensor wakes the screen when it's lifted or tilted (a table bump doesn't, at
+  Normal sensitivity); settings page: on/off, sensitivity, live meter (v1.6.0).

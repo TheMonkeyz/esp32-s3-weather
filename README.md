@@ -21,7 +21,7 @@ USB-C data cable). Ready-made images are also attached to each
 | **Weather alerts** | Environment Canada watches, warnings, advisories and statements for the location: a pill in the alert colour replaces the city name (`+1` if there are more). Details: map of the affected region on OpenStreetMap, until when, area and text | **Tap the top half** of the weather screen for details; drag to scroll; tap to close |
 | **Hourly view** | 7 days (the weather screen shows the first 3). Weekday, conditions and high/low; the day's temperature graph (0 to 24 h, a line every hour, high and low marked; today's past hours greyed with a dot at now); one row per hour: time, icon, temperature, chance of rain, wind. Today starts at the current hour ("Now") | Drag **up/down** to scroll hours. Drag **left/right** to change day (the page follows the finger and snaps). **Tap** to close |
 | **Settings page** (phone) | Location: *Use my phone's location* (GPS), city search, or manual lat/lon. Units: °C/°F, wind in km/h, mph or m/s (miles on the radar with mph), 24- or 12-hour clock. Screen & presence (live sound meter, calibration, delays, brightness). Wi-Fi network | Opened from the QR code; served over HTTPS |
-| **Presence dimming** | The microphones act as a presence sensor: quiet room → dim → screen off; sustained sound (not a single bang) or a touch → back on | Configured on the settings page |
+| **Presence dimming** | The microphones act as a presence sensor: quiet room → dim → screen off; sustained sound (not a single bang), a touch, or picking the display up (motion sensor) → back on | Configured on the settings page: timing, sound sensitivity, wake on pick-up (on/off, High/Normal/Low, with a live movement meter) |
 
 Data sources:
 

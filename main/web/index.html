@@ -98,6 +98,17 @@ details.coords{margin-top:10px;font-size:14px;color:var(--dim)}details.coords su
   <div class="muted" id="pWakeTxt"></div>
   <button class="sec" id="pCal">🎙️ Calibrate background (stay quiet 5 s)</button>
   <label class="chk"><input type="checkbox" id="pEn"> Dim and turn off the screen when the room is quiet</label>
+  <div id="pMotionBox">
+    <label class="chk"><input type="checkbox" id="pMotion"> Wake up when the display is picked up or moved</label>
+    <div class="meter small" id="pMvMeter"><div class="fill" id="pMv"></div><div class="mark" id="pMvMark"></div></div>
+    <div class="muted" id="pMvTxt">Movement …</div>
+    <label for="pMotionSens">Pick-up sensitivity</label>
+    <select id="pMotionSens">
+      <option value="0.05">High: a firm bump on the table wakes it</option>
+      <option value="0.1">Normal: picking it up or tilting it</option>
+      <option value="0.2">Low: only a clear lift</option>
+    </select>
+  </div>
   <label for="pPreset">Timing preset</label>
   <select id="pPreset">
     <option value="testing">Testing: dim 10 s, off 30 s</option>
@@ -423,9 +434,19 @@ async function pollPresence(){
     $('pWakeTxt').textContent = p.state === 'active' ? `Quiet for ${fmt(p.quiet_s)} (dims at ${fmt(p.dim_s)})`
                                                      : `Wake-up progress ${Math.round(p.wake_progress * 100)}% (needs ${p.wake_s} s of sound)`;
     $('pCal').disabled = p.calibrating;
+    $('pMotionBox').style.display = p.imu_ok === false ? 'none' : '';      // no motion sensor: no options
+    if (p.imu_ok) {                                                         // movement meter, 0..0.4 g
+      const mv = x => Math.min(100, x / 0.4 * 100);
+      $('pMv').style.width = mv(p.motion_g) + '%';
+      $('pMv').style.background = p.motion_g > p.motion_thr ? '#ffb347' : '#6fd08c';
+      $('pMvMark').style.left = mv(p.motion_thr) + '%';
+      $('pMvTxt').textContent = `Movement ${p.motion_g.toFixed(2)} g · wakes at ${p.motion_thr.toFixed(2)} g`;
+    }
     if (!presLoaded) {
       presLoaded = true;
       $('pEn').checked = p.enabled; $('pMargin').value = p.margin_db; $('pWakeS').value = p.wake_s;
+      $('pMotion').checked = !!p.motion_wake;
+      $('pMotionSens').value = String(p.motion_thr <= 0.07 ? 0.05 : p.motion_thr >= 0.15 ? 0.2 : 0.1);
       setDur('pDim', p.dim_s); setDur('pOffT', p.dim_s + p.off_s);
       $('pBr').value = p.bright_pct; $('pDimPct').value = p.dim_pct;
       $('pPreset').value = matchPreset(p.dim_s, p.dim_s + p.off_s, p.wake_s);
@@ -441,7 +462,7 @@ $('pCal').onclick = async () => {
 $('pSave').onclick = async () => {
   const dim = getDur('pDim'), offTotal = getDur('pOffT');
   if (!(dim > 0) || !(offTotal > dim)) { say($('pmsg'), '"Turn off after" must be longer than "Dim after".', false); return; }
-  const body = {enabled: $('pEn').checked, margin_db: +$('pMargin').value, wake_s: +$('pWakeS').value,
+  const body = {enabled: $('pEn').checked, motion_wake: $('pMotion').checked, motion_thr: +$('pMotionSens').value, margin_db: +$('pMargin').value, wake_s: +$('pWakeS').value,
                 dim_s: dim, off_s: offTotal - dim, bright_pct: +$('pBr').value, dim_pct: +$('pDimPct').value};
   try{
     const r = await fetch('/api/presence', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});

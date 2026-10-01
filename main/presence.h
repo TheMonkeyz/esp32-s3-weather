@@ -19,6 +19,9 @@ typedef struct {
     presence_state_t state;
     bool  calibrating, mic_ok;
     int   brightness;
+    bool  imu_ok;         // motion sensor found
+    float motion_g;       // recent movement (change from the resting position, g; peak, decays in ~1 s)
+    float motion_thr;     // movement that wakes it (g)
 } presence_status_t;
 
 void presence_start(void);                          // after touch_init (shares its I2C bus)
@@ -29,3 +32,5 @@ bool presence_calibrate(int seconds);               // measure background noise;
 void presence_wake(void);
 bool presence_touch(void);                          // returns true if the screen was off (swallow the touch)
 bool presence_screen_off(void);
+bool presence_motion_wake(void);                    // wake on pick-up / movement (saved)
+void presence_set_motion(bool on, float threshold_g);   // threshold 0.02..0.5 g (saved)
