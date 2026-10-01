@@ -19,7 +19,6 @@ charging (AXP2101).
 ## Everyday use
 
 - [ ] ⭐ **French interface** — the font already handles accents.
-- [ ] **Units and formats** — °F, mph, 12-hour clock as settings.
 - [ ] **Several places** — home, cottage, work, each with its own weather screen.
 - [ ] **Home Assistant (MQTT)** — publish room presence from the microphones; show an indoor temperature.
 
@@ -35,3 +34,5 @@ charging (AXP2101).
   page card, rollback (v1.3.0).
 - [x] **Status page** — firmware version and the health of every online service, two swipes right (v1.4.0).
 - [x] **Temperature graph** — the day's temperature curve, 0–24 h, at the top of each hourly-view page (v1.4.0).
+- [x] **Units and formats** — °C/°F, km/h / mph / m/s (radar in miles with mph), 24- or 12-hour clock, on the
+  settings page (v1.5.0).

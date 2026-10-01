@@ -20,7 +20,7 @@ USB-C data cable). Ready-made images are also attached to each
 | **Radar** | Area around the location: dimmed OpenStreetMap map, Environment Canada radar, range ring, clock, radar time and radius | **Tap** to play the last 3 h (15 frames, 3 fps), looping for a minute (new radar images join the loop); tap again to stop. Swipe **down** to zoom in, **up** to zoom out (≈25 km up to ≈1,550 km radius in 7 doubling steps, animated). Swipe **right** to go back |
 | **Weather alerts** | Environment Canada watches, warnings, advisories and statements for the location: a pill in the alert colour replaces the city name (`+1` if there are more). Details: map of the affected region on OpenStreetMap, until when, area and text | **Tap the top half** of the weather screen for details; drag to scroll; tap to close |
 | **Hourly view** | 7 days (the weather screen shows the first 3). Weekday, conditions and high/low; the day's temperature graph (0 to 24 h, a line every hour, high and low marked; today's past hours greyed with a dot at now); one row per hour: time, icon, temperature, chance of rain, wind. Today starts at the current hour ("Now") | Drag **up/down** to scroll hours. Drag **left/right** to change day (the page follows the finger and snaps). **Tap** to close |
-| **Settings page** (phone) | Location: *Use my phone's location* (GPS), city search, or manual lat/lon. Screen & presence (live sound meter, calibration, delays, brightness). Wi-Fi network | Opened from the QR code; served over HTTPS |
+| **Settings page** (phone) | Location: *Use my phone's location* (GPS), city search, or manual lat/lon. Units: °C/°F, wind in km/h, mph or m/s (miles on the radar with mph), 24- or 12-hour clock. Screen & presence (live sound meter, calibration, delays, brightness). Wi-Fi network | Opened from the QR code; served over HTTPS |
 | **Presence dimming** | The microphones act as a presence sensor: quiet room → dim → screen off; sustained sound (not a single bang) or a touch → back on | Configured on the settings page |
 
 Data sources:
@@ -99,6 +99,8 @@ The two onboard microphones measure the room's sound level every 0.1 s.
   the same Wi-Fi. The phone will warn that the certificate isn't trusted. That's expected, because the display signs
   its own certificate; choose *Advanced → Proceed*. HTTPS is what allows **Use my phone's location**. Location changes
   apply immediately: the map and radar reload within seconds.
+- **Units:** on the same page, the **Units** card: temperature (°C/°F), wind (km/h, mph, m/s; the radar's distances
+  follow: miles with mph, km otherwise) and clock (24-hour or 12-hour). The display redraws at once.
 - **Wi-Fi:** long-press the weather screen, then **long-press again** on the Settings screen. The display starts
   **Weather-Setup** alongside its current connection and shows a QR code to join it. The sign-in page then opens on
   the phone as during first-time setup. Tap the display to cancel; the setup network also switches off after 10 min.

@@ -1,7 +1,8 @@
-// Persistent settings (location) + local-time helper
+// Persistent settings (location, units) + local-time and unit-formatting helpers
 #include <time.h>
 #include "config.h"
 #include <string.h>
+#include <stdio.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "nvs.h"
@@ -80,4 +81,98 @@ bool config_local_time(long t, struct tm *out)
         localtime_r(&tt, out);                   // fallback: TZ from net.c (Eastern)
     }
     return true;
+}
+
+/* ---------- units and formats ---------- */
+
+static units_t units;
+static bool units_loaded;
+
+static void units_load(void)
+{
+    if (units_loaded) return;
+    units_loaded = true;
+    nvs_handle_t h;
+    if (nvs_open("units", NVS_READONLY, &h) != ESP_OK) return;
+    uint8_t v;
+    if (nvs_get_u8(h, "temp", &v) == ESP_OK) units.fahrenheit = v == 1;
+    if (nvs_get_u8(h, "wind", &v) == ESP_OK && v <= WIND_MS) units.wind = v;
+    if (nvs_get_u8(h, "h12", &v) == ESP_OK) units.h12 = v == 1;
+    nvs_close(h);
+    ESP_LOGI(TAG, "Units: %s, %s, %s", units.fahrenheit ? "F" : "C",
+             units.wind == WIND_MPH ? "mph" : units.wind == WIND_MS ? "m/s" : "km/h", units.h12 ? "12 h" : "24 h");
+}
+
+void config_get_units(units_t *out)
+{
+    units_load();
+    taskENTER_CRITICAL(&mux);
+    *out = units;
+    taskEXIT_CRITICAL(&mux);
+}
+
+bool config_set_units(const units_t *u)
+{
+    if (u->wind > WIND_MS) return false;
+    nvs_handle_t h;
+    if (nvs_open("units", NVS_READWRITE, &h) != ESP_OK) return false;
+    nvs_set_u8(h, "temp", u->fahrenheit);
+    nvs_set_u8(h, "wind", u->wind);
+    nvs_set_u8(h, "h12", u->h12);
+    nvs_commit(h);
+    nvs_close(h);
+    units_load();
+    taskENTER_CRITICAL(&mux);
+    units = *u;
+    taskEXIT_CRITICAL(&mux);
+    ESP_LOGI(TAG, "Saved units: %s, %s, %s", u->fahrenheit ? "F" : "C",
+             u->wind == WIND_MPH ? "mph" : u->wind == WIND_MS ? "m/s" : "km/h", u->h12 ? "12 h" : "24 h");
+    return true;
+}
+
+int config_temp(double c)
+{
+    units_t u;
+    config_get_units(&u);
+    double t = u.fahrenheit ? c * 9 / 5 + 32 : c;
+    return (int)(t < 0 ? t - 0.5 : t + 0.5);
+}
+
+void config_fmt_wind(double kmh, char *out, int n)
+{
+    units_t u;
+    config_get_units(&u);
+    if (u.wind == WIND_MPH) snprintf(out, n, "%.0f mph", kmh / 1.609344);
+    else if (u.wind == WIND_MS) snprintf(out, n, "%.0f m/s", kmh / 3.6);
+    else snprintf(out, n, "%.0f km/h", kmh);
+}
+
+void config_fmt_time(int h, int m, char *out, int n)
+{
+    units_t u;
+    config_get_units(&u);
+    if (u.h12) snprintf(out, n, "%d:%02d %s", (h + 11) % 12 + 1, m, h < 12 ? "AM" : "PM");
+    else snprintf(out, n, "%02d:%02d", h, m);
+}
+
+void config_fmt_hour(int h, char *out, int n)
+{
+    units_t u;
+    config_get_units(&u);
+    if (u.h12) snprintf(out, n, "%d %s", (h + 11) % 12 + 1, h < 12 ? "AM" : "PM");
+    else snprintf(out, n, "%02d:00", h);
+}
+
+bool config_miles(void)
+{
+    units_t u;
+    config_get_units(&u);
+    return u.wind == WIND_MPH;
+}
+
+void config_fmt_hhmm(const char *hhmm, char *out, int n)
+{
+    int h, m;
+    if (hhmm && sscanf(hhmm, "%d:%d", &h, &m) == 2) config_fmt_time(h, m, out, n);
+    else snprintf(out, n, "%s", hhmm ? hhmm : "");
 }

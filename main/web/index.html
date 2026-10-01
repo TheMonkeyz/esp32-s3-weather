@@ -53,6 +53,19 @@ select{width:100%;padding:11px 12px;border-radius:10px;border:1px solid var(--li
   <div id="msg"></div>
 </div>
 
+<div class="card" id="unitCard">
+  <h2>Units</h2>
+  <div class="row">
+    <div><label for="uTemp">Temperature</label>
+      <select id="uTemp"><option value="c">°C</option><option value="f">°F</option></select></div>
+    <div><label for="uWind">Wind</label>
+      <select id="uWind"><option value="kmh">km/h</option><option value="mph">mph</option><option value="ms">m/s</option></select></div>
+  </div>
+  <label for="uClock">Clock</label>
+  <select id="uClock"><option value="24">24-hour (14:45)</option><option value="12">12-hour (2:45 PM)</option></select>
+  <div id="umsg" class="muted" style="margin-top:8px">Changes apply on the display right away.</div>
+</div>
+
 <div class="card" id="presCard">
   <h2>Screen &amp; presence</h2>
   <div><span class="st" id="pState">…</span> <span class="muted" id="pBright"></span></div>
@@ -130,12 +143,22 @@ window.onerror = (m, src, line) => { const e = document.getElementById('msg'); i
 const $ = id => document.getElementById(id);
 function say(el, text, ok){ el.textContent = text; el.className = ok ? 'ok' : 'err'; }
 
+async function saveUnits(){
+  const body = {temp: $('uTemp').value, wind: $('uWind').value, clock: Number($('uClock').value)};
+  try{
+    const r = await fetch('/api/units', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    say($('umsg'), r.ok ? 'Saved' : 'Not saved (' + r.status + ')', r.ok);
+  }catch(e){ say($('umsg'), 'Could not reach the display', false); }
+}
+['uTemp', 'uWind', 'uClock'].forEach(id => $(id).addEventListener('change', saveUnits));
+
 async function load(){
   try{
     const c = await (await fetch('/api/config')).json();
     $('curName').textContent = c.name; $('curCoord').textContent = c.lat.toFixed(4)+', '+c.lon.toFixed(4);
     $('name').value = c.name; $('lat').value = c.lat.toFixed(4); $('lon').value = c.lon.toFixed(4);
     $('curSsid').textContent = c.ssid || '–';
+    if (c.units) { $('uTemp').value = c.units.temp; $('uWind').value = c.units.wind; $('uClock').value = String(c.units.clock); }
   }catch(e){ say($('msg'), 'Could not read settings from the display', false); }
 }
 function bars(rssi){ return rssi >= -55 ? '▂▄▆█' : rssi >= -67 ? '▂▄▆' : rssi >= -78 ? '▂▄' : '▂'; }

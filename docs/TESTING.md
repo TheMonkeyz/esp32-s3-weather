@@ -22,6 +22,12 @@ idf.py -B build\v55 -D SDKCONFIG=build\v55\sdkconfig build
 
 - **Label test builds above the current stable release** (`v1.4.0-name.N` while v1.3.1 is out). A lower label is
   offered the stable release as an update. Delete `version.txt` when done, or later builds keep the label.
+- **To test a release candidate over Wi-Fi,** the board must run something *below* it. After a test build labelled
+  higher (e.g. `v1.5.0-graph.3` vs `v1.4.0-rc.2`), flash an older test build from `firmware\in\` first (with a new
+  unique name) and let the board offer the rc.
+- **Settings can be driven from the PC** for tests, e.g.
+  `curl -sk -X POST -H 'Content-Type: application/json' -d '{"temp":"f"}' https://<ip>/api/units`, then snapshot.
+  Put the user's settings back afterwards.
 - After changing `sdkconfig.defaults`, delete `build\v55\sdkconfig` and run `idf.py ... reconfigure`: an existing
   sdkconfig keeps its old values (an option that exists as "not set" ignores the new default).
 - The PC's v5.5.4 differs from CI's v5.4.2. A test build checks the change, not the release toolchain. Flashing it
