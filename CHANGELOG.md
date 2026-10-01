@@ -9,9 +9,13 @@ How to write an entry: add a `## vX.Y.Z - YYYY-MM-DD` section at the top **befor
 their own `## vX.Y.Z-rc.N` section. Those are shown only to Beta users, while the final release's section should
 list everything again.
 
-## v1.6.0 - 2026-09-30
+## v1.6.0 - 2026-10-01
 - Settings right on the display: long-press the weather screen. Turn dimming and wake on pick-up on or off, pick the timing (Short, Normal, Long), set the brightness by sliding along the bottom, change the units, open the phone settings or the Wi-Fi setup, check for updates, or restart.
 - Wake on pick-up: when the screen is dimmed or off, picking up or tilting the display wakes it. A bump on the table doesn't. On the settings page (Screen & presence) you can turn it off, choose the sensitivity, and watch a live movement meter.
+
+## v1.6.0-rc.1 - 2026-10-01
+- Test version of settings on the display: long-press the weather screen for dimming, wake on pick-up, timing, brightness, units, the phone settings, Wi-Fi, updates and restart.
+- Test version of wake on pick-up: picking up or tilting the display wakes it (a bump on the table doesn't). Settings page: on/off, sensitivity and a live movement meter.
 
 ## v1.5.0 - 2026-09-30
 - Several places: add up to 4 (home, cottage, work...) on the settings page, then drag up or down on the weather screen to switch. Each place shows its own local time; alerts, air quality, the hourly view and the radar follow the place shown.
