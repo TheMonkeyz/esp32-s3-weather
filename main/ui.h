@@ -17,6 +17,7 @@ void ui_alerts(const alerts_t *al);     // weather alerts for the location (empt
 void ui_alert_map(uint16_t *buf, int w, int h);   // region map for the alert screen (takes ownership; NULL hides)
 void ui_air(const air_t *a);            // air quality for the extras page
 void ui_ota(const ota_status_t *st);    // update availability / progress (from the OTA task)
-// Renders a screen off-display (weather, extras, status, radar, update, alert; anything else = the one shown)
+// Renders a screen off-display (weather, extras, status, radar, update, alert, hourly0..hourly6 = hourly view of
+// that day; anything else = the one shown)
 // into an RGB565 buffer. Display lock held; free it with lv_draw_buf_destroy() under the lock.
 lv_draw_buf_t *ui_snapshot(const char *screen);

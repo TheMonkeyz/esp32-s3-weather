@@ -4,7 +4,6 @@ Backlog of possible features (2026-09-30). ⭐ = suggested first. Move an item t
 
 ## Weather
 
-- [ ] **Temperature graph** — the day's temperature curve at the top of each hourly-view page.
 - [ ] **Lightning on the radar** — Environment Canada lightning layer over the rain.
 
 ## Using more of the board
@@ -34,3 +33,5 @@ charging (AXP2101).
   air quality (US AQI), pollen where available (Europe only) (2026-09-30).
 - [x] **Updates over Wi-Fi (OTA)** — Stable/Beta channels from the flasher site, pill + update screen, settings
   page card, rollback (v1.3.0).
+- [x] **Status page** — firmware version and the health of every online service, two swipes right (v1.4.0).
+- [x] **Temperature graph** — the day's temperature curve, 0–24 h, at the top of each hourly-view page (v1.5.0).

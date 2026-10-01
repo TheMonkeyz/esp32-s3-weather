@@ -4,7 +4,7 @@
     python tools/snapshot.py 192.168.1.156 status            -> snapshot_status.png
     python tools/snapshot.py 192.168.1.156 weather out.png
 
-Screens: weather, extras, status, radar, update, alert, current (the one shown). The device renders the screen
+Screens: weather, extras, status, radar, update, alert, hourly0..hourly6, current (the one shown). The device renders the screen
 off-display, so the board isn't disturbed. Pixels outside the round panel are tinted red, so anything the
 circle would cut off stands out (--square to skip). Needs the PC on the same network; the certificate is
 self-signed. Standard library only.

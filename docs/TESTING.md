@@ -65,7 +65,8 @@ python tools/snapshot.py 192.168.1.156 status            # -> snapshot_status.pn
 python tools/snapshot.py 192.168.1.156 weather out.png
 ```
 
-- Screens: `weather`, `extras`, `status`, `radar`, `update`, `alert`, `current` (the one shown).
+- Screens: `weather`, `extras`, `status`, `radar`, `update`, `alert`, `hourly0`…`hourly6` (the hourly view of that
+  day, list scrolled to the top; unchanged if the view is open), `current` (the one shown).
 - Outside the round panel is tinted red, so anything the circle cuts off stands out (`--square` to skip).
 - The IP is in the log: `web: Settings page: https://<ip>/`. Each capture logs `web: snapshot <name> 466x466 sent`.
 - It shows the screen's state, not what a person would see after interacting. For example, the status page's checks

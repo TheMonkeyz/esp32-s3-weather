@@ -162,6 +162,15 @@ LVGL timer and event callbacks already run inside the lock.
   painter mode (`P_layer`) that draws the same shapes straight into the layer. 72 rows as real objects would have
   been several hundred small allocations in internal RAM.
 - Today's page is refilled at each new hour and when new data arrives.
+- **Temperature graph** at the top of each day's list (it scrolls away with the column headers): hours 0–24 (the
+  last point is the next day's 00:00; the last forecast day stops at 23:00), filled curve, a 1-px line every hour
+  (brighter every 3 h, which are labelled), the day's high and low (00:00–23:00) labelled. The vertical scale fits
+  every point, with at least 4° of range so a flat day stays flat. On today's page the past hours are grey and a
+  white dot marks now.
+- The graph is drawn **once into a canvas** per day (`graph_render()`: 316×120 RGB565, about 76 KB each, 7 pages ≈
+  530 KB of PSRAM) and redrawn only when `wx_gen` (bumped by each forecast) or the current hour changes. Drawn on
+  every frame it was about 200 shapes and dragging fell from 14.9 to 12.1 fps; from the canvas it's back to 15 fps.
+  The fill colours are pre-mixed with the black background instead of using transparency.
 
 ## Radar (`radar.c`)
 
@@ -272,7 +281,8 @@ LVGL timer and event callbacks already run inside the lock.
     automatically when opened on the setup AP.
   - `POST /api/location {name, lat, lon}`
   - `POST /api/wifi {ssid, pass}`: restarts the device.
-  - `GET /api/snapshot?screen=weather|extras|status|radar|update|alert|current` (HTTPS only): the screen rendered
+  - `GET /api/snapshot?screen=weather|extras|status|radar|update|alert|hourly0..hourly6|current` (HTTPS only): the
+    screen rendered
     off-display (`ui_snapshot()` → `lv_snapshot_take`, RGB565 in PSRAM, needs `CONFIG_LV_USE_SNAPSHOT`), streamed as
     a top-down 24-bit BMP in 16-row chunks. Used by `tools/snapshot.py` (docs/TESTING.md).
 - The page runs the phone's geolocation, reverse geocoding (Nominatim) and city search (Open-Meteo geocoding) in the
@@ -316,6 +326,7 @@ by `GET /api/config` as `version`.
 | LVGL draw buffers | internal DMA | 2 × 30 KB |
 | LVGL heap (objects, styles, glyph cache) | PSRAM (`lvgl_mem.c`, `LV_USE_CUSTOM_MALLOC`) | ~40–50 KB |
 | Basemap + composed screen | PSRAM | 2 × 434 KB |
+| Hourly temperature graphs (7 canvases) | PSRAM (LVGL heap) | 7 × 76 KB |
 | 15 radar frames | PSRAM | 3.3 MB |
 | PNG decode (466×466 ARGB) | PSRAM (transient) | ~0.9 MB + zlib |
 | TLS (client and server) | PSRAM (`MBEDTLS_EXTERNAL_MEM_ALLOC`) | ~40–60 KB per session |
@@ -323,7 +334,8 @@ by `GET /api/config` as `version`.
 Build: `CONFIG_COMPILER_OPTIMIZATION_PERF=y` (debug `-Og` made LVGL rendering noticeably slow) and
 `CONFIG_LV_DEF_REFR_PERIOD=15`.
 
-Measured: internal RAM ~69 KB free steady, 30 KB min; PSRAM ~4 MB free, 1.7 MB min. See `docs/DIAGNOSTICS.md` for
+Measured: internal RAM ~69 KB free steady, 30 KB min; PSRAM ~3.3 MB free, 1.1 MB min (v1.5.0, with the graph
+canvases). See `docs/DIAGNOSTICS.md` for
 how to measure again (`reboot.request` + `tools/diag_summary.py`) and the reference numbers.
 
 Internal DMA-capable RAM is the scarce resource. Everything under 16 KB that goes through plain `malloc` lands
