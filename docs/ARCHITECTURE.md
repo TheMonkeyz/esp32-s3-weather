@@ -278,7 +278,20 @@ LVGL timer and event callbacks already run inside the lock.
 - **Radar frames:** GeoMet WMS `GetMap` in EPSG:3857 with the exact view bbox at 466×466, `transparent=true`,
   `time=<ISO>`. The latest time comes from `GetCapabilities` (`<Dimension name="time">start/end/PT6M`).
 - **Frame storage:** each frame is palette-indexed (1 byte/px, index 0 = no echo, up to 255 RGBA colours), about 217 KB
-  in PSRAM. `compose()` blends the frame over the basemap at alpha×0.86 into `out565`, which an `lv_image` displays.
+  in PSRAM. `compose()` blends the frame over the basemap at alpha×0.86 into `out565`, which an `lv_image` displays,
+  then draws the frame's lightning bolts on top.
+- **Lightning** (`fetch_lightning()`, called by `fetch_frame()` after each radar image): GeoMet layer
+  `Lightning_2.5km_Density` (Canadian Lightning Detection Network: flashes of the last 10 min on a 2.5 km grid, every
+  10 min, kept 3 h, Canada + 250 km), same bbox and size as the radar. Time = the radar time rounded down to 10 min;
+  if that window isn't published yet (GeoMet answers XML, detected by the PNG signature) the one before. The image
+  (density colours on 2–3 px squares) would vanish under the rain, so each 20×20 px block with any flash becomes one
+  bolt (13×17 px, yellow, dark outline) at the flashes' centre, at most `LTG_MAX` (64) per frame. Marks are stored as
+  2 px units **after the pixels in the frame's PSRAM buffer** (`LTG_X()` / `LTG_Y()`, buffer W×H + 128), so they move
+  with it in `plan_frames()`; putting them in `frame_t` cost ~25 KB of internal RAM (it is copied ~46 times in
+  static arrays). Optional: a failed request leaves the frame without bolts. Being requested for the view's bbox, the
+  bolts follow the map on zoom and relocation like the rain. Adds ~0.3–0.5 s per frame (one more GetMap + decode).
+  Testing without storms: a throwaway build that fills empty frames with marks at fixed lat/lon (converted with the
+  view's `zoom` / `view_x` / `view_y`); fixed *screen* positions don't follow zooms and only test the drawing.
 - **Animation:** 15 frames. The latest frame, plus 14 history frames on a fixed 12-minute grid (so refreshes reuse
   most of them). They download newest first while the radar screen is visible. A tap plays at 3 fps via an LVGL timer,
   holds the last frame about 1 s and loops for `PLAY_LOOP_MS` (60 s), then returns to live. A tap while playing

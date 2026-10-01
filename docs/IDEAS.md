@@ -4,7 +4,8 @@ Backlog of possible features (2026-09-30). ⭐ = suggested first. Move an item t
 
 ## Weather
 
-- [ ] **Lightning on the radar** — Environment Canada lightning layer over the rain.
+- [x] **Lightning on the radar** — Environment Canada lightning layer over the rain: yellow bolts, in the
+  animation too (v1.10.0).
 
 ## Using more of the board
 
