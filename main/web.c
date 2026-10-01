@@ -83,6 +83,18 @@ static esp_err_t config_get(httpd_req_t *req)
     cJSON_AddNumberToObject(j, "lon", loc.lon);
     cJSON_AddStringToObject(j, "ssid", ssid);
     cJSON_AddStringToObject(j, "version", esp_app_get_description()->version);
+    cJSON *pl = cJSON_AddArrayToObject(j, "places");
+    for (int i = 0; i < config_place_count(); i++) {
+        location_t p;
+        config_get_place(i, &p);
+        cJSON *o = cJSON_CreateObject();
+        cJSON_AddStringToObject(o, "name", p.name);
+        cJSON_AddNumberToObject(o, "lat", p.lat);
+        cJSON_AddNumberToObject(o, "lon", p.lon);
+        cJSON_AddItemToArray(pl, o);
+    }
+    cJSON_AddNumberToObject(j, "active", config_active_place());
+    cJSON_AddNumberToObject(j, "max_places", MAX_PLACES);
     units_t u;
     config_get_units(&u);
     cJSON *un = cJSON_AddObjectToObject(j, "units");
@@ -90,6 +102,20 @@ static esp_err_t config_get(httpd_req_t *req)
     cJSON_AddStringToObject(un, "wind", u.wind == WIND_MPH ? "mph" : u.wind == WIND_MS ? "ms" : "kmh");
     cJSON_AddNumberToObject(un, "clock", u.h12 ? 12 : 24);
     return send_json(req, j);
+}
+
+// {"select": i} shows place i on the display; {"delete": i} removes it (not the last one)
+static esp_err_t places_post(httpd_req_t *req)
+{
+    cJSON *j = read_json(req);
+    cJSON *sel = j ? cJSON_GetObjectItem(j, "select") : NULL, *del = j ? cJSON_GetObjectItem(j, "delete") : NULL;
+    bool ok = cJSON_IsNumber(sel) ? config_select_place(sel->valueint) :
+              cJSON_IsNumber(del) ? config_delete_place(del->valueint) : false;
+    cJSON_Delete(j);
+    if (!ok) return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "bad place");
+    if (loc_cb) loc_cb();
+    httpd_resp_sendstr(req, "{\"ok\":true}");
+    return ESP_OK;
 }
 
 // {"temp":"c"|"f", "wind":"kmh"|"mph"|"ms", "clock":24|12}; any subset. The screens redraw at once.
@@ -153,13 +179,14 @@ static esp_err_t location_post(httpd_req_t *req)
     cJSON *name = j ? cJSON_GetObjectItem(j, "name") : NULL;
     cJSON *lat = j ? cJSON_GetObjectItem(j, "lat") : NULL;
     cJSON *lon = j ? cJSON_GetObjectItem(j, "lon") : NULL;
+    cJSON *idx = j ? cJSON_GetObjectItem(j, "index") : NULL;   // which place (count = add one); default: the one shown
     location_t loc = {0};
     bool ok = cJSON_IsNumber(lat) && cJSON_IsNumber(lon);
     if (ok) {
         strlcpy(loc.name, cJSON_IsString(name) && name->valuestring[0] ? name->valuestring : "My location", sizeof(loc.name));
         loc.lat = lat->valuedouble;
         loc.lon = lon->valuedouble;
-        ok = config_set_location(&loc);
+        ok = config_set_place(cJSON_IsNumber(idx) ? idx->valueint : config_active_place(), &loc);
     }
     cJSON_Delete(j);
     if (!ok) return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "bad location");
@@ -406,6 +433,7 @@ static void start_https(void)
         { .uri = "/api/scan",     .method = HTTP_GET,  .handler = scan_get },
         { .uri = "/api/location", .method = HTTP_POST, .handler = location_post },
         { .uri = "/api/units",    .method = HTTP_POST, .handler = units_post },
+        { .uri = "/api/places",   .method = HTTP_POST, .handler = places_post },
         { .uri = "/api/wifi",     .method = HTTP_POST, .handler = wifi_post },
         { .uri = "/api/presence", .method = HTTP_GET,  .handler = presence_get },
         { .uri = "/api/presence", .method = HTTP_POST, .handler = presence_post },
@@ -440,6 +468,7 @@ void web_start(web_location_cb_t on_location_changed)
             { .uri = "/api/scan",     .method = HTTP_GET,  .handler = scan_get },
             { .uri = "/api/location", .method = HTTP_POST, .handler = location_post },
             { .uri = "/api/units",    .method = HTTP_POST, .handler = units_post },
+            { .uri = "/api/places",   .method = HTTP_POST, .handler = places_post },
             { .uri = "/api/wifi",     .method = HTTP_POST, .handler = wifi_post },
             { .uri = "/api/presence", .method = HTTP_GET,  .handler = presence_get },
             { .uri = "/api/presence", .method = HTTP_POST, .handler = presence_post },

@@ -51,6 +51,30 @@ LVGL timer and event callbacks already run inside the lock.
 - Icons are built from LVGL primitives (circles, rounded rectangles, one line for the lightning bolt), scaled per use.
   Decorative objects are made non-clickable so presses bubble up to the screen.
 - Gestures: `LV_EVENT_GESTURE` on both screens → `lv_screen_load_anim` (move left/right).
+- **Places:** the weather widgets live on one page per place (`place_page_t pp[MAX_PLACES]`) in a vertical pager
+  (`pager.c`) on `scr_main`; the alert pill, update pill, page dots, place dots and settings overlay are siblings
+  above it. `passthrough(scr_main)` makes everything non-clickable, then the pager gets `CLICKABLE` back (a
+  non-clickable object can't start a scroll). `ui_place(i, name, w)` fills page i (NULL = "Loading...") and keeps a
+  copy (`pw[i]`) for redraws; `ui_places(n, active)` hides unused pages, moves the dots, and scrolls to the active
+  page when it was chosen on the settings page. When the pager settles on another page, `place_select_cb` →
+  `main.c` selects it. Each page's clock uses its place's `utc_offset`. Icon objects need unique bolt-point slots:
+  page × 4 + icon.
+- `main.c` keeps every place's forecast (`wx[i]`, tagged with the coordinates it was fetched for, so edits and
+  deletions never show one place's weather under another's name), refreshes all of them every 10 min (the place
+  shown first) and fetches new or edited places at once. Alerts, air quality and the radar are for the place shown:
+  a switch clears them and `radar_relocate()`s. `config.c` stores the places (place 1 in NVS `loc` as before, the
+  others as blobs in `places`, plus the count and the place shown).
+- The radar only caches the **first** place's maps (`cache_save()` returns otherwise, and no preload): switching
+  between places would rewrite up to 3.5 MB of flash and fetch 63 OSM tiles each time.
+
+## Pager (`pager.c`)
+
+- Full-screen pages side by side or stacked in a scroller with `LV_SCROLL_SNAP_CENTER` + `LV_OBJ_FLAG_SCROLL_ONE`:
+  the page follows the finger, snaps, and bounces at the ends (elastic scrolling). Callbacks: `on_change` while
+  dragging (dots), `on_settle` at `SCROLL_END`. Used by the hourly view (days, horizontal) and the weather screen
+  (places, vertical).
+- Its scroll handler must ignore bubbled events (`target != current_target`): the hourly lists scroll vertically
+  inside the pages and their `LV_EVENT_SCROLL` bubbles up; reading pager state from the list crashed the board.
 - Long-press opens a settings overlay with a QR code (`lv_qrcode`) for `https://<ip>`.
 - Unused swipes call `lv_indev_wait_release()`; otherwise their release is also delivered as a `SHORT_CLICKED`.
 
@@ -153,8 +177,8 @@ LVGL timer and event callbacks already run inside the lock.
   today). Response is about 7 KB (receive buffer 48 KB in PSRAM). The weather screen shows `day[0..2]`.
 - `SHORT_CLICKED` on the weather screen with y ≥ 296 → forecast column by x → `scr_hour` (move-top animation).
   `ui_weather()` keeps a copy of the forecast (`wx`) for this screen.
-- `scr_hour` holds a pager: a horizontally scrollable object with one full-screen page per forecast day (`WX_DAYS`),
-  `LV_SCROLL_SNAP_CENTER` + `LV_OBJ_FLAG_SCROLL_ONE`, so pages follow the finger, snap, and bounce at the ends.
+- `scr_hour` holds a horizontal pager (`pager.c`) with one full-screen page per forecast day (`WX_DAYS`), so pages
+  follow the finger, snap, and bounce at the ends.
   Each page has its own vertically scrollable hour list; LVGL picks the scroll direction from the drag.
   Page dots update on `LV_EVENT_SCROLL`. A tap closes the view.
 - **Rows are drawn, not created:** each list has one tall object with an `LV_EVENT_DRAW_MAIN` callback that draws
@@ -280,6 +304,9 @@ LVGL timer and event callbacks already run inside the lock.
     Weather-Setup. Scanning blocks the server for 2–3 s, so the page scans only on the **Scan** button, or
     automatically when opened on the setup AP.
   - `POST /api/location {name, lat, lon}`
+  - `POST /api/location {name, lat, lon, index}`: `index` = which place (count = add one); without it, the place
+    shown. `GET /api/config` returns `places [{name, lat, lon}]`, `active`, `max_places`.
+  - `POST /api/places {select: i}` shows place i on the display; `{delete: i}` removes it (not the last one).
   - `POST /api/units {temp:"c"|"f", wind:"kmh"|"mph"|"ms", clock:24|12}` (any subset); `GET /api/config` returns
     `units` in the same form. Both servers; `max_uri_handlers` is 14 (12 were all used).
   - `POST /api/wifi {ssid, pass}`: restarts the device.

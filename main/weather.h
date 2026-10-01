@@ -1,5 +1,6 @@
 #pragma once
 #include <stdbool.h>
+#include "config.h"
 
 
 typedef enum { WX_CLEAR, WX_PARTLY, WX_CLOUDY, WX_FOG, WX_RAIN, WX_SNOW, WX_STORM } wx_kind_t;
@@ -32,6 +33,7 @@ typedef struct {
     enum { NC_NONE, NC_STARTS, NC_STOPS } nc_kind;   // precipitation starting / stopping within 2 h
     char nc_time[6];                                  // HH:MM, local
     bool nc_snow;
+    int utc_offset;          // seconds, for this place (config_set_utc_offset when it's the one shown)
 } weather_t;
 
 // Air quality (Open-Meteo air-quality API, CAMS). Pollen only exists for Europe: -1 elsewhere.
@@ -41,7 +43,7 @@ typedef struct {
     float pollen[4];         // grains/m³: alder, birch, grass, ragweed (-1 = no data)
 } air_t;
 
-bool weather_fetch(weather_t *w);
+bool weather_fetch(const location_t *loc, weather_t *w);   // forecast for one place
 bool air_fetch(air_t *a);
 const char *weather_text(int code);
 wx_kind_t weather_kind(int code);

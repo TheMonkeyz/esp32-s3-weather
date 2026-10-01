@@ -1,4 +1,4 @@
-// Persistent settings (location, units) + local-time and unit-formatting helpers
+// Persistent settings (places, units) + local-time and unit-formatting helpers
 #include <time.h>
 #include "config.h"
 #include <string.h>
@@ -10,7 +10,10 @@
 
 static const char *TAG = "config";
 static portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
-static location_t cur;
+// Places: the first one lives in NVS namespace "loc" (name, lat, lon in micro-degrees, as before several places
+// existed); the others in "places" as blobs "p1".."p3", with the count "n" and the place shown "act".
+static location_t places[MAX_PLACES];
+static int nplaces = 1, active;
 static bool loaded;
 static volatile int utc_offset;
 static volatile bool offset_known;
@@ -18,50 +21,122 @@ static volatile bool offset_known;
 static void load(void)
 {
     if (loaded) return;
-    strcpy(cur.name, "Québec");
-    cur.lat = 46.8139;
-    cur.lon = -71.2080;
+    strcpy(places[0].name, "Québec");
+    places[0].lat = 46.8139;
+    places[0].lon = -71.2080;
     nvs_handle_t h;
     if (nvs_open("loc", NVS_READONLY, &h) == ESP_OK) {
-        size_t n = sizeof(cur.name);
+        size_t n = sizeof(places[0].name);
         int64_t la, lo;
         char name[48];
         if (nvs_get_str(h, "name", name, &n) == ESP_OK &&
             nvs_get_i64(h, "lat", &la) == ESP_OK && nvs_get_i64(h, "lon", &lo) == ESP_OK) {
-            strlcpy(cur.name, name, sizeof(cur.name));
-            cur.lat = la / 1e6;
-            cur.lon = lo / 1e6;
+            strlcpy(places[0].name, name, sizeof(places[0].name));
+            places[0].lat = la / 1e6;
+            places[0].lon = lo / 1e6;
         }
         nvs_close(h);
     }
+    if (nvs_open("places", NVS_READONLY, &h) == ESP_OK) {
+        uint8_t n = 1, act = 0;
+        nvs_get_u8(h, "n", &n);
+        nvs_get_u8(h, "act", &act);
+        for (int i = 1; i < n && i < MAX_PLACES; i++) {
+            char key[4] = { 'p', '0' + i, 0 };
+            size_t len = sizeof(location_t);
+            if (nvs_get_blob(h, key, &places[i], &len) != ESP_OK || len != sizeof(location_t)) break;
+            nplaces = i + 1;
+        }
+        active = act < nplaces ? act : 0;
+        nvs_close(h);
+    }
     loaded = true;
-    ESP_LOGI(TAG, "Location: %s (%.4f, %.4f)", cur.name, cur.lat, cur.lon);
+    for (int i = 0; i < nplaces; i++)
+        ESP_LOGI(TAG, "Place %d%s: %s (%.4f, %.4f)", i + 1, i == active ? " (shown)" : "", places[i].name,
+                 places[i].lat, places[i].lon);
+}
+
+static bool save(void)                 // all places + the one shown
+{
+    nvs_handle_t h;
+    if (nvs_open("loc", NVS_READWRITE, &h) != ESP_OK) return false;
+    nvs_set_str(h, "name", places[0].name);
+    nvs_set_i64(h, "lat", (int64_t)(places[0].lat * 1e6));
+    nvs_set_i64(h, "lon", (int64_t)(places[0].lon * 1e6));
+    nvs_commit(h);
+    nvs_close(h);
+    if (nvs_open("places", NVS_READWRITE, &h) != ESP_OK) return false;
+    nvs_set_u8(h, "n", nplaces);
+    nvs_set_u8(h, "act", active);
+    for (int i = 1; i < MAX_PLACES; i++) {
+        char key[4] = { 'p', '0' + i, 0 };
+        if (i < nplaces) nvs_set_blob(h, key, &places[i], sizeof(location_t));
+        else nvs_erase_key(h, key);
+    }
+    nvs_commit(h);
+    nvs_close(h);
+    return true;
 }
 
 void config_get_location(location_t *out)
 {
     load();
     taskENTER_CRITICAL(&mux);
-    *out = cur;
+    *out = places[active];
     taskEXIT_CRITICAL(&mux);
 }
 
-bool config_set_location(const location_t *loc)
+bool config_set_location(const location_t *loc) { return config_set_place(config_active_place(), loc); }
+
+int config_place_count(void) { load(); return nplaces; }
+int config_active_place(void) { load(); return active; }
+
+bool config_get_place(int i, location_t *out)
 {
-    if (loc->lat < -85 || loc->lat > 85 || loc->lon < -180 || loc->lon > 180) return false;
-    nvs_handle_t h;
-    if (nvs_open("loc", NVS_READWRITE, &h) != ESP_OK) return false;
-    nvs_set_str(h, "name", loc->name);
-    nvs_set_i64(h, "lat", (int64_t)(loc->lat * 1e6));
-    nvs_set_i64(h, "lon", (int64_t)(loc->lon * 1e6));
-    nvs_commit(h);
-    nvs_close(h);
+    load();
+    if (i < 0 || i >= nplaces) return false;
     taskENTER_CRITICAL(&mux);
-    cur = *loc;
+    *out = places[i];
     taskEXIT_CRITICAL(&mux);
-    offset_known = false;   // new place may be in another time zone; weather fetch will update it
-    ESP_LOGI(TAG, "Saved location: %s (%.4f, %.4f)", loc->name, loc->lat, loc->lon);
     return true;
+}
+
+bool config_set_place(int i, const location_t *loc)
+{
+    load();
+    if (loc->lat < -85 || loc->lat > 85 || loc->lon < -180 || loc->lon > 180) return false;
+    if (i < 0 || i > nplaces || i >= MAX_PLACES) return false;
+    taskENTER_CRITICAL(&mux);
+    places[i] = *loc;
+    if (i == nplaces) nplaces++;
+    taskEXIT_CRITICAL(&mux);
+    if (i == active) offset_known = false;   // may be another time zone; the next forecast sets it
+    ESP_LOGI(TAG, "Saved place %d: %s (%.4f, %.4f)", i + 1, loc->name, loc->lat, loc->lon);
+    return save();
+}
+
+bool config_delete_place(int i)
+{
+    load();
+    if (i < 0 || i >= nplaces || nplaces == 1) return false;
+    taskENTER_CRITICAL(&mux);
+    for (int k = i; k + 1 < nplaces; k++) places[k] = places[k + 1];
+    nplaces--;
+    if (active > i || active >= nplaces) active = active > 0 ? active - 1 : 0;
+    taskEXIT_CRITICAL(&mux);
+    ESP_LOGI(TAG, "Deleted place %d; %d left, showing %d", i + 1, nplaces, active + 1);
+    return save();
+}
+
+bool config_select_place(int i)
+{
+    load();
+    if (i < 0 || i >= nplaces) return false;
+    if (i == active) return true;
+    active = i;
+    offset_known = false;
+    ESP_LOGI(TAG, "Showing place %d: %s", i + 1, places[i].name);
+    return save();
 }
 
 void config_set_utc_offset(int seconds)

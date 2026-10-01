@@ -72,16 +72,14 @@ static void nowcast(cJSON *m15, weather_t *w)
     }
 }
 
-bool weather_fetch(weather_t *w)
+bool weather_fetch(const location_t *loc, weather_t *w)
 {
     rx_t rx = { .cap = 49152 };    // ~10 KB with 7 days of hourly data
     rx.buf = calloc(1, rx.cap);
     if (!rx.buf) return false;
 
-    location_t loc;
-    config_get_location(&loc);
     char url[640];
-    snprintf(url, sizeof(url), URL_FMT, loc.lat, loc.lon);
+    snprintf(url, sizeof(url), URL_FMT, loc->lat, loc->lon);
     esp_http_client_config_t cfg = {
         .url = url, .event_handler = http_evt, .user_data = &rx,
         .crt_bundle_attach = esp_crt_bundle_attach, .timeout_ms = 15000, .buffer_size_tx = 1024,   // long URL
@@ -101,7 +99,7 @@ bool weather_fetch(weather_t *w)
         cJSON *cur = cJSON_GetObjectItem(root, "current");
         cJSON *daily = cJSON_GetObjectItem(root, "daily");
         cJSON *off = cJSON_GetObjectItem(root, "utc_offset_seconds");
-        if (cJSON_IsNumber(off)) config_set_utc_offset(off->valueint);
+        w->utc_offset = cJSON_IsNumber(off) ? off->valueint : 0;
         if (cur && daily) {
             w->temp = num(cur, "temperature_2m");
             w->feels = num(cur, "apparent_temperature");
@@ -155,7 +153,7 @@ bool weather_fetch(weather_t *w)
                 w->nhours++;
             }
             ok = true;
-            ESP_LOGI(TAG, "Now %.1f°C (feels %.1f), %s, RH %d%%, wind %.0f km/h, today %.0f/%.0f",
+            ESP_LOGI(TAG, "%s: now %.1f°C (feels %.1f), %s, RH %d%%, wind %.0f km/h, today %.0f/%.0f", loc->name,
                      w->temp, w->feels, weather_text(w->code), w->humidity, w->wind,
                      w->day[0].tmax, w->day[0].tmin);
             ESP_LOGI(TAG, "%d hourly points, %d bytes", w->nhours, rx.len);

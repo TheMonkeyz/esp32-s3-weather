@@ -29,14 +29,19 @@ button.eye{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:
 select{width:100%;padding:11px 12px;border-radius:10px;border:1px solid var(--line);background:#0c0e12;color:var(--text);font-size:16px}
 .dur{display:flex;gap:6px}.dur input{flex:1;min-width:0}.dur select{width:78px;padding:11px 6px}
 .chk{display:flex;align-items:center;gap:10px;margin-top:10px}.chk input{width:22px;height:22px}
+#places div.pl{display:flex;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--line)}
+#places .pn{flex:1;min-width:0}#places .pn b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#places button{width:auto;margin:0;padding:7px 10px;font-size:14px}#places .on{color:var(--acc);font-size:13px;font-weight:600}
+#editHdr{margin-top:16px;font-weight:600}
 #msg{min-height:20px;margin-top:10px;font-size:14px}.ok{color:#6fd08c}.err{color:#ff7a7a}
 </style></head><body>
 <h1>Weather display</h1>
 
 <div class="card" id="locCard">
-  <h2>Location</h2>
-  <div class="cur" id="curName">…</div>
-  <div class="muted" id="curCoord"></div>
+  <h2>Places</h2>
+  <div class="muted">Swipe up or down on the weather screen to switch places.</div>
+  <div id="places"></div>
+  <div id="editHdr">…</div>
   <button id="gps">📍 Use my phone's location</button>
   <div class="muted" id="gpsNote" style="display:none;margin-top:8px">Phone location only works on the secure page:
     <a id="secureLink" style="color:var(--acc)" href="#"></a> (open it in your browser and accept the certificate warning).</div>
@@ -49,7 +54,8 @@ select{width:100%;padding:11px 12px;border-radius:10px;border:1px solid var(--li
   </div>
   <label for="name">Name shown on screen</label>
   <input id="name" maxlength="40">
-  <button id="saveLoc">Save location</button>
+  <button id="saveLoc">Save</button>
+  <button class="sec" id="addLoc">➕ Add as a new place</button>
   <div id="msg"></div>
 </div>
 
@@ -152,11 +158,45 @@ async function saveUnits(){
 }
 ['uTemp', 'uWind', 'uClock'].forEach(id => $(id).addEventListener('change', saveUnits));
 
+let cfg = null, editing = -1;
+function edit(i){                                  // fill the form with place i
+  editing = i;
+  const p = cfg.places[i];
+  $('editHdr').textContent = 'Edit ' + p.name;
+  $('name').value = p.name; $('lat').value = p.lat.toFixed(4); $('lon').value = p.lon.toFixed(4);
+  $('addLoc').style.display = cfg.places.length < cfg.max_places ? '' : 'none';
+  showPlaces();
+}
+function showPlaces(){
+  const box = $('places'); box.innerHTML = '';
+  cfg.places.forEach((p, i) => {
+    const d = document.createElement('div'); d.className = 'pl';
+    const n = document.createElement('div'); n.className = 'pn';
+    const b = document.createElement('b'); b.textContent = (i === editing ? '✎ ' : '') + p.name;
+    const m = document.createElement('span'); m.className = 'muted'; m.textContent = p.lat.toFixed(4) + ', ' + p.lon.toFixed(4);
+    n.append(b, m); d.append(n);
+    if (i === cfg.active) { const o = document.createElement('span'); o.className = 'on'; o.textContent = 'On screen'; d.append(o); }
+    else d.append(btn('Show', () => placeAct({select: i}, 'Showing ' + p.name + '.')));
+    if (i !== editing) d.append(btn('Edit', () => edit(i)));
+    if (cfg.places.length > 1) d.append(btn('🗑', () => { if (confirm('Delete ' + p.name + '?')) { editing = -1; placeAct({delete: i}, 'Deleted ' + p.name + '.'); } }));
+    box.appendChild(d);
+  });
+}
+function btn(text, fn){ const b = document.createElement('button'); b.className = 'sec'; b.textContent = text; b.onclick = fn; return b; }
+async function placeAct(body, done){
+  try{
+    const r = await fetch('/api/places', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    if (!r.ok) throw 0;
+    say($('msg'), done, true); load();
+  }catch(e){ say($('msg'), 'That didn\'t work.', false); }
+}
+
 async function load(){
   try{
     const c = await (await fetch('/api/config')).json();
-    $('curName').textContent = c.name; $('curCoord').textContent = c.lat.toFixed(4)+', '+c.lon.toFixed(4);
-    $('name').value = c.name; $('lat').value = c.lat.toFixed(4); $('lon').value = c.lon.toFixed(4);
+    cfg = c;
+    showPlaces();
+    edit(Math.min(editing < 0 ? c.active : editing, c.places.length - 1));
     $('curSsid').textContent = c.ssid || '–';
     if (c.units) { $('uTemp').value = c.units.temp; $('uWind').value = c.units.wind; $('uClock').value = String(c.units.clock); }
   }catch(e){ say($('msg'), 'Could not read settings from the display', false); }
@@ -210,7 +250,7 @@ $('gps').onclick = () => {
     const lat = p.coords.latitude, lon = p.coords.longitude;
     $('lat').value = lat.toFixed(4); $('lon').value = lon.toFixed(4);
     $('name').value = await nameFor(lat, lon);
-    say($('msg'), 'Got it — tap Save location.', true);
+    say($('msg'), 'Got it — tap Save or Add as a new place.', true);
   }, err => say($('msg'), 'Location unavailable: ' + err.message, false), {enableHighAccuracy:false, timeout:15000});
 };
 
@@ -228,22 +268,26 @@ $('q').oninput = () => {
         d.textContent = [r.name, r.admin1, r.country].filter(Boolean).join(', ');
         d.onclick = () => { $('lat').value = r.latitude.toFixed(4); $('lon').value = r.longitude.toFixed(4);
                             $('name').value = r.name; $('results').innerHTML=''; $('q').value='';
-                            say($('msg'), 'Selected ' + r.name + ' — tap Save location.', true); };
+                            say($('msg'), 'Selected ' + r.name + ' — tap Save or Add as a new place.', true); };
         $('results').appendChild(d);
       });
     }catch(e){ say($('msg'), 'City search needs internet on this phone.', false); }
   }, 350);
 };
 
-$('saveLoc').onclick = async () => {
-  const body = {name: $('name').value.trim() || 'My location', lat: parseFloat($('lat').value), lon: parseFloat($('lon').value)};
+async function savePlace(index){
+  const body = {name: $('name').value.trim() || 'My location', lat: parseFloat($('lat').value), lon: parseFloat($('lon').value), index};
   if (!isFinite(body.lat) || !isFinite(body.lon)){ say($('msg'), 'Enter a valid latitude and longitude.', false); return; }
   try{
     const r = await fetch('/api/location', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
     if (!r.ok) throw 0;
-    say($('msg'), 'Saved. The display is updating.', true); load();
+    editing = index;
+    say($('msg'), index === cfg.active ? 'Saved. The display is updating.' : 'Saved ' + body.name + '. Swipe up or down on the display to see it.', true);
+    load();
   }catch(e){ say($('msg'), 'Save failed.', false); }
-};
+}
+$('saveLoc').onclick = () => savePlace(editing);
+$('addLoc').onclick = () => savePlace(cfg.places.length);
 
 $('saveWifi').onclick = async () => {
   const body = {ssid: $('ssid').value, pass: $('pass').value};

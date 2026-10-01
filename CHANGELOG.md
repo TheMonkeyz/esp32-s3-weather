@@ -10,6 +10,7 @@ their own `## vX.Y.Z-rc.N` section. Those are shown only to Beta users, while th
 list everything again.
 
 ## v1.5.0 - 2026-09-30
+- Several places: add up to 4 (home, cottage, work...) on the settings page, then drag up or down on the weather screen to switch. Each place shows its own local time; alerts, air quality, the hourly view and the radar follow the place shown.
 - Units on the settings page: temperature in °C or °F, wind in km/h, mph or m/s, and a 24-hour or 12-hour clock. The display switches right away. With mph, the radar shows distances in miles.
 
 ## v1.4.0 - 2026-09-30

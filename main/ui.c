@@ -17,6 +17,7 @@
 #include "esp_timer.h"
 #include "esp_ota_ops.h"
 #include "esp_wifi.h"
+#include "pager.h"
 #include "esp_log.h"
 #include "esp_attr.h"
 #include "esp_heap_caps.h"
@@ -39,8 +40,19 @@ static lv_obj_t *al_pill, *al_pill_lbl, *scr_alert, *al_title, *al_sub, *al_body
 static lv_image_dsc_t al_map_dsc;
 static uint16_t *al_map_buf;
 static EXT_RAM_BSS_ATTR alerts_t alerts;           // ~4 KB, in PSRAM
-static lv_obj_t *scr_main, *lbl_time, *lbl_city, *icon_box, *lbl_temp, *lbl_cond, *lbl_detail, *lbl_nowcast;
-static lv_obj_t *fc_day[3], *fc_temp[3], *fc_icon[3], *hero;
+// Weather screen: one page per place in a vertical pager (pager.c); pills, page dots and place dots stay on top.
+typedef struct {
+    lv_obj_t *time, *city, *icon, *temp, *cond, *detail, *nowcast, *fc_day[3], *fc_temp[3], *fc_icon[3];
+    char name[48];
+    int utc_offset;
+    bool has_wx;                               // pw[i] holds this place's forecast
+} place_page_t;
+static lv_obj_t *scr_main, *place_pager;
+static place_page_t pp[MAX_PLACES];
+static EXT_RAM_BSS_ATTR weather_t pw[MAX_PLACES];   // each page's forecast (redrawn on a units change)
+static int n_places = 1, cur_place;            // pages in use, the place shown (alerts, hourly, extras, radar)
+static lv_obj_t *pl_dot[MAX_PLACES];           // which place is shown (right edge of the weather screen)
+static void (*place_select_cb)(int i);         // the pager settled on another place (main.c)
 
 #define C_BG      lv_color_hex(0x000000)
 #define C_TEXT    lv_color_hex(0xF2F4F7)
@@ -140,7 +152,7 @@ static void cloud(lv_obj_t *p, int x, int y, lv_color_t c)
     blob(p, x, y + 40, 112, 34, c, 17);
 }
 
-static lv_point_precise_t bolt_pts[4][4];
+static lv_point_precise_t bolt_pts[MAX_PLACES * 4][4];   // per icon object: 4 per place page
 
 // Icon design space is 130x122; pct scales it. slot = unique index per icon (for bolt points)
 static void draw_icon(lv_obj_t *box, wx_kind_t k, bool day, int pct, int slot)
@@ -214,12 +226,20 @@ static char clock_shown[12];
 static void clock_tick(lv_timer_t *t)
 {
     struct tm tm;
-    if (!config_local_time((long)time(NULL), &tm)) return;   // not synced yet
+    time_t now = time(NULL);
+    if (!config_local_time((long)now, &tm)) return;   // not synced yet (also: the place shown)
     char buf[12];
     config_fmt_time(tm.tm_hour, tm.tm_min, buf, sizeof(buf));
     if (strcmp(buf, clock_shown)) {
         strcpy(clock_shown, buf);
-        lv_label_set_text(lbl_time, buf);
+        for (int i = 0; i < n_places; i++) {               // each page in its own time zone
+            struct tm lt;
+            time_t lt_t = now + pp[i].utc_offset;
+            char b[12];
+            if (i == cur_place || !pp[i].has_wx) strcpy(b, buf);
+            else { gmtime_r(&lt_t, &lt); config_fmt_time(lt.tm_hour, lt.tm_min, b, sizeof(b)); }
+            lv_label_set_text(pp[i].time, b);
+        }
         ESP_LOGI("ui", "clock %s", buf);
         if (lv_screen_active() == scr_hour && tm.tm_min == 0) hour_fill(0);   // new hour
         if (lv_screen_active() == scr_extras) extras_refresh();
@@ -598,8 +618,7 @@ static void main_tap(lv_event_t *e)
         fill_page(i);
         lv_obj_scroll_to_y(pg[i].list, 0, LV_ANIM_OFF);
     }
-    lv_obj_update_layout(hr_pager);
-    lv_obj_scroll_to_x(hr_pager, col * DISP_W, LV_ANIM_OFF);
+    pager_go(hr_pager, col, false);
     set_dots(col);
     lv_screen_load_anim(scr_hour, LV_SCR_LOAD_ANIM_MOVE_TOP, 260, 0, false);
 }
@@ -617,39 +636,22 @@ static void hour_gesture(lv_event_t *e)
     if (in) lv_indev_wait_release(in);
 }
 
-static void pager_scrolled(lv_event_t *e)
+static void hr_changed(int day, void *user) { set_dots(day); }
+
+static void hr_settled(int day, void *user)
 {
-    int x = lv_obj_get_scroll_x(hr_pager);
-    int day = (x + DISP_W / 2) / DISP_W;
-    if (day < 0) day = 0;
-    if (day > WX_DAYS - 1) day = WX_DAYS - 1;
-    if (day != hr_day) set_dots(day);
-    if (lv_event_get_code(e) == LV_EVENT_SCROLL_END)
-        ESP_LOGI("ui", "hourly view: day %d, %d rows", day, pg[day].count);
+    ESP_LOGI("ui", "hourly view: day %d, %d rows", day, pg[day].count);
 }
 
 static void hour_create(void)
 {
     scr_hour = base_screen();
-    hr_pager = lv_obj_create(scr_hour);
-    lv_obj_remove_style_all(hr_pager);
-    lv_obj_set_size(hr_pager, DISP_W, DISP_H);
-    lv_obj_set_scroll_dir(hr_pager, LV_DIR_HOR);
-    lv_obj_set_scroll_snap_x(hr_pager, LV_SCROLL_SNAP_CENTER);
-    lv_obj_add_flag(hr_pager, LV_OBJ_FLAG_SCROLL_ONE | LV_OBJ_FLAG_EVENT_BUBBLE);
-    lv_obj_set_scrollbar_mode(hr_pager, LV_SCROLLBAR_MODE_OFF);
-    lv_obj_add_event_cb(hr_pager, pager_scrolled, LV_EVENT_SCROLL, NULL);
-    lv_obj_add_event_cb(hr_pager, pager_scrolled, LV_EVENT_SCROLL_END, NULL);
+    hr_pager = pager_create(scr_hour, false, WX_DAYS, hr_changed, hr_settled, NULL);
 
     for (int d = 0; d < WX_DAYS; d++) {
         day_page_t *dp = &pg[d];
         dp->day = d;
-        dp->page = lv_obj_create(hr_pager);
-        lv_obj_remove_style_all(dp->page);
-        lv_obj_set_size(dp->page, DISP_W, DISP_H);
-        lv_obj_set_pos(dp->page, d * DISP_W, 0);
-        lv_obj_remove_flag(dp->page, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
-        lv_obj_add_flag(dp->page, LV_OBJ_FLAG_EVENT_BUBBLE | LV_OBJ_FLAG_GESTURE_BUBBLE);
+        dp->page = pager_page(hr_pager, d);
         dp->title = label(dp->page, f_city, C_ACCENT, 34);
         dp->sum = label(dp->page, f_tiny, C_DIM, 68);
         lv_obj_set_width(dp->sum, 340);
@@ -982,7 +984,7 @@ void ui_alerts(const alerts_t *al)
     if (!alerts.n) {
         lv_obj_add_flag(al_map, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(al_pill, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_remove_flag(lbl_city, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_remove_flag(pp[cur_place].city, LV_OBJ_FLAG_HIDDEN);
         if (lv_screen_active() == scr_alert) lv_screen_load(scr_main);
         display_unlock();
         return;
@@ -994,7 +996,7 @@ void ui_alerts(const alerts_t *al)
     if (alerts.n > 1) lv_label_set_text_fmt(al_pill_lbl, "%s +%d", a->name, alerts.n - 1);
     else lv_label_set_text(al_pill_lbl, a->name);
     lv_obj_remove_flag(al_pill, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(lbl_city, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(pp[cur_place].city, LV_OBJ_FLAG_HIDDEN);
 
     char until[32];
     fmt_until(a->ends, until, sizeof(until));
@@ -1520,6 +1522,70 @@ static void update_create(void)
     lv_obj_add_event_cb(scr_update, alert_gesture, LV_EVENT_GESTURE, NULL);
 }
 
+// One place's weather page: the layout the weather screen always had
+static void place_page_create(int i, lv_obj_t *pg)
+{
+    place_page_t *p = &pp[i];
+    p->time = label(pg, f_time, C_DIM, 38);
+    p->city = label(pg, f_city, C_TEXT, 72);
+    lv_obj_t *hero = lv_obj_create(pg);                      // icon + big temperature, centred together
+    lv_obj_remove_style_all(hero);
+    lv_obj_set_size(hero, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(hero, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(hero, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(hero, 14, 0);
+    lv_obj_align(hero, LV_ALIGN_TOP_MID, 0, 112);
+    p->icon = icon_box_create(hero, 80);
+    p->temp = lv_label_create(hero);
+    lv_obj_set_style_text_font(p->temp, f_big, 0);
+    lv_obj_set_style_text_color(p->temp, C_TEXT, 0);
+    lv_label_set_text(p->temp, "");
+    p->cond = label(pg, f_cond, C_TEXT, 214);
+    p->detail = label(pg, f_small, C_DIM, 248);
+    p->nowcast = label(pg, f_tiny, C_ACCENT, 273);           // "Rain around 14:45" (hidden when none)
+    lv_obj_add_flag(p->nowcast, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_t *div = lv_obj_create(pg);
+    lv_obj_remove_style_all(div);
+    lv_obj_set_size(div, 260, 2);
+    lv_obj_set_style_bg_color(div, lv_color_hex(0x2A3138), 0);
+    lv_obj_set_style_bg_opa(div, LV_OPA_COVER, 0);
+    lv_obj_align(div, LV_ALIGN_TOP_MID, 0, 298);
+    for (int k = 0; k < 3; k++) {                              // 3-day forecast: day / icon / high-low
+        int dx = (k - 1) * 98;
+        p->fc_day[k] = label(pg, f_tiny, C_ACCENT, 0);
+        lv_obj_set_width(p->fc_day[k], 96);
+        lv_obj_align(p->fc_day[k], LV_ALIGN_TOP_MID, dx, 306);
+        p->fc_icon[k] = icon_box_create(pg, 36);
+        lv_obj_align(p->fc_icon[k], LV_ALIGN_TOP_MID, dx, 334);
+        p->fc_temp[k] = label(pg, f_tiny, C_TEXT, 0);
+        lv_obj_set_width(p->fc_temp[k], 96);
+        lv_obj_align(p->fc_temp[k], LV_ALIGN_TOP_MID, dx, 384);
+    }
+}
+
+static void place_dots(int active)
+{
+    for (int i = 0; i < MAX_PLACES; i++) {
+        if (n_places < 2 || i >= n_places) { lv_obj_add_flag(pl_dot[i], LV_OBJ_FLAG_HIDDEN); continue; }
+        lv_obj_set_size(pl_dot[i], 7, i == active ? 18 : 7);
+        lv_obj_set_style_bg_color(pl_dot[i], i == active ? C_TEXT : C_DIM, 0);
+        lv_obj_set_style_bg_opa(pl_dot[i], i == active ? LV_OPA_COVER : LV_OPA_60, 0);
+        lv_obj_align(pl_dot[i], LV_ALIGN_RIGHT_MID, -14,
+                     (2 * i - (n_places - 1)) * 8 + (i < active ? -5 : i > active ? 5 : 0));
+        lv_obj_remove_flag(pl_dot[i], LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+static void place_scrolled(int i, void *user) { place_dots(i); }     // dots follow the finger
+
+static void place_settled(int i, void *user)
+{
+    if (i != cur_place && i < n_places && place_select_cb) {
+        ESP_LOGI("ui", "place %d", i + 1);
+        place_select_cb(i);
+    }
+}
+
 void ui_init(void)
 {
     display_lock(-1);
@@ -1532,8 +1598,8 @@ void ui_init(void)
     lv_obj_set_width(msg_body, 330);
 
     scr_main = base_screen();
-    lbl_time = label(scr_main, f_time, C_DIM, 38);
-    lbl_city = label(scr_main, f_city, C_TEXT, 72);
+    place_pager = pager_create(scr_main, true, MAX_PLACES, place_scrolled, place_settled, NULL);
+    for (int i = 0; i < MAX_PLACES; i++) place_page_create(i, pager_page(place_pager, i));
     // Weather alert pill, in place of the city name while an alert is active (tap for details)
     al_pill = lv_obj_create(scr_main);
     lv_obj_remove_style_all(al_pill);
@@ -1548,48 +1614,17 @@ void ui_init(void)
     lv_obj_add_flag(al_pill, LV_OBJ_FLAG_HIDDEN);
     location_t loc;
     config_get_location(&loc);
-    lv_label_set_text(lbl_city, loc.name);
+    lv_label_set_text(pp[0].city, loc.name);
+    for (int i = 1; i < MAX_PLACES; i++) lv_obj_add_flag(pager_page(place_pager, i), LV_OBJ_FLAG_HIDDEN);
 
-    // Hero row: icon + big temperature, centred together
-    hero = lv_obj_create(scr_main);
-    lv_obj_remove_style_all(hero);
-    lv_obj_set_size(hero, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
-    lv_obj_set_flex_flow(hero, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(hero, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_column(hero, 14, 0);
-    lv_obj_align(hero, LV_ALIGN_TOP_MID, 0, 112);
-    icon_box = icon_box_create(hero, 80);
-    lbl_temp = lv_label_create(hero);
-    lv_obj_set_style_text_font(lbl_temp, f_big, 0);
-    lv_obj_set_style_text_color(lbl_temp, C_TEXT, 0);
-    lv_label_set_text(lbl_temp, "");
-
-    lbl_cond = label(scr_main, f_cond, C_TEXT, 214);
-    lbl_detail = label(scr_main, f_small, C_DIM, 248);
-    lbl_nowcast = label(scr_main, f_tiny, C_ACCENT, 273);         // "Rain around 14:45" (hidden when none)
-    lv_obj_add_flag(lbl_nowcast, LV_OBJ_FLAG_HIDDEN);
-
-    // Divider
-    lv_obj_t *div = lv_obj_create(scr_main);
-    lv_obj_remove_style_all(div);
-    lv_obj_set_size(div, 260, 2);
-    lv_obj_set_style_bg_color(div, lv_color_hex(0x2A3138), 0);
-    lv_obj_set_style_bg_opa(div, LV_OPA_COVER, 0);
-    lv_obj_align(div, LV_ALIGN_TOP_MID, 0, 298);
-
-    // 3-day forecast: day / icon / high-low
-    for (int i = 0; i < 3; i++) {
-        int dx = (i - 1) * 98;
-        fc_day[i] = label(scr_main, f_tiny, C_ACCENT, 0);
-        lv_obj_set_width(fc_day[i], 96);
-        lv_obj_align(fc_day[i], LV_ALIGN_TOP_MID, dx, 306);
-        fc_icon[i] = icon_box_create(scr_main, 36);
-        lv_obj_align(fc_icon[i], LV_ALIGN_TOP_MID, dx, 334);
-        fc_temp[i] = label(scr_main, f_tiny, C_TEXT, 0);
-        lv_obj_set_width(fc_temp[i], 96);
-        lv_obj_align(fc_temp[i], LV_ALIGN_TOP_MID, dx, 384);
-    }
     page_dots(scr_main, 2);
+    for (int i = 0; i < MAX_PLACES; i++) {                     // place dots, vertical, right edge (ui_places)
+        pl_dot[i] = lv_obj_create(scr_main);
+        lv_obj_remove_style_all(pl_dot[i]);
+        lv_obj_set_style_radius(pl_dot[i], 4, 0);
+        lv_obj_set_style_bg_opa(pl_dot[i], LV_OPA_COVER, 0);
+        lv_obj_add_flag(pl_dot[i], LV_OBJ_FLAG_HIDDEN);
+    }
 
     scr_radar = radar_create(f_small, f_small, f_micro);
     page_dots(scr_radar, 3);
@@ -1599,6 +1634,7 @@ void ui_init(void)
     hour_create();
     update_create();                // pill on scr_main (made non-clickable by passthrough) + update screen
     passthrough(scr_main);          // before the (clickable) overlay is added
+    lv_obj_add_flag(place_pager, LV_OBJ_FLAG_CLICKABLE);   // it must stay pressable to scroll between places
 
     overlay = lv_obj_create(scr_main);
     lv_obj_remove_style_all(overlay);
@@ -1650,10 +1686,108 @@ void ui_message_qr(const char *title, const char *body, const char *qr)
     display_unlock();
 }
 
-void ui_set_city(const char *name)
+static void day_name(const char *date, int idx, char *out, size_t n)
+{
+    if (idx == 0) { snprintf(out, n, "Today"); return; }
+    struct tm tm = {0};
+    if (sscanf(date, "%d-%d-%d", &tm.tm_year, &tm.tm_mon, &tm.tm_mday) == 3) {
+        tm.tm_year -= 1900; tm.tm_mon -= 1; tm.tm_hour = 12;
+        mktime(&tm);
+        strftime(out, n, "%a", &tm);
+    } else snprintf(out, n, "-");
+}
+
+void ui_places(int n, int active)
 {
     display_lock(-1);
-    lv_label_set_text(lbl_city, name);
+    bool moved = active != cur_place;
+    for (int i = 0; i < MAX_PLACES; i++) {
+        lv_obj_t *pg = pager_page(place_pager, i);
+        if (i < n) lv_obj_remove_flag(pg, LV_OBJ_FLAG_HIDDEN); else lv_obj_add_flag(pg, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_remove_flag(pp[i].city, LV_OBJ_FLAG_HIDDEN);     // the alert pill goes on the place shown
+    }
+    n_places = n;
+    cur_place = active;
+    if (alerts.n) lv_obj_add_flag(pp[active].city, LV_OBJ_FLAG_HIDDEN);
+    place_dots(active);
+    if (pager_current(place_pager) != active) pager_go(place_pager, active, true);   // chosen on the settings page
+    if (moved) {
+        clock_shown[0] = 0;
+        clock_tick(NULL);
+        if (lv_screen_active() == scr_hour || lv_screen_active() == scr_extras) lv_screen_load(scr_main);
+    }
+    display_unlock();
+}
+
+void ui_on_place_select(void (*cb)(int i)) { place_select_cb = cb; }
+
+void ui_place(int i, const char *name, const weather_t *w)
+{
+    if (i < 0 || i >= MAX_PLACES) return;
+    display_lock(-1);
+    place_page_t *p = &pp[i];
+    strlcpy(p->name, name, sizeof(p->name));
+    lv_label_set_text(p->city, name);
+    if (!w) {                                                  // no forecast yet for this place
+        p->has_wx = false;
+        lv_label_set_text(p->temp, "-");
+        lv_label_set_text(p->cond, "Loading...");
+        lv_label_set_text(p->detail, "");
+        lv_obj_add_flag(p->nowcast, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(p->icon, LV_OBJ_FLAG_HIDDEN);
+        for (int k = 0; k < 3; k++) {
+            lv_label_set_text(p->fc_day[k], "");
+            lv_label_set_text(p->fc_temp[k], "");
+            lv_obj_add_flag(p->fc_icon[k], LV_OBJ_FLAG_HIDDEN);
+        }
+        if (i == cur_place) {
+            have_wx = false;                 // the hourly view and extras wait for this place's forecast
+            if (lv_screen_active() == scr_hour || lv_screen_active() == scr_extras) lv_screen_load(scr_main);
+        }
+        display_unlock();
+        return;
+    }
+    if (w != &pw[i]) pw[i] = *w;
+    p->has_wx = true;
+    p->utc_offset = w->utc_offset;
+    char buf[64];
+    snprintf(buf, sizeof(buf), "%d°", config_temp(w->temp));
+    lv_label_set_text(p->temp, buf);
+    lv_label_set_text(p->cond, weather_text(w->code));
+    char wind[16];
+    config_fmt_wind(w->wind, wind, sizeof(wind));
+    snprintf(buf, sizeof(buf), "Feels %d°  ·  %d%%  ·  %s", config_temp(w->feels), w->humidity, wind);
+    lv_label_set_text(p->detail, buf);
+    draw_icon(p->icon, weather_kind(w->code), w->is_day, 80, i * 4);
+    lv_obj_remove_flag(p->icon, LV_OBJ_FLAG_HIDDEN);
+    if (w->nc_kind == NC_NONE) lv_obj_add_flag(p->nowcast, LV_OBJ_FLAG_HIDDEN);
+    else {
+        char hm[12];
+        config_fmt_hhmm(w->nc_time, hm, sizeof(hm));
+        lv_label_set_text_fmt(p->nowcast, w->nc_kind == NC_STARTS ? "%s around %s" : "%s until about %s",
+                              w->nc_snow ? "Snow" : "Rain", hm);
+        lv_obj_remove_flag(p->nowcast, LV_OBJ_FLAG_HIDDEN);
+    }
+    for (int k = 0; k < 3; k++) {
+        if (k < w->ndays) {
+            day_name(w->day[k].date, k, buf, sizeof(buf));
+            lv_label_set_text(p->fc_day[k], buf);
+            snprintf(buf, sizeof(buf), "%d° / %d°", config_temp(w->day[k].tmax), config_temp(w->day[k].tmin));
+            lv_label_set_text(p->fc_temp[k], buf);
+            draw_icon(p->fc_icon[k], weather_kind(w->day[k].code), true, 36, i * 4 + k + 1);
+            lv_obj_remove_flag(p->fc_icon[k], LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+    if (i == cur_place) {                    // the hourly view, extras and graphs show this place
+        wx = *w;
+        have_wx = true;
+        wx_gen++;
+        if (lv_screen_active() == scr_extras) extras_refresh();
+        if (lv_screen_active() == scr_hour) for (int d = 0; d < WX_DAYS; d++) hour_fill(d);
+        if (lv_screen_active() == scr_msg) lv_screen_load(scr_main);
+    }
+    clock_shown[0] = 0;
+    clock_tick(NULL);
     display_unlock();
 }
 
@@ -1669,55 +1803,6 @@ void ui_message(const char *title, const char *body)
     display_unlock();
 }
 
-static void day_name(const char *date, int idx, char *out, size_t n)
-{
-    if (idx == 0) { snprintf(out, n, "Today"); return; }
-    struct tm tm = {0};
-    if (sscanf(date, "%d-%d-%d", &tm.tm_year, &tm.tm_mon, &tm.tm_mday) == 3) {
-        tm.tm_year -= 1900; tm.tm_mon -= 1; tm.tm_hour = 12;
-        mktime(&tm);
-        strftime(out, n, "%a", &tm);
-    } else snprintf(out, n, "-");
-}
-
-void ui_weather(const weather_t *w)
-{
-    char buf[64];
-    display_lock(-1);
-    snprintf(buf, sizeof(buf), "%d°", config_temp(w->temp));
-    lv_label_set_text(lbl_temp, buf);
-    lv_label_set_text(lbl_cond, weather_text(w->code));
-    char wind[16];
-    config_fmt_wind(w->wind, wind, sizeof(wind));
-    snprintf(buf, sizeof(buf), "Feels %d°  ·  %d%%  ·  %s", config_temp(w->feels), w->humidity, wind);
-    lv_label_set_text(lbl_detail, buf);
-    draw_icon(icon_box, weather_kind(w->code), w->is_day, 80, 0);
-    if (w->nc_kind == NC_NONE) lv_obj_add_flag(lbl_nowcast, LV_OBJ_FLAG_HIDDEN);
-    else {
-        char hm[12];
-        config_fmt_hhmm(w->nc_time, hm, sizeof(hm));
-        lv_label_set_text_fmt(lbl_nowcast, w->nc_kind == NC_STARTS ? "%s around %s" : "%s until about %s",
-                              w->nc_snow ? "Snow" : "Rain", hm);
-        lv_obj_remove_flag(lbl_nowcast, LV_OBJ_FLAG_HIDDEN);
-    }
-    for (int i = 0; i < 3; i++) {
-        if (i < w->ndays) {
-            day_name(w->day[i].date, i, buf, sizeof(buf));
-            lv_label_set_text(fc_day[i], buf);
-            snprintf(buf, sizeof(buf), "%d° / %d°", config_temp(w->day[i].tmax), config_temp(w->day[i].tmin));
-            lv_label_set_text(fc_temp[i], buf);
-            draw_icon(fc_icon[i], weather_kind(w->day[i].code), true, 36, i + 1);
-        }
-    }
-    if (w != &wx) wx = *w;                 // ui_units_changed() re-renders from the copy
-    have_wx = true;
-    wx_gen++;
-    if (lv_screen_active() == scr_extras) extras_refresh();
-    if (lv_screen_active() == scr_hour) for (int i = 0; i < WX_DAYS; i++) hour_fill(i);
-    clock_tick(NULL);
-    if (lv_screen_active() == scr_msg) lv_screen_load(scr_main);
-    display_unlock();
-}
 
 // Diagnostics bench: the screens to time (hourly view filled with day 1). Call with the display lock held.
 int ui_bench_screens(lv_obj_t **scr, const char **name, int max)
@@ -1729,8 +1814,7 @@ int ui_bench_screens(lv_obj_t **scr, const char **name, int max)
     if (n < max) { scr[n] = scr_main; name[n++] = "weather"; }
     if (have_wx && n < max && lv_screen_active() != scr_hour) {   // never disturb a view in use
         for (int i = 0; i < WX_DAYS; i++) fill_page(i);
-        lv_obj_update_layout(hr_pager);
-        lv_obj_scroll_to_x(hr_pager, DISP_W, LV_ANIM_OFF);
+        pager_go(hr_pager, 1, false);
         set_dots(1);
         scr[n] = scr_hour; name[n++] = "hourly";
     }
@@ -1744,8 +1828,9 @@ void ui_units_changed(void)
 {
     display_lock(-1);
     clock_shown[0] = 0;
-    if (have_wx) ui_weather(&wx);          // weather screen, forecast, hourly pages + graphs, extras, clock
-    else clock_tick(NULL);
+    for (int i = 0; i < n_places; i++)     // every place page; the one shown also redraws hourly, graphs, extras
+        if (pp[i].has_wx) ui_place(i, pp[i].name, &pw[i]);
+    clock_tick(NULL);
     ui_alerts(&alerts);                    // "Until …"
     radar_units_changed();                 // clock, frame time, ring and radius
     display_unlock();
@@ -1762,8 +1847,7 @@ lv_draw_buf_t *ui_snapshot(const char *screen)
             int day = atoi(screen + 6);
             if (day < 0 || day >= wx.ndays) day = 0;
             for (int i = 0; i < WX_DAYS; i++) { fill_page(i); lv_obj_scroll_to_y(pg[i].list, 0, LV_ANIM_OFF); }
-            lv_obj_update_layout(hr_pager);
-            lv_obj_scroll_to_x(hr_pager, day * DISP_W, LV_ANIM_OFF);
+            pager_go(hr_pager, day, false);
             set_dots(day);
         }
     }

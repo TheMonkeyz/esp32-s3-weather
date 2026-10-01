@@ -98,6 +98,11 @@ Windows build gets both from `main/idf_component.yml`. `components/dns_server` *
     over HTTP on the AP interface (decide with `getsockname`) and keep HTTPS for the home-network page (GPS).
 15. **Git on the PC folder from the Linux VM** needs delete permission (index.lock, temporary objects). Set
     `core.fileMode false` and `core.autocrlf false`.
+16. **LVGL events bubble from children:** a page's scrolling list sends `LV_EVENT_SCROLL` up through the pager. A
+    handler that reads state from `lv_event_get_target()` crashed (null user data). Use
+    `lv_event_get_current_target()` and ignore events whose target is someone else.
+17. **Sending non-ASCII through curl from Git Bash** mangles it (Montréal stored as Latin-1). Put the JSON in a file
+    (`printf` with `\u00e9`) and use `--data-binary @file`; a phone sends proper UTF-8.
 
 - Internal RAM ran out silently (10 KB free, 0 KB min ever) because LVGL's small allocations went to internal RAM
   first. Fixed with `lvgl_mem.c` (LVGL heap in PSRAM). Font kerning cost 71% of render time; fonts now use
@@ -143,6 +148,8 @@ Windows build gets both from `main/idf_component.yml`. `components/dns_server` *
 - Prefers doubling zoom steps (sharp map) over exact 50 km steps.
 - Wants short progress notes, no screen takeover, and changes verified on the device (log + snapshot) before
   being called done.
+- Screen-to-screen moves should feel like the hourly view: follow the finger, snap, bounce at the ends, no
+  wrap-around. Reuse `pager.c` for that.
 
 ## Useful facts
 
