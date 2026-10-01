@@ -9,6 +9,9 @@ How to write an entry: add a `## vX.Y.Z - YYYY-MM-DD` section at the top **befor
 their own `## vX.Y.Z-rc.N` section. Those are shown only to Beta users, while the final release's section should
 list everything again.
 
+## v1.5.0 - 2026-09-30
+- Units on the settings page: temperature in °C or °F, wind in km/h, mph or m/s, and a 24-hour or 12-hour clock. The display switches right away. With mph, the radar shows distances in miles.
+
 ## v1.4.0 - 2026-09-30
 - The hourly view now starts with a graph of the day's temperature, from midnight to midnight, with the high and low marked. On today's page, the hours already past are greyed out and a dot shows the current hour.
 - New status page: swipe right twice from the weather screen. It shows the firmware version, the Wi-Fi signal, and whether each online service the display uses is working, when it was last reached and why it failed.

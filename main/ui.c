@@ -209,18 +209,19 @@ static lv_obj_t *icon_box_create(lv_obj_t *parent, int pct)
 
 /* ---------------------------------------------------------------------- */
 
+static char clock_shown[12];
+
 static void clock_tick(lv_timer_t *t)
 {
-    static char shown[8];
     struct tm tm;
     if (!config_local_time((long)time(NULL), &tm)) return;   // not synced yet
-    char buf[8];
-    strftime(buf, sizeof(buf), "%H:%M", &tm);
-    if (strcmp(buf, shown)) {
-        strcpy(shown, buf);
+    char buf[12];
+    config_fmt_time(tm.tm_hour, tm.tm_min, buf, sizeof(buf));
+    if (strcmp(buf, clock_shown)) {
+        strcpy(clock_shown, buf);
         lv_label_set_text(lbl_time, buf);
         ESP_LOGI("ui", "clock %s", buf);
-        if (lv_screen_active() == scr_hour && buf[3] == '0' && buf[4] == '0') hour_fill(0);   // new hour
+        if (lv_screen_active() == scr_hour && tm.tm_min == 0) hour_fill(0);   // new hour
         if (lv_screen_active() == scr_extras) extras_refresh();
     }
 }
@@ -367,7 +368,6 @@ static void draw_text_top(lv_layer_t *layer, lv_font_t *f, lv_color_t c, int x, 
     lv_draw_label(layer, &d, &a);
 }
 
-static int round_temp(float t) { return (int)(t < 0 ? t - 0.5f : t + 0.5f); }
 
 // Temperature graph, midnight to midnight (0 to 24, the last point is the next day's 00:00): filled curve, a line
 // at every hour, hours labelled every 3 h, the day's high and low labelled.
@@ -435,16 +435,19 @@ static void graph_draw(lv_layer_t *layer, const day_page_t *dp, int x0, int y0)
 
     // Hours under the plot, every 3 h
     char buf[12];
+    units_t un;
+    config_get_units(&un);
     for (int h = 0; h <= 24; h += 3) {
-        snprintf(buf, sizeof(buf), "%d", h);
+        if (un.h12) snprintf(buf, sizeof(buf), "%d%c", (h + 11) % 12 + 1, h % 24 < 12 ? 'a' : 'p');   // 12a 3a .. 12p
+        else snprintf(buf, sizeof(buf), "%d", h);
         draw_text_top(layer, f_micro, C_DIM, (int)GX(h) - 15, y0 + G_Y0 + G_H + 22, 30, LV_TEXT_ALIGN_CENTER, buf);
     }
 
     // High above its point, low below its point
-    snprintf(buf, sizeof(buf), "%d°", round_temp(hi));
+    snprintf(buf, sizeof(buf), "%d°", config_temp(hi));
     draw_text_top(layer, f_tiny, C_TEXT, (int)GX(ihi) - 30, (int)GY(hi) - 24, 60, LV_TEXT_ALIGN_CENTER, buf);
-    if (round_temp(lo) != round_temp(hi)) {
-        snprintf(buf, sizeof(buf), "%d°", round_temp(lo));
+    if (config_temp(lo) != config_temp(hi)) {
+        snprintf(buf, sizeof(buf), "%d°", config_temp(lo));
         draw_text_top(layer, f_micro, C_DIM, (int)GX(ilo) - 30, (int)GY(lo) + 4, 60, LV_TEXT_ALIGN_CENTER, buf);
     }
 
@@ -508,16 +511,16 @@ static void hr_draw(lv_event_t *e)
             lv_area_t a = { c.x1, y + 2, c.x2, y + ROW_H - 3 };
             lv_draw_rect(layer, &d, &a);
         }
-        if (now) strcpy(buf, "Now"); else snprintf(buf, sizeof(buf), "%02d:00", i % 24);
+        if (now) strcpy(buf, "Now"); else config_fmt_hour(i % 24, buf, sizeof(buf));
         draw_text(layer, f_tiny, now ? C_ACCENT : C_DIM, c.x1 + 10, y, 64, LV_TEXT_ALIGN_LEFT, buf);
         P_layer = layer; P_x = c.x1 + 76; P_y = y + (ROW_H - 37) / 2;
         draw_icon(NULL, weather_kind(h->code), h->is_day, 30, 0);
         P_layer = NULL;
-        snprintf(buf, sizeof(buf), "%d°", round_temp(h->temp));
+        snprintf(buf, sizeof(buf), "%d°", config_temp(h->temp));
         draw_text(layer, f_small, C_TEXT, c.x1 + 118, y, 56, LV_TEXT_ALIGN_RIGHT, buf);
         snprintf(buf, sizeof(buf), "%d%%", h->pop);
         draw_text(layer, f_tiny, h->pop >= 30 ? C_ACCENT : C_DIM, c.x1 + 180, y, 54, LV_TEXT_ALIGN_RIGHT, buf);
-        snprintf(buf, sizeof(buf), "%.0f km/h", h->wind);
+        config_fmt_wind(h->wind, buf, sizeof(buf));
         draw_text(layer, f_micro, C_DIM, c.x1 + 236, y, 72, LV_TEXT_ALIGN_RIGHT, buf);
     }
 }
@@ -555,7 +558,7 @@ static void fill_page(int day)
         strftime(name, sizeof(name), "%A", &tm);        // weekday name, today included
     }
     lv_label_set_text(dp->title, name);
-    lv_label_set_text_fmt(dp->sum, "%s  ·  %.0f° / %.0f°", weather_text(d->code), d->tmax, d->tmin);
+    lv_label_set_text_fmt(dp->sum, "%s  ·  %d° / %d°", weather_text(d->code), config_temp(d->tmax), config_temp(d->tmin));
     lv_obj_set_height(dp->content, TOP_H + dp->count * ROW_H);
     graph_render(dp);
     lv_obj_invalidate(dp->page);
@@ -891,8 +894,12 @@ static lv_color_t alert_colour(char c)
 static void fmt_until(time_t t, char *out, size_t n)
 {
     struct tm tm;
-    if (t && config_local_time((long)t, &tm)) strftime(out, n, "Until %a %H:%M", &tm);
-    else out[0] = 0;
+    if (t && config_local_time((long)t, &tm)) {
+        char day[8], hm[12];
+        strftime(day, sizeof(day), "%a", &tm);
+        config_fmt_time(tm.tm_hour, tm.tm_min, hm, sizeof(hm));
+        snprintf(out, n, "Until %s %s", day, hm);
+    } else out[0] = 0;
 }
 
 static void alert_close(lv_event_t *e) { lv_screen_load_anim(scr_main, LV_SCR_LOAD_ANIM_MOVE_BOTTOM, 260, 0, false); }
@@ -971,7 +978,7 @@ void ui_alert_map(uint16_t *buf, int w, int h)
 void ui_alerts(const alerts_t *al)
 {
     display_lock(-1);
-    alerts = *al;
+    if (al != &alerts) alerts = *al;
     if (!alerts.n) {
         lv_obj_add_flag(al_map, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(al_pill, LV_OBJ_FLAG_HIDDEN);
@@ -1078,8 +1085,10 @@ static void extras_refresh(void)       // display lock held (LVGL task or caller
     int rise = have_wx ? hhmm(wx.day[0].sunrise) : -1, set = have_wx ? hhmm(wx.day[0].sunset) : -1;
     int cur = synced ? tm.tm_hour * 60 + tm.tm_min : -1;
     if (rise >= 0 && set > rise) {
-        lv_label_set_text_fmt(ex_rise, "%s", wx.day[0].sunrise);
-        lv_label_set_text_fmt(ex_set, "%s", wx.day[0].sunset);
+        config_fmt_hhmm(wx.day[0].sunrise, buf, sizeof(buf));
+        lv_label_set_text(ex_rise, buf);
+        config_fmt_hhmm(wx.day[0].sunset, buf, sizeof(buf));
+        lv_label_set_text(ex_set, buf);
         int len = set - rise;
         if (cur >= rise && cur <= set) {
             float p = (float)(cur - rise) / len;
@@ -1092,7 +1101,8 @@ static void extras_refresh(void)       // display lock held (LVGL task or caller
             lv_arc_set_value(ex_arc, 0);                      // night: the whole arc dim
             lv_obj_add_flag(ex_sun, LV_OBJ_FLAG_HIDDEN);
             const char *next = cur > set && wx.ndays > 1 ? wx.day[1].sunrise : wx.day[0].sunrise;
-            lv_label_set_text_fmt(ex_day, "Sunrise\n%s", next);
+            config_fmt_hhmm(next, buf, sizeof(buf));
+            lv_label_set_text_fmt(ex_day, "Sunrise\n%s", buf);
         }
     }
 
@@ -1674,28 +1684,32 @@ void ui_weather(const weather_t *w)
 {
     char buf[64];
     display_lock(-1);
-    snprintf(buf, sizeof(buf), "%d°", (int)(w->temp < 0 ? w->temp - 0.5 : w->temp + 0.5));
+    snprintf(buf, sizeof(buf), "%d°", config_temp(w->temp));
     lv_label_set_text(lbl_temp, buf);
     lv_label_set_text(lbl_cond, weather_text(w->code));
-    snprintf(buf, sizeof(buf), "Feels %.0f°  ·  %d%%  ·  %.0f km/h", w->feels, w->humidity, w->wind);
+    char wind[16];
+    config_fmt_wind(w->wind, wind, sizeof(wind));
+    snprintf(buf, sizeof(buf), "Feels %d°  ·  %d%%  ·  %s", config_temp(w->feels), w->humidity, wind);
     lv_label_set_text(lbl_detail, buf);
     draw_icon(icon_box, weather_kind(w->code), w->is_day, 80, 0);
     if (w->nc_kind == NC_NONE) lv_obj_add_flag(lbl_nowcast, LV_OBJ_FLAG_HIDDEN);
     else {
+        char hm[12];
+        config_fmt_hhmm(w->nc_time, hm, sizeof(hm));
         lv_label_set_text_fmt(lbl_nowcast, w->nc_kind == NC_STARTS ? "%s around %s" : "%s until about %s",
-                              w->nc_snow ? "Snow" : "Rain", w->nc_time);
+                              w->nc_snow ? "Snow" : "Rain", hm);
         lv_obj_remove_flag(lbl_nowcast, LV_OBJ_FLAG_HIDDEN);
     }
     for (int i = 0; i < 3; i++) {
         if (i < w->ndays) {
             day_name(w->day[i].date, i, buf, sizeof(buf));
             lv_label_set_text(fc_day[i], buf);
-            snprintf(buf, sizeof(buf), "%.0f° / %.0f°", w->day[i].tmax, w->day[i].tmin);
+            snprintf(buf, sizeof(buf), "%d° / %d°", config_temp(w->day[i].tmax), config_temp(w->day[i].tmin));
             lv_label_set_text(fc_temp[i], buf);
             draw_icon(fc_icon[i], weather_kind(w->day[i].code), true, 36, i + 1);
         }
     }
-    wx = *w;
+    if (w != &wx) wx = *w;                 // ui_units_changed() re-renders from the copy
     have_wx = true;
     wx_gen++;
     if (lv_screen_active() == scr_extras) extras_refresh();
@@ -1725,6 +1739,17 @@ int ui_bench_screens(lv_obj_t **scr, const char **name, int max)
 }
 
 lv_obj_t *ui_main_screen(void) { return scr_main; }
+
+void ui_units_changed(void)
+{
+    display_lock(-1);
+    clock_shown[0] = 0;
+    if (have_wx) ui_weather(&wx);          // weather screen, forecast, hourly pages + graphs, extras, clock
+    else clock_tick(NULL);
+    ui_alerts(&alerts);                    // "Until …"
+    radar_units_changed();                 // clock, frame time, ring and radius
+    display_unlock();
+}
 
 lv_draw_buf_t *ui_snapshot(const char *screen)
 {

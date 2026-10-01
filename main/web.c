@@ -83,7 +83,32 @@ static esp_err_t config_get(httpd_req_t *req)
     cJSON_AddNumberToObject(j, "lon", loc.lon);
     cJSON_AddStringToObject(j, "ssid", ssid);
     cJSON_AddStringToObject(j, "version", esp_app_get_description()->version);
+    units_t u;
+    config_get_units(&u);
+    cJSON *un = cJSON_AddObjectToObject(j, "units");
+    cJSON_AddStringToObject(un, "temp", u.fahrenheit ? "f" : "c");
+    cJSON_AddStringToObject(un, "wind", u.wind == WIND_MPH ? "mph" : u.wind == WIND_MS ? "ms" : "kmh");
+    cJSON_AddNumberToObject(un, "clock", u.h12 ? 12 : 24);
     return send_json(req, j);
+}
+
+// {"temp":"c"|"f", "wind":"kmh"|"mph"|"ms", "clock":24|12}; any subset. The screens redraw at once.
+static esp_err_t units_post(httpd_req_t *req)
+{
+    cJSON *j = read_json(req);
+    if (!j) return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "bad json");
+    units_t u;
+    config_get_units(&u);
+    cJSON *v;
+    if (cJSON_IsString(v = cJSON_GetObjectItem(j, "temp"))) u.fahrenheit = !strcmp(v->valuestring, "f");
+    if (cJSON_IsString(v = cJSON_GetObjectItem(j, "wind")))
+        u.wind = !strcmp(v->valuestring, "mph") ? WIND_MPH : !strcmp(v->valuestring, "ms") ? WIND_MS : WIND_KMH;
+    if (cJSON_IsNumber(v = cJSON_GetObjectItem(j, "clock"))) u.h12 = v->valueint == 12;
+    cJSON_Delete(j);
+    if (!config_set_units(&u)) return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "not saved");
+    ui_units_changed();
+    httpd_resp_sendstr(req, "{\"ok\":true}");
+    return ESP_OK;
 }
 
 static int by_rssi(const void *a, const void *b)
@@ -369,7 +394,7 @@ static void start_https(void)
     conf.servercert_len = cert_len;
     conf.prvtkey_pem = (const uint8_t *)key;
     conf.prvtkey_len = key_len;
-    conf.httpd.max_uri_handlers = 12;
+    conf.httpd.max_uri_handlers = 14;
     conf.httpd.stack_size = 7168;      // measured peak ~3.3 KB (TLS handshake)
     conf.httpd.max_open_sockets = 5;
     conf.httpd.lru_purge_enable = true;
@@ -380,6 +405,7 @@ static void start_https(void)
         { .uri = "/api/config",   .method = HTTP_GET,  .handler = config_get },
         { .uri = "/api/scan",     .method = HTTP_GET,  .handler = scan_get },
         { .uri = "/api/location", .method = HTTP_POST, .handler = location_post },
+        { .uri = "/api/units",    .method = HTTP_POST, .handler = units_post },
         { .uri = "/api/wifi",     .method = HTTP_POST, .handler = wifi_post },
         { .uri = "/api/presence", .method = HTTP_GET,  .handler = presence_get },
         { .uri = "/api/presence", .method = HTTP_POST, .handler = presence_post },
@@ -402,7 +428,7 @@ void web_start(web_location_cb_t on_location_changed)
 
     httpd_config_t hc = HTTPD_DEFAULT_CONFIG();
     hc.uri_match_fn = httpd_uri_match_wildcard;
-    hc.max_uri_handlers = 12;
+    hc.max_uri_handlers = 14;
     hc.max_open_sockets = 6;
     hc.lru_purge_enable = true;
     hc.stack_size = 4096;              // measured peak ~1.2 KB
@@ -413,6 +439,7 @@ void web_start(web_location_cb_t on_location_changed)
             { .uri = "/api/config",   .method = HTTP_GET,  .handler = config_get },
             { .uri = "/api/scan",     .method = HTTP_GET,  .handler = scan_get },
             { .uri = "/api/location", .method = HTTP_POST, .handler = location_post },
+            { .uri = "/api/units",    .method = HTTP_POST, .handler = units_post },
             { .uri = "/api/wifi",     .method = HTTP_POST, .handler = wifi_post },
             { .uri = "/api/presence", .method = HTTP_GET,  .handler = presence_get },
             { .uri = "/api/presence", .method = HTTP_POST, .handler = presence_post },

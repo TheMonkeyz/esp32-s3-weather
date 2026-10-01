@@ -355,7 +355,7 @@ static time_t parse_utc(const char *s)
 static void fmt_local(time_t t, char *out, size_t n)
 {
     struct tm tm;
-    if (config_local_time(t, &tm)) strftime(out, n, "%H:%M", &tm);
+    if (config_local_time(t, &tm)) config_fmt_time(tm.tm_hour, tm.tm_min, out, n);
     else out[0] = 0;
 }
 
@@ -530,11 +530,13 @@ static void show_live(void)      // caller holds the display lock
     frame_t *f = &frames[NFRAMES - 1];
     for (int i = NFRAMES - 1; i >= 0; i--) if (frames[i].ok) { f = &frames[i]; break; }
     compose(f->ok ? f : NULL);
-    char when[8], now[8], sub[32];
+    char when[12], now[12], sub[40], dist[12];
     fmt_local(time(NULL), now, sizeof(now));
     lv_label_set_text(lbl_title, now[0] ? now : "Radar");
-    if (f->ok) { fmt_local(f->t, when, sizeof(when)); snprintf(sub, sizeof(sub), "Radar %s  ·  %d km", when, radius_km); }
-    else snprintf(sub, sizeof(sub), "Radar  ·  %d km", radius_km);
+    if (config_miles()) snprintf(dist, sizeof(dist), "%d mi", (int)(radius_km / 1.609344 + 0.5));
+    else snprintf(dist, sizeof(dist), "%d km", radius_km);
+    if (f->ok) { fmt_local(f->t, when, sizeof(when)); snprintf(sub, sizeof(sub), "Radar %s  ·  %s", when, dist); }
+    else snprintf(sub, sizeof(sub), "Radar  ·  %s", dist);
     lv_label_set_text(lbl_rtime, sub);
     refresh_img();
 }
@@ -542,7 +544,7 @@ static void show_live(void)      // caller holds the display lock
 static void radar_clock(lv_timer_t *t)
 {
     if (play_timer) return;                      // the pill shows frame times while playing
-    char now[8];
+    char now[12];
     fmt_local(time(NULL), now, sizeof(now));
     if (now[0] && strcmp(now, lv_label_get_text(lbl_title))) lv_label_set_text(lbl_title, now);
 }
@@ -570,7 +572,7 @@ static void play_step(lv_timer_t *t)
     if (play_i < NFRAMES) {
         frame_t *f = &frames[play_i];
         compose(f);
-        char when[8];
+        char when[12];
         fmt_local(f->t, when, sizeof(when));
         lv_label_set_text(lbl_title, when);
         lv_label_set_text(lbl_rtime, "Past 3 hours  ·  tap to stop");
@@ -614,6 +616,26 @@ static void on_tap(lv_event_t *e)
 
 /* ---------------- view / location ---------------- */
 
+// Range ring: the "nice" distance (km, or miles when the wind is in mph) closest to half the view radius
+static void ring_update(void)
+{
+    static const int nice[] = {2, 5, 10, 25, 50, 100, 200, 400, 800};
+    double m_per_px = 2 * MERC_MAX / (256.0 * (1 << zoom)) * cos(view_lat);
+    bool mi = config_miles();
+    double unit_m = mi ? 1609.344 : 1000.0;
+    double half = W / 4.0 * m_per_px / unit_m;
+    int d = nice[0];
+    for (int i = 0; i < (int)(sizeof(nice) / sizeof(nice[0])); i++)
+        if (fabs(log(nice[i] / half)) < fabs(log(d / half))) d = nice[i];
+    int ring_r = (int)(d * unit_m / m_per_px);
+    display_lock(-1);
+    lv_label_set_text_fmt(ring_lbl, "%d %s", d, mi ? "mi" : "km");
+    lv_obj_set_size(ring, ring_r * 2, ring_r * 2);
+    lv_obj_center(ring);
+    lv_obj_align(ring_lbl, LV_ALIGN_CENTER, 0, ring_r + 12);
+    display_unlock();
+}
+
 static void apply_view(void)
 {
     location_t loc;
@@ -622,22 +644,9 @@ static void apply_view(void)
     double n = 256.0 * (1 << zoom);
     view_x = floor((loc.lon + 180.0) / 360.0 * n) - W / 2;
     view_y = floor((1.0 - log(tan(lat) + 1.0 / cos(lat)) / M_PI) / 2.0 * n) - H / 2;
-    double m_per_px = 2 * MERC_MAX / n * cos(lat);
-    // Range ring: the "nice" distance closest to half the view radius
-    static const int nice_km[] = {5, 10, 25, 50, 100, 200, 400, 800};
-    double half = W / 4.0 * m_per_px / 1000.0;
-    int ring_km = nice_km[0];
-    for (int i = 0; i < (int)(sizeof(nice_km) / sizeof(nice_km[0])); i++)
-        if (fabs(log(nice_km[i] / half)) < fabs(log(ring_km / half))) ring_km = nice_km[i];
-    int ring_r = (int)(ring_km * 1000.0 / m_per_px);
     view_lat = lat;
     radius_km = radius_at(zoom);
-    display_lock(-1);
-    lv_label_set_text_fmt(ring_lbl, "%d km", ring_km);
-    lv_obj_set_size(ring, ring_r * 2, ring_r * 2);
-    lv_obj_center(ring);
-    lv_obj_align(ring_lbl, LV_ALIGN_CENTER, 0, ring_r + 12);
-    display_unlock();
+    ring_update();
 }
 
 // Make frames[] match the wanted times, reusing buffers of frames we already have
@@ -827,6 +836,14 @@ static void radar_task(void *arg)
             display_unlock();
         }
     }
+}
+
+void radar_units_changed(void)
+{
+    ring_update();
+    display_lock(-1);
+    if (!play_timer) show_live();
+    display_unlock();
 }
 
 lv_obj_t *radar_create(lv_font_t *f_title, lv_font_t *f_small, lv_font_t *f_micro)

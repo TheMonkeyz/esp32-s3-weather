@@ -280,6 +280,8 @@ LVGL timer and event callbacks already run inside the lock.
     Weather-Setup. Scanning blocks the server for 2–3 s, so the page scans only on the **Scan** button, or
     automatically when opened on the setup AP.
   - `POST /api/location {name, lat, lon}`
+  - `POST /api/units {temp:"c"|"f", wind:"kmh"|"mph"|"ms", clock:24|12}` (any subset); `GET /api/config` returns
+    `units` in the same form. Both servers; `max_uri_handlers` is 14 (12 were all used).
   - `POST /api/wifi {ssid, pass}`: restarts the device.
   - `GET /api/snapshot?screen=weather|extras|status|radar|update|alert|hourly0..hourly6|current` (HTTPS only): the
     screen rendered
@@ -289,6 +291,16 @@ LVGL timer and event callbacks already run inside the lock.
   **browser**; the device only stores the result.
 - Location is stored in NVS namespace `loc`. `config_local_time()` uses Open-Meteo's `utc_offset_seconds`, which
   handles any time zone and DST; before the first fetch it falls back to the `EST5EDT` TZ rule.
+- **Units** (NVS namespace `units`: `temp`, `wind`, `h12`; default °C, km/h, 24 h). Data is always fetched in metric;
+  every screen formats through `config.c`: `config_temp()` (rounded °C or °F), `config_fmt_wind()`,
+  `config_fmt_time()` / `config_fmt_hour()` / `config_fmt_hhmm()` (the forecast's "HH:MM" strings),
+  `config_miles()` (radar distances in miles when the wind is in mph). The forecast's 0.1 °C and 0.1 km/h are
+  converted exactly and rounded only for display, so °F can differ by 1° from a source that rounds the unrounded
+  model value, which the forecast's own rounding does anyway. The graph's shape doesn't change (linear), only its
+  labels (12-hour: 12a 3a … 12p … 12a).
+- A change calls `ui_units_changed()`: re-renders the weather screen from the kept copy (`ui_weather(&wx)`, which
+  also bumps `wx_gen` so the graph canvases redraw), the alerts' "Until", and `radar_units_changed()` (clock, frame
+  time, range ring in km or mi, radius). No refetch.
 
 ## TLS certificate (`tlscert.c`)
 
