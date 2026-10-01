@@ -9,6 +9,9 @@ How to write an entry: add a `## vX.Y.Z - YYYY-MM-DD` section at the top **befor
 their own `## vX.Y.Z-rc.N` section. Those are shown only to Beta users, while the final release's section should
 list everything again.
 
+## v1.9.0-rc.1 - 2026-10-01
+- Test version of an Inuktitut interface, in syllabics: choose ᐃᓄᒃᑎᑐᑦ in Settings on the display (Language) or in the Units card of the settings page. It is a first draft that a fluent speaker has not checked yet, so some words may be wrong. Weather alerts and the "What's new" notes stay in English.
+
 ## v1.8.0 - 2026-10-01
 - The display and the settings page now speak French: choose Français in Settings on the display (Langue) or in the Units card of the settings page. Weather alerts come in French too. The "What's new" notes stay in English for now.
 - On the weather screen, a blue drop marks the humidity and a wind symbol marks the wind speed.
