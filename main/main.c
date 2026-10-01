@@ -158,14 +158,22 @@ static bool fetch_place(int i)
 
 
 // The saved network can't be reached (moved house, new router, router still booting after a power
-// cut...): offer the setup network with its QR code while retrying the saved one in the background.
-// Whichever happens first wins: new credentials restart the board, a connection carries on normally.
+// cut...): offer the setup network with its QR code. The saved network isn't tried while setup is open (the
+// attempts would knock phones off it); closing it (a tap, or 5 idle minutes) tries the saved network for 30 s,
+// then setup comes back. New credentials restart the board; a connection carries on normally.
 static void offline_setup(const char *ssid)
 {
-    char note[96];
+    char note[96], body[160];
     snprintf(note, sizeof(note), tr(T_CANT_REACH), ssid);
-    ui_wifi_setup(note);                       // starts the setup network (page 1) or Easy Connect (page 2)
-    net_wait_connected(-1);
+    snprintf(body, sizeof(body), tr(T_CONNECTING), ssid);
+    while (1) {
+        if (!ui_wifi_setup_open()) ui_wifi_setup(note);   // setup network (page 1) or Easy Connect (page 2)
+        while (ui_wifi_setup_open() && !net_is_connected()) vTaskDelay(pdMS_TO_TICKS(500));
+        if (net_is_connected()) break;
+        ui_message("Wi-Fi", body);
+        if (net_wait_connected(30000)) break;
+        ESP_LOGW(TAG, "Still can't reach \"%s\", offering the setup network again", ssid);
+    }
     ESP_LOGI(TAG, "Saved network is back");
     ui_wifi_setup_end();
     ui_message("Wi-Fi", tr(T_CONNECTED));

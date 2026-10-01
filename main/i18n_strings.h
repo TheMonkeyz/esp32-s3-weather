@@ -322,6 +322,8 @@ X(T_WIFI_DPP_HOW,   "In Wi-Fi settings, tap the QR icon\nand scan this.\nYour ph
 X(T_WIFI_DPP_NONE,  "Easy Connect isn't available.\nSwipe right for other phones.",
                     "Easy Connect n'est pas offert.\nGlissez à droite : autres téléphones.",
                     "Easy Connect ᐊᑐᐃᓐᓇᐅᙱᑦᑐᖅ.\nᓂᕈᓗᓪᓕ ᑕᓕᖅᐱᒧᑦ: ᐊᓯᖏᑦ.")
+X(T_TAP_RETRY,      "Tap to try again",            "Touchez pour réessayer",
+                    "ᓇᕿᓪᓕ: ᑲᓱᒃᑲᓐᓂᕐᓕ")
 X(T_TAP_CANCEL,     "Tap to cancel",               "Touchez pour annuler",
                     "ᓇᕿᓪᓕ: ᖁᔭᓈᕐᓕ")
 
@@ -336,8 +338,8 @@ X(T_FETCHING,       "Fetching forecast...\n\nLong-press for Wi-Fi setup", "Prév
                     "ᓯᓚᒥᒃ ᖃᐅᔨᓴᖅᑐᖅ...\n\nᓇᕿᓪᓗᒍ ᓇᕿᒻᒥᓕ: Wi-Fi")
 X(T_CONNECTED,      "Connected",                   "Connecté",
                     "ᑲᓱᖅᓯᒪᔪᖅ")
-X(T_CANT_REACH,     "Can't reach %s\n(still trying)", "%s injoignable\n(nouvel essai en cours)",
-                    "%s ᑲᓱᕈᓐᓇᙱᑦᑐᖅ\n(ᓱᓕ ᐱᓕᕆᐊᖅᑐᖅ)")
+X(T_CANT_REACH,     "Can't reach %s\nTap to try again", "%s injoignable\nTouchez pour réessayer",
+                    "%s ᑲᓱᕈᓐᓇᙱᑦᑐᖅ\nᓇᕿᓪᓕ: ᑲᓱᒃᑲᓐᓂᕐᓕ")
 X(T_FIRST_SETUP,    "First-time setup",            "Première configuration",
                     "ᓯᕗᓪᓕᖅ ᐋᖅᑭᒃᓱᐃᓂᖅ")
 

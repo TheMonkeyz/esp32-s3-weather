@@ -149,13 +149,14 @@ fw:T_WIFI_JOIN	Scan to join %s\n(password %s).\nAndroid? Swipe left to skip\nthe
 fw:T_WIFI_DPP_TITLE	Android: Easy Connect	`Android: Easy Connect`	high	product names
 fw:T_WIFI_DPP_HOW	In Wi-Fi settings, tap the QR icon\nand scan this.\nYour phone sends its network.\nSwipe right for other phones	`Wi-Fi` aaqqissimautini naqilli `QR`\nammalu ajjiliurlugu.\nUqaalautiralaaq kasuqatigiinnik tuniijuq.\nNirululli taliqpimut: asingit	low	tuniijuq = gives; asingit = the others
 fw:T_WIFI_DPP_NONE	Easy Connect isn't available.\nSwipe right for other phones.	`Easy Connect` atuinnaunngittuq.\nNirululli taliqpimut: asingit.	low	Microsoft Inuktitut terminology (Pirurvik): available = atuinnaq
+fw:T_TAP_RETRY	Tap to try again	Naqilli: kasukkannirli	low	"tap: connect again" (kasur- connect, -kanniq- again; Microsoft: connect = kasurli)
 fw:T_TAP_CANCEL	Tap to cancel	Naqilli: qujanaarli	medium	Microsoft Inuktitut terminology (Pirurvik): cancel = qujanaarli
 fw:T_WEATHER	Weather	Sila	high	Tusaalanga glossary: sila = weather
 fw:T_STARTING	Starting...	Pigiaqtuq...	medium	"starting"
 fw:T_CONNECTING	Connecting to\n%s\n\nLong-press for Wi-Fi setup	Kasuqtuq\n%s\n\nNaqillugu naqimmili: `Wi-Fi`	medium	Microsoft Inuktitut terminology (Pirurvik): connect
 fw:T_FETCHING	Fetching forecast...\n\nLong-press for Wi-Fi setup	Silamik qaujisaqtuq...\n\nNaqillugu naqimmili: `Wi-Fi`	low	"looking up the weather"
 fw:T_CONNECTED	Connected	Kasuqsimajuq	high	Microsoft Inuktitut terminology (Pirurvik): online = kasuqsimajuq
-fw:T_CANT_REACH	Can't reach %s\n(still trying)	%s kasurunnanngittuq\n(suli piliriaqtuq)	low	"cannot reach %s (still trying)"
+fw:T_CANT_REACH	Can't reach %s\nTap to try again	%s kasurunnanngittuq\nNaqilli: kasukkannirli	low	"cannot reach %s / tap: connect again"
 fw:T_FIRST_SETUP	First-time setup	Sivulliq aaqqiksuiniq	low	"first arrangement"
 fw:T_RADAR	Radar	`Radar`	medium	kept as is
 fw:T_RADAR_AT	Radar %s  ·  %s	`Radar` %s  ·  %s	medium	

@@ -123,10 +123,11 @@ The two onboard microphones measure the room's sound level every 0.1 s.
 - **When the saved network can't be reached** (new place, new router, router still starting after a power cut):
   - While it says *Connecting to …* or *Fetching forecast…*, a **long-press** starts the setup network and shows its
     QR code.
-  - After about 30 s without a connection it shows the setup QR code by itself (*Can't reach …, still trying*).
-  - Either way it keeps retrying the saved network in the background (every 30 s after the first minute, and not
-    while a phone is on the setup network). If the network comes back, it carries on normally and switches the setup
-    network off; if you save a new network instead, it restarts and joins that one.
+  - After about 30 s without a connection it shows the setup QR code by itself (*Can't reach … / Tap to try again*).
+  - While the setup screen is open, the display doesn't try the saved network: that would get in the way of the
+    phone. Tap the screen to try the saved network again (30 s), or wait: after 5 minutes without a phone on the setup
+    network it tries again by itself, then shows the setup screen again. If you save a new network instead, it
+    restarts and joins that one.
 - **Reset Wi-Fi from the buttons** (rarely needed now): press **RESET**, then hold **BOOT** for about 2 s while the screen says
   *Starting…*. Don't hold BOOT *while* pressing RESET, because that puts the chip into flashing mode.
 
