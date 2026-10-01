@@ -11,6 +11,8 @@
 #include "esp_log.h"
 #include "esp_heap_caps.h"
 #include "cJSON.h"
+#include "esp_timer.h"
+#include "svc.h"
 
 static const char *TAG = "alerts";
 
@@ -68,9 +70,11 @@ bool alerts_fetch(double lat, double lon, alerts_t *out)
         .crt_bundle_attach = esp_crt_bundle_attach, .timeout_ms = 15000, .buffer_size = 2048,
     };
     esp_http_client_handle_t c = esp_http_client_init(&cfg);
+    int64_t t0 = esp_timer_get_time();
     esp_err_t err = esp_http_client_perform(c);
     int status = esp_http_client_get_status_code(c);
     esp_http_client_cleanup(c);
+    svc_http(SVC_ALERTS, err, status, t0);
     if (err != ESP_OK || status != 200) {
         ESP_LOGW(TAG, "request failed: %s, status %d", esp_err_to_name(err), status);
         free(rx.buf);
@@ -79,7 +83,12 @@ bool alerts_fetch(double lat, double lon, alerts_t *out)
     cJSON *root = cJSON_Parse(rx.buf);
     free(rx.buf);
     cJSON *features = cJSON_GetObjectItem(root, "features");
-    if (!cJSON_IsArray(features)) { cJSON_Delete(root); ESP_LOGW(TAG, "unexpected response"); return false; }
+    if (!cJSON_IsArray(features)) {
+        cJSON_Delete(root);
+        ESP_LOGW(TAG, "unexpected response");
+        svc_fail(SVC_ALERTS, "Bad response", t0);
+        return false;
+    }
 
     time_t now = time(NULL);
     out->n = 0;
@@ -203,9 +212,11 @@ uint16_t *alerts_map(const alert_t *a, double lat, double lon, int w, int h)
             .crt_bundle_attach = esp_crt_bundle_attach, .timeout_ms = 20000, .buffer_size = 2048,
         };
         esp_http_client_handle_t c = esp_http_client_init(&cfg);
+        int64_t t0 = esp_timer_get_time();
         esp_err_t err = esp_http_client_perform(c);
         int status = esp_http_client_get_status_code(c);
         esp_http_client_cleanup(c);
+        svc_http(SVC_ALERTS, err, status, t0);
         ok = err == ESP_OK && status == 200 && rx.len < rx.cap - 1 && parse_shape(rx.buf, &sh, plon, plat);
         ESP_LOGI(TAG, "region shape: %d bytes, %d points, %d rings%s", rx.len, sh.n, sh.nrings, ok ? "" : " (failed)");
     }

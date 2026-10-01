@@ -2,6 +2,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#define OTA_SITE "https://themonkeyz.github.io/esp32-s3-weather/"   // web-flasher site (GitHub Pages)
+
 // Firmware updates over Wi-Fi from the web-flasher site (GitHub Pages): channels.json says which version each
 // channel (stable / beta) offers, the channel's manifest.json gives the app image. Checks shortly after boot and
 // every 6 hours; installing is always the user's choice (screen or settings page).

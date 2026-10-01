@@ -25,6 +25,7 @@ The panel's init sequence and pin map come from Waveshare's BSP
 | `presence` | 0 / 2 | Reads 100 ms of audio, computes the level, runs the dim/off state machine, fades brightness |
 | `diag` | 0 / 1 | Every 60 s logs heap, frame timing, CPU and stack per task; starts `bench` once at 45 s |
 | `bench` | 1 / 4, one-shot, 10 KB stack (6 KB overflowed) | Times full-screen renders of each screen without showing them (UI blocked ~1.5 s); only while the weather screen is idle |
+| `svc_probe` | any / 2, one-shot, 8 KB stack | Status page opened: one small request to each service idle for 5 min, then exits |
 | httpd (HTTPS :443, HTTP :80) | – | Settings page + JSON API. Stacks 7 KB (TLS handshake peaks ~3.3 KB) / 4 KB |
 
 Main task stack is 6 KB. Stack sizes come from the measured high-water marks in `diag: tasks` lines; re-check
@@ -81,7 +82,8 @@ LVGL timer and event callbacks already run inside the lock.
 
 ## Extras page (`ui.c`, `weather.c`)
 
-- Screens left to right: extras, weather, radar (page dots show 3). `gesture_cb` handles weather ⇄ extras.
+- Screens left to right: status, extras, weather, radar (page dots show 4, `N_PAGES`). `gesture_cb` handles every
+  move between them.
 - Data: the weather request adds `current=uv_index` and `daily=sunrise,sunset,uv_index_max`; a second request goes to
   `air-quality-api.open-meteo.com` (`current=us_aqi,pm2_5,alder_pollen,birch_pollen,grass_pollen,ragweed_pollen`), same
   10-minute cycle. Pollen comes from CAMS Europe: `null` elsewhere, and the row is hidden.
@@ -92,6 +94,26 @@ LVGL timer and event callbacks already run inside the lock.
   (`w·cos φ`) to the limb, on the right while waxing and the left while waning.
 - UV and AQI levels use the standard category colours. The weather request's URL is long enough to need
   `buffer_size_tx = 1024` (the default 512 logged "Buffer length is small to fit all the headers").
+
+## Status page (`svc.c`, `ui.c`)
+
+- Two swipes right of the weather screen. Header: firmware version, channel and running slot
+  (`esp_ota_get_running_partition()`); Wi-Fi RSSI, IP, uptime. Then one row per external service, in a list box at
+  y 120–400 (clear of the round edge and the page dots) that scrolls.
+- `svc.c` keeps the last outcome per service (`svc_id_t`): time of the last try and last success (`esp_timer`),
+  duration, failures in a row, reason (`HTTP 503`, `Can't connect`, `Timed out`, `No reply`, `Bad response`…). Each
+  fetch reports right after `esp_http_client_perform`: `weather.c` (forecast, air), `alerts.c` (list, region
+  shape), `radar.c` `http_fetch` (GeoMet or OSM, by host, retries included), `ota.c` `get_json` (site JSON). The
+  SNTP `sync_cb` reports the time server. Only transitions are logged (`svc: X: HTTP 503`, `svc: X: OK again`).
+- Dot: green = last try OK, amber = one failure, red = failing again or never OK, grey = not used yet / checking.
+  Each row also shows the API version called (Open-Meteo API v1, GeoMet WMS 1.3.0…); the GitHub Pages row shows the
+  version the channel offers.
+- Opening the page calls `svc_probe_stale()`: a short-lived task (8 KB stack) sends one small request to each
+  service not contacted for 5 min (a 1-line forecast, `limit=1` alerts, GetCapabilities, OSM tile 0/0/0 with the
+  User-Agent the tile policy asks for, `channels.json`) and reports it the same way. NTP isn't probed. The rows
+  refresh every second while the page is shown.
+- Labels are single-line `LV_LABEL_LONG_DOT` with a fixed height. Without the height, LVGL wraps them, and that
+  overlapped the next line on the first try.
 
 ## Weather alerts (`alerts.c`, `ui.c`)
 
@@ -250,6 +272,9 @@ LVGL timer and event callbacks already run inside the lock.
     automatically when opened on the setup AP.
   - `POST /api/location {name, lat, lon}`
   - `POST /api/wifi {ssid, pass}`: restarts the device.
+  - `GET /api/snapshot?screen=weather|extras|status|radar|update|alert|current` (HTTPS only): the screen rendered
+    off-display (`ui_snapshot()` → `lv_snapshot_take`, RGB565 in PSRAM, needs `CONFIG_LV_USE_SNAPSHOT`), streamed as
+    a top-down 24-bit BMP in 16-row chunks. Used by `tools/snapshot.py` (docs/TESTING.md).
 - The page runs the phone's geolocation, reverse geocoding (Nominatim) and city search (Open-Meteo geocoding) in the
   **browser**; the device only stores the result.
 - Location is stored in NVS namespace `loc`. `config_local_time()` uses Open-Meteo's `utc_offset_seconds`, which

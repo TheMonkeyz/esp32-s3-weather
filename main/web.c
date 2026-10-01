@@ -16,6 +16,8 @@
 #include "config.h"
 #include "net.h"
 #include "presence.h"
+#include "display.h"
+#include "ui.h"
 #include "lwip/sockets.h"
 
 static const char *TAG = "web";
@@ -224,6 +226,50 @@ static esp_err_t update_get(httpd_req_t *req)
     return send_json(req, j);
 }
 
+// GET /api/snapshot?screen=status: the screen rendered off-display, as a 24-bit BMP (tools/snapshot.py)
+static esp_err_t snapshot_get(httpd_req_t *req)
+{
+    char q[48], name[16] = "current";
+    if (httpd_req_get_url_query_str(req, q, sizeof(q)) == ESP_OK) httpd_query_key_value(q, "screen", name, sizeof(name));
+    display_lock(-1);
+    lv_draw_buf_t *db = ui_snapshot(name);
+    display_unlock();
+    uint8_t *buf = heap_caps_malloc(16 * 1400, MALLOC_CAP_SPIRAM);
+    if (!db || !buf) {
+        free(buf);
+        if (db) { display_lock(-1); lv_draw_buf_destroy(db); display_unlock(); }
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "snapshot failed");
+    }
+    int w = db->header.w, h = db->header.h, row = (w * 3 + 3) & ~3;
+    uint32_t size = 54 + row * h;
+    uint8_t hd[54] = { 'B', 'M' };
+    #define LE32(o, v) do { uint32_t _v = (v); hd[o] = _v; hd[o + 1] = _v >> 8; hd[o + 2] = _v >> 16; hd[o + 3] = _v >> 24; } while (0)
+    LE32(2, size); LE32(10, 54); LE32(14, 40); LE32(18, w); LE32(22, (uint32_t)-h);   // negative height: top-down
+    hd[26] = 1; hd[28] = 24; LE32(34, row * h);
+    #undef LE32
+    httpd_resp_set_type(req, "image/bmp");
+    esp_err_t err = httpd_resp_send_chunk(req, (const char *)hd, sizeof(hd));
+    for (int y0 = 0; y0 < h && err == ESP_OK; y0 += 16) {
+        int n = h - y0 < 16 ? h - y0 : 16;
+        memset(buf, 0, n * row);
+        for (int y = 0; y < n; y++) {
+            const uint16_t *src = (const uint16_t *)(db->data + (y0 + y) * db->header.stride);
+            uint8_t *d = buf + y * row;
+            for (int x = 0; x < w; x++, d += 3) {
+                uint16_t p = src[x];
+                d[0] = (p & 0x1F) << 3; d[1] = (p >> 5 & 0x3F) << 2; d[2] = (p >> 11) << 3;   // B, G, R
+            }
+        }
+        err = httpd_resp_send_chunk(req, (const char *)buf, n * row);
+    }
+    free(buf);
+    display_lock(-1);
+    lv_draw_buf_destroy(db);
+    display_unlock();
+    ESP_LOGI(TAG, "snapshot %s %dx%d %s", name, w, h, err == ESP_OK ? "sent" : "failed");
+    return err == ESP_OK ? httpd_resp_send_chunk(req, NULL, 0) : ESP_FAIL;
+}
+
 // {"channel":"stable"|"beta"} and/or {"action":"check"|"install"}
 static esp_err_t update_post(httpd_req_t *req)
 {
@@ -340,6 +386,7 @@ static void start_https(void)
         { .uri = "/api/calibrate", .method = HTTP_POST, .handler = calibrate_post },
         { .uri = "/api/update",   .method = HTTP_GET,  .handler = update_get },
         { .uri = "/api/update",   .method = HTTP_POST, .handler = update_post },
+        { .uri = "/api/snapshot", .method = HTTP_GET,  .handler = snapshot_get },
     };
     for (int i = 0; i < sizeof(uris) / sizeof(uris[0]); i++) httpd_register_uri_handler(s, &uris[i]);
 }

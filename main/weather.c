@@ -7,6 +7,8 @@
 #include "cJSON.h"
 #include "esp_log.h"
 #include "config.h"
+#include "svc.h"
+#include "esp_timer.h"
 
 static const char *TAG = "weather";
 
@@ -85,9 +87,11 @@ bool weather_fetch(weather_t *w)
         .crt_bundle_attach = esp_crt_bundle_attach, .timeout_ms = 15000, .buffer_size_tx = 1024,   // long URL
     };
     esp_http_client_handle_t c = esp_http_client_init(&cfg);
+    int64_t t0 = esp_timer_get_time();
     esp_err_t err = esp_http_client_perform(c);
     int status = esp_http_client_get_status_code(c);
     esp_http_client_cleanup(c);
+    svc_http(SVC_FORECAST, err, status, t0);
 
     bool ok = false;
     if (err != ESP_OK || status != 200) {
@@ -218,9 +222,11 @@ bool air_fetch(air_t *a)
         .crt_bundle_attach = esp_crt_bundle_attach, .timeout_ms = 15000, .buffer_size_tx = 1024,   // long URL
     };
     esp_http_client_handle_t c = esp_http_client_init(&cfg);
+    int64_t t0 = esp_timer_get_time();
     esp_err_t err = esp_http_client_perform(c);
     int status = esp_http_client_get_status_code(c);
     esp_http_client_cleanup(c);
+    svc_http(SVC_AIR, err, status, t0);
     bool ok = false;
     cJSON *root = err == ESP_OK && status == 200 ? cJSON_Parse(rx.buf) : NULL;
     cJSON *cur = cJSON_GetObjectItem(root, "current");
@@ -237,6 +243,7 @@ bool air_fetch(air_t *a)
         ESP_LOGI(TAG, "Air: US AQI %d, PM2.5 %.1f, pollen %.0f/%.0f/%.0f/%.0f", a->us_aqi, a->pm25,
                  a->pollen[0], a->pollen[1], a->pollen[2], a->pollen[3]);
     } else {
+        if (err == ESP_OK && status == 200) svc_fail(SVC_AIR, "Bad response", t0);
         ESP_LOGW(TAG, "Air quality failed: %s, status %d", esp_err_to_name(err), status);
     }
     cJSON_Delete(root);

@@ -13,6 +13,10 @@
 #include "net.h"
 #include "alerts.h"
 #include "ota.h"
+#include "svc.h"
+#include "esp_timer.h"
+#include "esp_ota_ops.h"
+#include "esp_wifi.h"
 #include "esp_log.h"
 #include "esp_attr.h"
 #include "esp_heap_caps.h"
@@ -21,9 +25,10 @@ extern const uint8_t ttf_start[] asm("_binary_montserrat_ttf_start");
 extern const uint8_t ttf_end[]   asm("_binary_montserrat_ttf_end");
 
 static lv_font_t *f_time, *f_city, *f_big, *f_cond, *f_small, *f_tiny, *f_micro;
-static lv_obj_t *scr_radar, *scr_extras, *scr_update, *up_pill, *up_pill_lbl;
+static lv_obj_t *scr_radar, *scr_extras, *scr_status, *scr_update, *up_pill, *up_pill_lbl;
 static void update_show(void);
 static void extras_refresh(void);
+static void status_refresh(void);
 static lv_obj_t *scr_msg, *msg_title, *msg_body, *msg_qr;
 static lv_obj_t *overlay, *ov_qr, *ov_url, *ov_title;
 static int ov_state;          // 0 hidden, 1 settings QR
@@ -295,16 +300,17 @@ static lv_obj_t *make_qr(lv_obj_t *parent, int size)
     return qr;
 }
 
-static void page_dots(lv_obj_t *scr, int active)   // 0 extras, 1 weather, 2 radar
+#define N_PAGES 4
+static void page_dots(lv_obj_t *scr, int active)   // 0 status, 1 extras, 2 weather, 3 radar
 {
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < N_PAGES; i++) {
         lv_obj_t *d = lv_obj_create(scr);
         lv_obj_remove_style_all(d);
         lv_obj_set_size(d, i == active ? 18 : 7, 7);
         lv_obj_set_style_radius(d, 4, 0);
         lv_obj_set_style_bg_color(d, i == active ? C_TEXT : C_DIM, 0);
         lv_obj_set_style_bg_opa(d, i == active ? LV_OPA_COVER : LV_OPA_60, 0);
-        lv_obj_align(d, LV_ALIGN_BOTTOM_MID, (i - 1) * 16 + (i < active ? -5 : i > active ? 5 : 0), -12);
+        lv_obj_align(d, LV_ALIGN_BOTTOM_MID, (2 * i - (N_PAGES - 1)) * 8 + (i < active ? -5 : i > active ? 5 : 0), -12);
     }
 }
 
@@ -561,8 +567,18 @@ static void gesture_cb(lv_event_t *e)
     lv_obj_t *cur = lv_screen_active();
     if (ov_state) return;                                // settings / Wi-Fi setup overlay is open
     LV_LOG_USER("gesture dir %d", dir);
-    printf("ui: gesture dir=%d on %s\n", dir, cur == scr_radar ? "radar" : "main");
-    if (cur == scr_main && dir == LV_DIR_RIGHT) {
+    printf("ui: gesture dir=%d on %s\n", dir, cur == scr_radar ? "radar" : cur == scr_extras ? "extras" :
+           cur == scr_status ? "status" : "main");
+    if (cur == scr_extras && dir == LV_DIR_RIGHT) {
+        svc_probe_stale();
+        status_refresh();
+        lv_screen_load_anim(scr_status, LV_SCR_LOAD_ANIM_MOVE_RIGHT, 280, 0, false);
+        lv_indev_wait_release(in);
+    } else if (cur == scr_status && dir == LV_DIR_LEFT) {
+        extras_refresh();
+        lv_screen_load_anim(scr_extras, LV_SCR_LOAD_ANIM_MOVE_LEFT, 280, 0, false);
+        lv_indev_wait_release(in);
+    } else if (cur == scr_main && dir == LV_DIR_RIGHT) {
         extras_refresh();
         lv_screen_load_anim(scr_extras, LV_SCR_LOAD_ANIM_MOVE_RIGHT, 280, 0, false);
         lv_indev_wait_release(in);
@@ -1053,9 +1069,145 @@ static void extras_create(void)
     lv_obj_set_size(ex_moon, 26, 26);
     lv_obj_align(ex_moon, LV_ALIGN_TOP_RIGHT, -72, 260 + 36 - 2);
     lv_obj_add_event_cb(ex_moon, moon_draw, LV_EVENT_DRAW_MAIN, NULL);
-    page_dots(scr_extras, 0);
+    page_dots(scr_extras, 1);
     lv_obj_add_event_cb(scr_extras, gesture_cb, LV_EVENT_GESTURE, NULL);
     extras_refresh();
+}
+
+/* ---------- Status page (swipe right from the extras page) ----------
+ * Firmware version, Wi-Fi, and the health of every external service (svc.c): a dot per service
+ * (green OK, amber one failure, red failing, grey not used yet), when it was last tried and why it failed. */
+
+static lv_obj_t *st_ver, *st_net, *st_dot[SVC_COUNT], *st_age[SVC_COUNT], *st_detail[SVC_COUNT];
+
+static void fmt_age(int64_t us, char *out, size_t n)
+{
+    int s = (int)(us / 1000000);
+    if (s < 60) snprintf(out, n, "%d s", s);
+    else if (s < 3600) snprintf(out, n, "%d min", s / 60);
+    else if (s < 86400) snprintf(out, n, "%d h %02d", s / 3600, s / 60 % 60);
+    else snprintf(out, n, "%d d", s / 86400);
+}
+
+static void join(char *out, size_t n, const char *part)    // "a  ·  b"
+{
+    if (!part || !*part) return;
+    size_t l = strlen(out);
+    snprintf(out + l, n - l, "%s%s", l ? "  ·  " : "", part);
+}
+
+static void status_refresh(void)       // display lock held
+{
+    int64_t now = esp_timer_get_time();
+    char a[24], b[48], d[96];
+    ota_status_t o;
+    ota_get_status(&o);
+    const esp_partition_t *part = esp_ota_get_running_partition();
+    lv_label_set_text_fmt(st_ver, "%s  ·  %s  ·  %s", o.current, strcmp(o.channel, "beta") ? "Stable" : "Beta",
+                          part ? part->label : "?");
+    fmt_age(now, a, sizeof(a));
+    wifi_ap_record_t ap;
+    char ip[20];
+    if (net_is_connected() && net_get_ip(ip, sizeof(ip)) && esp_wifi_sta_get_ap_info(&ap) == ESP_OK)
+        lv_label_set_text_fmt(st_net, "Wi-Fi %d dBm  ·  %s  ·  up %s", ap.rssi, ip, a);
+    else lv_label_set_text_fmt(st_net, "Wi-Fi offline  ·  up %s", a);
+
+    for (int i = 0; i < SVC_COUNT; i++) {
+        svc_info_t s;
+        svc_get(i, &s);
+        uint32_t c;
+        d[0] = 0;
+        if (i == SVC_UPDATES && o.latest[0]) { snprintf(b, sizeof(b), "offers %s", o.latest); join(d, sizeof(d), b); }
+        else join(d, sizeof(d), s.api);
+        if (s.probing) {
+            c = 0x5A636E;
+            a[0] = 0;
+            join(d, sizeof(d), "checking...");
+        } else if (!s.last_try) {
+            c = 0x5A636E;
+            a[0] = 0;
+            join(d, sizeof(d), i == SVC_NTP ? "waiting for sync" : "not used yet");
+        } else {
+            fmt_age(now - s.last_try, a, sizeof(a));
+            if (s.ok) {
+                c = 0x6FD08C;
+                join(d, sizeof(d), "OK");
+                if (s.ms) { snprintf(b, sizeof(b), "%d ms", s.ms); join(d, sizeof(d), b); }
+            } else {
+                c = s.fails >= 2 || !s.last_ok ? 0xFF4D4D : 0xFFC83D;
+                join(d, sizeof(d), s.why);
+                if (s.fails > 1) { snprintf(b, sizeof(b), "%d in a row", s.fails); join(d, sizeof(d), b); }
+                if (s.last_ok) {
+                    char t[16];
+                    fmt_age(now - s.last_ok, t, sizeof(t));
+                    snprintf(b, sizeof(b), "OK %s ago", t);
+                } else snprintf(b, sizeof(b), "never OK");
+                join(d, sizeof(d), b);
+            }
+        }
+        lv_obj_set_style_bg_color(st_dot[i], lv_color_hex(c), 0);
+        lv_label_set_text(st_age[i], a);
+        lv_label_set_text(st_detail[i], d);
+    }
+}
+
+static void status_tick(lv_timer_t *t)
+{
+    if (lv_screen_active() == scr_status) status_refresh();
+}
+
+static lv_obj_t *st_label(lv_obj_t *parent, lv_font_t *f, lv_color_t c, int x, int y, int w)
+{
+    lv_obj_t *l = lv_label_create(parent);
+    lv_obj_set_style_text_font(l, f, 0);
+    lv_obj_set_style_text_color(l, c, 0);
+    lv_obj_set_size(l, w, lv_font_get_line_height(f));     // one line: LONG_DOT needs a fixed height
+    lv_label_set_long_mode(l, LV_LABEL_LONG_DOT);
+    lv_obj_set_pos(l, x, y);
+    lv_label_set_text(l, "");
+    return l;
+}
+
+static void status_create(void)
+{
+    scr_status = base_screen();
+    lv_label_set_text(label(scr_status, f_small, C_ACCENT, 34), "Status");
+    st_ver = label(scr_status, f_tiny, C_TEXT, 62);
+    st_net = label(scr_status, f_micro, C_DIM, 88);
+    lv_obj_set_width(st_net, 340);
+
+    // The list scrolls inside a box that stays clear of the round edge and the page dots (y 120..400)
+    lv_obj_t *box = lv_obj_create(scr_status);
+    lv_obj_remove_style_all(box);
+    lv_obj_set_size(box, 280, 280);
+    lv_obj_align(box, LV_ALIGN_TOP_MID, 0, 120);
+    lv_obj_set_flex_flow(box, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_row(box, 8, 0);
+    lv_obj_set_scroll_dir(box, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(box, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_add_flag(box, LV_OBJ_FLAG_EVENT_BUBBLE | LV_OBJ_FLAG_GESTURE_BUBBLE);
+    for (int i = 0; i < SVC_COUNT; i++) {
+        svc_info_t s;
+        svc_get(i, &s);
+        lv_obj_t *row = lv_obj_create(box);
+        lv_obj_remove_style_all(row);
+        lv_obj_set_size(row, 280, 42);
+        st_dot[i] = lv_obj_create(row);
+        lv_obj_remove_style_all(st_dot[i]);
+        lv_obj_set_size(st_dot[i], 10, 10);
+        lv_obj_set_pos(st_dot[i], 0, 6);
+        lv_obj_set_style_radius(st_dot[i], LV_RADIUS_CIRCLE, 0);
+        lv_obj_set_style_bg_opa(st_dot[i], LV_OPA_COVER, 0);
+        lv_label_set_text(st_label(row, f_tiny, C_TEXT, 18, 0, 196), s.name);
+        st_age[i] = st_label(row, f_micro, C_DIM, 214, 2, 66);
+        lv_obj_set_style_text_align(st_age[i], LV_TEXT_ALIGN_RIGHT, 0);
+        st_detail[i] = st_label(row, f_micro, C_DIM, 18, 22, 262);
+    }
+    passthrough(box);                                       // rows and labels: presses reach the box/screen
+    page_dots(scr_status, 0);
+    lv_obj_add_event_cb(scr_status, gesture_cb, LV_EVENT_GESTURE, NULL);
+    lv_timer_create(status_tick, 1000, NULL);
+    status_refresh();
 }
 
 /* ---------- Firmware update: pill on the weather screen + update screen ---------- */
@@ -1292,10 +1444,10 @@ void ui_init(void)
         lv_obj_set_width(fc_temp[i], 96);
         lv_obj_align(fc_temp[i], LV_ALIGN_TOP_MID, dx, 384);
     }
-    page_dots(scr_main, 1);
+    page_dots(scr_main, 2);
 
     scr_radar = radar_create(f_small, f_small, f_micro);
-    page_dots(scr_radar, 2);
+    page_dots(scr_radar, 3);
     lv_obj_add_event_cb(scr_main, gesture_cb, LV_EVENT_GESTURE, NULL);
     lv_obj_add_event_cb(scr_main, show_settings, LV_EVENT_LONG_PRESSED, NULL);
     lv_obj_add_event_cb(scr_main, main_tap, LV_EVENT_SHORT_CLICKED, NULL);
@@ -1327,6 +1479,7 @@ void ui_init(void)
     setup_create();
     alert_create();
     extras_create();
+    status_create();
     touch_register_lvgl();
 
     lv_timer_create(clock_tick, 1000, NULL);
@@ -1436,3 +1589,14 @@ int ui_bench_screens(lv_obj_t **scr, const char **name, int max)
 }
 
 lv_obj_t *ui_main_screen(void) { return scr_main; }
+
+lv_draw_buf_t *ui_snapshot(const char *screen)
+{
+    lv_obj_t *s = !strcmp(screen, "weather") ? scr_main : !strcmp(screen, "extras") ? scr_extras :
+                  !strcmp(screen, "status") ? scr_status : !strcmp(screen, "radar") ? scr_radar :
+                  !strcmp(screen, "update") ? scr_update : !strcmp(screen, "alert") ? scr_alert : lv_screen_active();
+    if (s == scr_status) status_refresh();
+    if (s == scr_extras) extras_refresh();
+    lv_obj_update_layout(s);
+    return lv_snapshot_take(s, LV_COLOR_FORMAT_RGB565);
+}
