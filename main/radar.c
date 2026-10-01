@@ -176,8 +176,11 @@ static bool cache_header_ok(void)
     return h.magic == CACHE_MAGIC && h.zoom == zoom && h.x == (int)view_x && h.y == (int)view_y;
 }
 
+// Only the first place (home) is cached: switching to another place would otherwise rewrite up to 3.5 MB of
+// flash and fetch every zoom level from OSM each time. Other places load the zoom in use on demand.
 static void cache_save(void)
 {
+    if (config_active_place() != 0) return;
     const esp_partition_t *p = cache_part();
     if (!p) return;
     const size_t SECT = 4096;
@@ -760,7 +763,7 @@ static void radar_task(void *arg)
     while (1) {
         if (preload_req) {
             preload_req = false;
-            preload_all();
+            if (config_active_place() == 0) preload_all();      // other places aren't cached (see cache_save)
             last_fetch = 0;
             prefetch = true;
         }
@@ -780,10 +783,11 @@ static void radar_task(void *arg)
             for (int i = 0; i < NFRAMES; i++) frames[i].ok = false;
             display_unlock();
             last_fetch = 0;
-            if (loc_changed) {                           // new place: fetch every zoom level's map now
+            if (loc_changed && config_active_place() == 0) {   // home moved or shown again: every zoom level now
                 loc_changed = false;
                 preload_all();
             } else {
+                loc_changed = false;
                 base_ok = cache_load();
                 if (base_ok) reveal_map();
                 // else: keep the old picture on screen until the new map has downloaded

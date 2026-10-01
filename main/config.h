@@ -7,8 +7,16 @@ typedef struct {
     double lat, lon;
 } location_t;
 
-void config_get_location(location_t *out);          // defaults to Québec City
-bool config_set_location(const location_t *loc);    // saves to NVS
+// Places: up to MAX_PLACES; the "location" everything uses (forecast, alerts, radar...) is the one shown.
+#define MAX_PLACES 4
+void config_get_location(location_t *out);          // the place shown; defaults to Québec City
+bool config_set_location(const location_t *loc);    // edits the place shown; saves to NVS
+int config_place_count(void);
+int config_active_place(void);
+bool config_get_place(int i, location_t *out);
+bool config_set_place(int i, const location_t *loc);   // i == count adds one
+bool config_delete_place(int i);                       // the last place can't be deleted
+bool config_select_place(int i);                       // show place i (saved, kept across restarts)
 
 // Local time helpers: UTC offset reported by the weather service for the configured location
 void config_set_utc_offset(int seconds);

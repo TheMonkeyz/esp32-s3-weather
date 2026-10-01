@@ -20,6 +20,7 @@
 #include "diag.h"
 #include "alerts.h"
 #include "ota.h"
+#include "esp_timer.h"
 
 static const char *TAG = "app";
 #define BOOT_BTN        GPIO_NUM_0
@@ -40,14 +41,83 @@ static bool boot_button_held(void)
 
 static TaskHandle_t main_task;
 
-// Called by the web UI after a new location is saved
-static void on_location_changed(void)
+/* ---------- places ----------
+ * Every place's forecast is refreshed every REFRESH_MIN and kept here; each place has its own page on the weather
+ * screen (a vertical pager), so scrolling to a place shows its weather at once. Alerts, air quality and the radar are only for the place shown; they load after a switch. A cached forecast
+ * belongs to the coordinates it was fetched for (wx_at), so edits and deletions on the settings page can't show
+ * one place's weather under another's name. wx / wx_at / have are read and written under the display lock. */
+static EXT_RAM_BSS_ATTR weather_t wx[MAX_PLACES];
+static location_t wx_at[MAX_PLACES];
+static bool have[MAX_PLACES];
+static location_t shown;                  // the place alerts, air quality and radar are for
+static char map_id[80];                   // alert whose region map is shown
+
+static bool cached(int i, const location_t *loc)     // display lock held
+{
+    return have[i] && wx_at[i].lat == loc->lat && wx_at[i].lon == loc->lon;
+}
+
+// Pages for the place shown (all: every place, after the list changed): its forecast, else "Loading..."
+static void show_place(bool all)
+{
+    int a = config_active_place(), n = config_place_count();
+    display_lock(-1);
+    location_t loc;
+    if (config_get_place(a, &loc) && cached(a, &loc)) config_set_utc_offset(wx[a].utc_offset);
+    ui_places(n, a);
+    for (int i = 0; i < n; i++) {
+        if ((!all && i != a) || !config_get_place(i, &loc)) continue;
+        ui_place(i, loc.name, cached(i, &loc) ? &wx[i] : NULL);
+    }
+    display_unlock();
+}
+
+// The place shown, or the list, changed: redraw, and point alerts / air quality / radar at the place shown
+static void follow_active(bool all)
 {
     location_t loc;
     config_get_location(&loc);
-    ui_set_city(loc.name);
-    radar_relocate();
-    if (main_task) xTaskNotifyGive(main_task);   // refetch weather now
+    bool moved = loc.lat != shown.lat || loc.lon != shown.lon;
+    shown = loc;
+    show_place(all);
+    if (moved) {
+        static const alerts_t none;
+        static const air_t no_air = { .us_aqi = -1, .pollen = { -1, -1, -1, -1 } };
+        ui_alerts(&none);
+        ui_alert_map(NULL, 0, 0);
+        map_id[0] = 0;
+        ui_air(&no_air);
+        radar_relocate();
+    }
+    if (main_task) xTaskNotifyGive(main_task);   // fetch what's missing now
+}
+
+// The weather screen's pager settled on place i (LVGL task)
+static void place_select(int i)
+{
+    config_select_place(i);
+    follow_active(false);
+}
+
+// Called by the web UI after a place is added, edited, deleted or chosen
+static void on_location_changed(void)
+{
+    follow_active(true);
+}
+
+static bool fetch_place(int i)
+{
+    static EXT_RAM_BSS_ATTR weather_t w;          // only the main task fetches
+    location_t loc;
+    if (!config_get_place(i, &loc) || !weather_fetch(&loc, &w)) return false;
+    display_lock(-1);
+    wx[i] = w;
+    wx_at[i] = loc;
+    have[i] = true;
+    if (i == config_active_place()) config_set_utc_offset(w.utc_offset);
+    ui_place(i, loc.name, &wx[i]);
+    display_unlock();
+    return true;
 }
 
 
@@ -118,31 +188,51 @@ void app_main(void)
     diag_mark("wifi up");
     radar_preload_start();      // missing zoom-level maps download in the background
     ui_message("Weather", "Fetching forecast...\n\nLong-press for Wi-Fi setup");
-    static EXT_RAM_BSS_ATTR weather_t w;   // ~2 KB of hourly data: PSRAM, off the stack
+    config_get_location(&shown);
+    ui_on_place_select(place_select);
+    show_place(true);
+    int64_t next_all = 0;                  // when every place's forecast is due again
     while (1) {
-        int wait_s = REFRESH_MIN * 60;
-        if (net_is_connected() && weather_fetch(&w)) {
-            ui_weather(&w);
+        int64_t now = esp_timer_get_time();
+        int a = config_active_place();
+        location_t loc;
+        config_get_place(a, &loc);
+        bool ok = net_is_connected();
+        if (ok && now >= next_all) {                         // every place, active first
+            ok = fetch_place(a);
+            for (int i = 0; i < config_place_count(); i++) if (i != a) fetch_place(i);
+            next_all = now + (ok ? REFRESH_MIN * 60 : 30) * 1000000LL;
+        } else if (ok) {                                     // woken by a switch or an edit: only what's missing
+            for (int k = 0; k < config_place_count(); k++) {   // the place shown first, then new / edited ones
+                int i = k == 0 ? a : k <= a ? k - 1 : k;
+                location_t p;
+                if (!config_get_place(i, &p)) continue;
+                display_lock(-1);
+                bool c = cached(i, &p);
+                display_unlock();
+                if (!c && !fetch_place(i) && i == a) ok = false;
+            }
+        }
+        if (ok && a == config_active_place()) {              // (unless the user swiped on meanwhile)
+            show_place(false);
             static EXT_RAM_BSS_ATTR alerts_t al;
-            location_t loc;
-            config_get_location(&loc);
-            if (alerts_fetch(loc.lat, loc.lon, &al)) {                 // failed: keep showing the last ones
+            if (alerts_fetch(loc.lat, loc.lon, &al) && a == config_active_place()) {   // failed: keep the last ones
                 ui_alerts(&al);
-                static char map_id[80];                                 // map of the top alert's region
                 if (!al.n) { if (map_id[0]) { ui_alert_map(NULL, 0, 0); map_id[0] = 0; } }
-                else if (strcmp(map_id, al.a[0].id)) {
+                else if (strcmp(map_id, al.a[0].id)) {                   // map of the top alert's region
                     uint16_t *m = alerts_map(&al.a[0], loc.lat, loc.lon, ALERT_MAP_W, ALERT_MAP_H);
                     if (m) { ui_alert_map(m, ALERT_MAP_W, ALERT_MAP_H); strlcpy(map_id, al.a[0].id, sizeof(map_id)); }
                 }
             }
             static air_t air;
-            if (air_fetch(&air)) ui_air(&air);
+            if (air_fetch(&air) && a == config_active_place()) ui_air(&air);
             static bool first = true;
             if (first) { first = false; diag_mark("first weather"); }
-        } else {
+        } else if (!ok) {
             ESP_LOGW(TAG, "Update failed, retrying in 30 s");
-            wait_s = 30;
+            next_all = now + 30 * 1000000LL;
         }
-        ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(wait_s * 1000));   // woken early on location change
+        int64_t wait_ms = (next_all - esp_timer_get_time()) / 1000;
+        ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(wait_ms > 1000 ? wait_ms : 1000));   // woken early by a switch / edit
     }
 }

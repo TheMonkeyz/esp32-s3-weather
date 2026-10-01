@@ -19,7 +19,6 @@ charging (AXP2101).
 ## Everyday use
 
 - [ ] ⭐ **French interface** — the font already handles accents.
-- [ ] **Several places** — home, cottage, work, each with its own weather screen.
 - [ ] **Home Assistant (MQTT)** — publish room presence from the microphones; show an indoor temperature.
 
 ## Done
@@ -36,3 +35,5 @@ charging (AXP2101).
 - [x] **Temperature graph** — the day's temperature curve, 0–24 h, at the top of each hourly-view page (v1.4.0).
 - [x] **Units and formats** — °C/°F, km/h / mph / m/s (radar in miles with mph), 24- or 12-hour clock, on the
   settings page (v1.5.0).
+- [x] **Several places** — up to 4, one weather page each, drag up/down to switch; everything follows the place
+  shown (v1.5.0).

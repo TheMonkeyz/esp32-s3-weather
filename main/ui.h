@@ -6,9 +6,12 @@
 
 void ui_init(void);
 void ui_message(const char *title, const char *body);
-void ui_weather(const weather_t *w);
 void ui_message_qr(const char *title, const char *body, const char *qr);
-void ui_set_city(const char *name);
+// Places: one weather page each, in a vertical pager (swipe up / down). ui_places() sets how many and which one
+// is shown (alerts, hourly view, extras follow it); ui_place() fills page i (w NULL: "Loading...").
+void ui_places(int n, int active);
+void ui_place(int i, const char *name, const weather_t *w);
+void ui_on_place_select(void (*cb)(int i));   // the user scrolled to place i
 int ui_bench_screens(lv_obj_t **scr, const char **name, int max);   // diag bench
 lv_obj_t *ui_main_screen(void);
 void ui_wifi_setup(const char *note);   // Wi-Fi setup screen (setup network QR / Android Easy Connect)
