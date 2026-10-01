@@ -1,0 +1,96 @@
+// Mock of the display's settings server for browser tests: serves the real main/web/index.html and answers
+// /api/* like the firmware (web.c), with the state in memory. POST /__reset restores the starting state;
+// GET /__state returns it (tests check what the page sent).
+//   node mock-server.js [port]     (default 8099)
+const http = require('http');
+const fs = require('fs');
+const path = require('path');
+
+const PAGE = path.join(__dirname, '..', '..', 'main', 'web', 'index.html');
+const port = Number(process.argv[2] || process.env.PORT || 8099);
+const MAX_PLACES = 4;
+
+function fresh() {
+  return {
+    places: [{ name: 'Québec', lat: 46.8139, lon: -71.208 }],
+    active: 0,
+    units: { temp: 'c', wind: 'kmh', clock: 24 },
+    ssid: 'HomeNet',
+    version: 'v1.5.0-test',
+    update: { current: 'v1.5.0-test', latest: '', channel: 'stable', state: 'up_to_date', progress: 0, error: '' },
+    presence: { enabled: true, state: 'active', mic_ok: true, calibrating: false, calib_left_s: 0, brightness: 100,
+                level_db: -48, threshold_db: -55, baseline_db: -60, margin_db: 5, wake_progress: 0, wake_s: 3,
+                quiet_s: 12, dim_s: 600, off_s: 3000, bright_pct: 100, dim_pct: 20 },
+    wifi: null,
+    log: [],                                  // every API call: {method, url, body}
+  };
+}
+let st = fresh();
+
+function json(res, code, obj) {
+  res.writeHead(code, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify(obj));
+}
+
+function body(req) {
+  return new Promise(resolve => {
+    let b = '';
+    req.on('data', c => (b += c));
+    req.on('end', () => { try { resolve(b ? JSON.parse(b) : {}); } catch (e) { resolve(null); } });
+  });
+}
+
+const cur = () => st.places[st.active];
+const config = () => ({
+  name: cur().name, lat: cur().lat, lon: cur().lon, ssid: st.ssid, version: st.version,
+  places: st.places, active: st.active, max_places: MAX_PLACES, units: st.units,
+});
+
+const routes = {
+  'GET /api/config': () => [200, config()],
+  'POST /api/location': b => {                     // web.c location_post
+    if (!b || typeof b.lat !== 'number' || typeof b.lon !== 'number') return [400, 'bad location'];
+    const i = typeof b.index === 'number' ? b.index : st.active;
+    if (b.lat < -85 || b.lat > 85 || b.lon < -180 || b.lon > 180) return [400, 'bad location'];
+    if (i < 0 || i > st.places.length || i >= MAX_PLACES) return [400, 'bad location'];
+    st.places[i] = { name: (b.name || '').trim() || 'My location', lat: b.lat, lon: b.lon };
+    return [200, { ok: true }];
+  },
+  'POST /api/places': b => {                       // web.c places_post
+    if (b && typeof b.select === 'number') {
+      if (b.select < 0 || b.select >= st.places.length) return [400, 'bad place'];
+      st.active = b.select;
+    } else if (b && typeof b.delete === 'number') {
+      const i = b.delete;
+      if (i < 0 || i >= st.places.length || st.places.length === 1) return [400, 'bad place'];
+      st.places.splice(i, 1);
+      if (st.active > i || st.active >= st.places.length) st.active = Math.max(0, st.active - 1);
+    } else return [400, 'bad place'];
+    return [200, { ok: true }];
+  },
+  'POST /api/units': b => { if (!b) return [400, 'bad json']; Object.assign(st.units, b); return [200, { ok: true }]; },
+  'GET /api/update': () => [200, st.update],
+  'POST /api/update': b => { if (b && b.channel) st.update.channel = b.channel; return [200, st.update]; },
+  'GET /api/presence': () => [200, st.presence],
+  'POST /api/presence': b => { Object.assign(st.presence, b || {}); return [200, { ok: true }]; },
+  'POST /api/calibrate': () => [200, { ok: true }],
+  'GET /api/scan': () => [200, [{ ssid: 'HomeNet', rssi: -50, secure: true }, { ssid: 'Cafe', rssi: -75, secure: false }]],
+  'POST /api/wifi': b => { st.wifi = b; return [200, { ok: true }]; },
+};
+
+http.createServer(async (req, res) => {
+  const url = req.url.split('?')[0];
+  if (req.method === 'POST' && url === '/__reset') { st = fresh(); return json(res, 200, { ok: true }); }
+  if (req.method === 'GET' && url === '/__state') return json(res, 200, st);
+  if (req.method === 'GET' && url === '/') {
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+    return res.end(fs.readFileSync(PAGE));
+  }
+  const fn = routes[req.method + ' ' + url];
+  if (!fn) { res.writeHead(404); return res.end('not found'); }
+  const b = req.method === 'POST' ? await body(req) : undefined;
+  st.log.push({ method: req.method, url, body: b });
+  const [code, out] = fn(b);
+  if (typeof out === 'string') { res.writeHead(code); return res.end(out); }
+  json(res, code, out);
+}).listen(port, () => console.log(`mock display on http://localhost:${port}/`));

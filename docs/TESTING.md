@@ -89,6 +89,32 @@ python tools/snapshot.py 192.168.1.156 weather out.png
   the log, `svc:` lines record failures and recoveries, and `svc: probe <name>` lines record the checks made when
   the page opens.
 - **Memory, CPU, render times:** see [DIAGNOSTICS.md](DIAGNOSTICS.md) (`reboot.request` + `tools/diag_summary.py`).
-- **Settings page JavaScript:** Playwright against a small Python mock server (see CLAUDE.md). It isn't in the repo.
+- **Settings page:** the Playwright tests below, before every build that changes `main/web/index.html`.
 - **Host LVGL simulator:** used in the first session for layout work (see CLAUDE.md). It isn't in the repo. The
   snapshot endpoint now covers most of what it was used for, with the real fonts and data.
+
+## 5. Settings page tests (`tools/webtest/`)
+
+Browser tests of `main/web/index.html` on a phone-sized Chromium (Pixel 7), against a mock display, no board
+needed:
+
+```bash
+cd tools/webtest
+npm install                      # first time: Playwright + Leaflet 1.9.4
+npx playwright install chromium  # first time
+npm test
+```
+
+- `mock-server.js` serves the real page and answers `/api/*` like `web.c`, with the state in memory
+  (`POST /__reset`, `GET /__state` for the tests). Started by `playwright.config.js` on port 8099. Keep it in step
+  with `web.c` when an API changes.
+- `tests/fixtures.js` answers the outside services locally, so runs are repeatable and need no internet: Leaflet
+  from `node_modules/leaflet` (same version and integrity hashes as the page), a grey tile for OpenStreetMap, fixed
+  answers for the city search and reverse geocoding. The `noInternet` option makes every outside request fail (a
+  phone on the setup network). Any page error or console error fails the test.
+- Every test saves a full-page screenshot in `tools/webtest/shots/`; the `review:` test saves the Places card (list
+  and editor) for design review. Look at them before flashing a page change.
+- Node.js is installed on the PC (`C:\Program Files\nodejs`); in PowerShell put it first in `PATH` if a shell
+  started before the install doesn't find `npx`.
+- Don't name a custom fixture option `offline`: it's Playwright's own option and takes the whole browser offline,
+  mock display included.

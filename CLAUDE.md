@@ -55,8 +55,9 @@ Windows build gets both from `main/idf_component.yml`. `components/dns_server` *
   before asking the user for a photo. The full routine is in **docs/TESTING.md**. (The first session dumped a
   1/3-scale framebuffer as base64 between `IMGDUMP` and `IMGEND` in the serial log; it found the PNG decoding bug and
   the CARTO "API KEY REQUIRED" tiles. That code is gone; the endpoint replaces it.)
-- **Headless browser test of the settings page:** Playwright + a tiny Python mock server (mock `/api/*`, mock
-  geolocation, route the geocoding APIs). It proved the page's JS was fine, which pointed at the device.
+- **Settings page tests:** `cd tools/webtest && npm test` (Playwright + mock display, see docs/TESTING.md §5). Run
+  them and look at `shots/` before building firmware with a page change. In the first session a headless test
+  proved the page's JS was fine, which pointed at the device.
 - **Always check file transfers:** `md5sum` the firmware on the PC against the build output. **Twice**, pushing a
   rebuilt file from the *same* staging path delivered the *previous* version. Use a fresh staging directory for every
   push and compare checksums before writing `flash.request`.
