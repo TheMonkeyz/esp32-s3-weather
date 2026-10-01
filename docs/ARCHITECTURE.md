@@ -334,7 +334,7 @@ by `GET /api/config` as `version`.
 Build: `CONFIG_COMPILER_OPTIMIZATION_PERF=y` (debug `-Og` made LVGL rendering noticeably slow) and
 `CONFIG_LV_DEF_REFR_PERIOD=15`.
 
-Measured: internal RAM ~69 KB free steady, 30 KB min; PSRAM ~3.3 MB free, 1.1 MB min (v1.5.0, with the graph
+Measured: internal RAM ~69 KB free steady, 30 KB min; PSRAM ~3.3 MB free, 1.1 MB min (v1.4.0, with the graph
 canvases). See `docs/DIAGNOSTICS.md` for
 how to measure again (`reboot.request` + `tools/diag_summary.py`) and the reference numbers.
 

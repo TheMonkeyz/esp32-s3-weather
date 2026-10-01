@@ -9,12 +9,13 @@ How to write an entry: add a `## vX.Y.Z - YYYY-MM-DD` section at the top **befor
 their own `## vX.Y.Z-rc.N` section. Those are shown only to Beta users, while the final release's section should
 list everything again.
 
-## v1.5.0 - 2026-09-30
-- The hourly view now starts with a graph of the day's temperature, from midnight to midnight, with the high and low marked. On today's page, the hours already past are greyed out and a dot shows the current hour.
-
 ## v1.4.0 - 2026-09-30
+- The hourly view now starts with a graph of the day's temperature, from midnight to midnight, with the high and low marked. On today's page, the hours already past are greyed out and a dot shows the current hour.
 - New status page: swipe right twice from the weather screen. It shows the firmware version, the Wi-Fi signal, and whether each online service the display uses is working, when it was last reached and why it failed.
 - Opening the status page checks any service that hasn't been contacted in the last 5 minutes.
+
+## v1.4.0-rc.2 - 2026-09-30
+- Test version of the temperature graph at the top of the hourly view: the day's temperature from midnight to midnight, high and low marked, a dot at the current hour.
 
 ## v1.4.0-rc.1 - 2026-09-30
 - Test version of the new status page (swipe right twice from the weather screen): firmware version, Wi-Fi signal, and the state of each online service the display uses.
