@@ -9,6 +9,10 @@ How to write an entry: add a `## vX.Y.Z - YYYY-MM-DD` section at the top **befor
 their own `## vX.Y.Z-rc.N` section. Those are shown only to Beta users, while the final release's section should
 list everything again.
 
+## v1.9.0-rc.2 - 2026-10-01
+- Fixed: when the display couldn't reach its Wi-Fi, the setup network and Android Easy Connect didn't work. Both work again: the sign-in page opens on the phone, and Easy Connect takes the network on the first scan.
+- While the Wi-Fi setup screen is open, the display no longer tries the old network. Tap the screen to try it again, or wait: after 5 minutes without a phone on the setup network it tries again by itself.
+
 ## v1.9.0-rc.1 - 2026-10-01
 - Test version of an Inuktitut interface, in syllabics: choose ᐃᓄᒃᑎᑐᑦ in Settings on the display (Language) or in the Units card of the settings page. It is a first draft that a fluent speaker has not checked yet, so some words may be wrong. Weather alerts and the "What's new" notes stay in English.
 
