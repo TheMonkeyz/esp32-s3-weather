@@ -18,6 +18,8 @@
 #include "esp_ota_ops.h"
 #include "esp_wifi.h"
 #include "pager.h"
+#include "presence.h"
+#include "esp_system.h"
 #include "esp_log.h"
 #include "esp_attr.h"
 #include "esp_heap_caps.h"
@@ -31,6 +33,8 @@ static void update_show(void);
 static void extras_refresh(void);
 static void status_refresh(void);
 static lv_obj_t *scr_msg, *msg_title, *msg_body, *msg_qr;
+static lv_obj_t *scr_cfg;                     // settings screen (cfg_create)
+static bool back_to_cfg;                      // the phone QR / Wi-Fi setup was opened from it: close back to it
 static lv_obj_t *overlay, *ov_qr, *ov_url, *ov_title;
 static int ov_state;          // 0 hidden, 1 settings QR
 static lv_obj_t *scr_hour;       // hourly detail screen
@@ -269,6 +273,7 @@ static void overlay_close(lv_event_t *e)
     if (lv_tick_elaps(overlay_opened) < 800) return;   // ignore the release of the long-press itself
     ESP_LOGI("ui", "overlay closed");
     overlay_hide();
+    if (back_to_cfg) { back_to_cfg = false; lv_screen_load_anim(scr_cfg, LV_SCR_LOAD_ANIM_FADE_IN, 200, 0, false); }
 }
 
 static void show_wifi_setup(lv_event_t *e);
@@ -816,7 +821,8 @@ static void su_close(void)
     if (su_timer) { lv_timer_delete(su_timer); su_timer = NULL; }
     net_dpp_stop();
     net_setup_ap_stop();
-    lv_screen_load_anim(scr_main, LV_SCR_LOAD_ANIM_FADE_IN, 200, 0, false);
+    lv_screen_load_anim(back_to_cfg ? scr_cfg : scr_main, LV_SCR_LOAD_ANIM_FADE_IN, 200, 0, false);
+    back_to_cfg = false;
 }
 
 static void su_timeout(lv_timer_t *t)
@@ -1586,6 +1592,291 @@ static void place_settled(int i, void *user)
     }
 }
 
+/* ---------- Settings screen (long-press on the weather screen) ----------
+ * Quick settings on the display itself: screen (dimming, pick-up, timing, brightness arc along the bottom edge),
+ * units, and shortcuts (phone settings QR, Wi-Fi setup, updates, restart). Each change is saved at once through the
+ * same functions as the settings page (presence.c, config.c), so the phone and the display always agree. Places,
+ * the Wi-Fi password, custom timings and sound calibration stay on the phone (typing, map, live meter). */
+
+enum { R_DIM, R_MOTION, R_TIMING, R_TEMP, R_WIND, R_CLOCK, R_PHONE, R_WIFI, R_UPDATE, R_RESTART, CFG_ROWS };
+static lv_obj_t *cfg_row[CFG_ROWS], *cfg_val[CFG_ROWS], *cfg_arc, *cfg_bright, *cfg_zone;
+static uint32_t check_tapped;                      // tick of "Check now" (shows the result for a few seconds)
+static const struct { int dim, off, wake; const char *name; } cfg_presets[] = {   // as the settings page's PRESETS
+    { 120, 900, 2, "Short" }, { 600, 3600, 3, "Normal" }, { 1800, 10800, 3, "Long" },   // off = total quiet time
+};
+static uint32_t restart_armed;                     // tick of the first "Restart" tap (a second one restarts)
+
+static int cfg_preset(const presence_cfg_t *c)     // index into cfg_presets, -1 = custom
+{
+    for (int i = 0; i < 3; i++)
+        if ((int)c->dim_s == cfg_presets[i].dim && (int)(c->dim_s + c->off_s) == cfg_presets[i].off &&
+            (int)c->wake_s == cfg_presets[i].wake) return i;
+    return -1;
+}
+
+static void cfg_switch(int r, bool on)
+{
+    lv_obj_t *sw = cfg_val[r];
+    if (on) lv_obj_add_state(sw, LV_STATE_CHECKED); else lv_obj_remove_state(sw, LV_STATE_CHECKED);
+}
+
+static void cfg_refresh(void)                      // display lock held
+{
+    presence_cfg_t c;
+    presence_status_t st;
+    units_t u;
+    ota_status_t o;
+    presence_get_config(&c);
+    presence_get_status(&st);
+    config_get_units(&u);
+    ota_get_status(&o);
+    cfg_switch(R_DIM, c.enabled);
+    cfg_switch(R_MOTION, presence_motion_wake());
+    if (st.imu_ok) lv_obj_remove_flag(cfg_row[R_MOTION], LV_OBJ_FLAG_HIDDEN);
+    else lv_obj_add_flag(cfg_row[R_MOTION], LV_OBJ_FLAG_HIDDEN);
+    int p = cfg_preset(&c);
+    lv_label_set_text(cfg_val[R_TIMING], p < 0 ? "Custom" : cfg_presets[p].name);
+    lv_label_set_text(cfg_val[R_TEMP], u.fahrenheit ? "°F" : "°C");
+    lv_label_set_text(cfg_val[R_WIND], u.wind == WIND_MPH ? "mph" : u.wind == WIND_MS ? "m/s" : "km/h");
+    lv_label_set_text(cfg_val[R_CLOCK], u.h12 ? "12 h" : "24 h");
+    char b[48];
+    bool just_checked = check_tapped && lv_tick_elaps(check_tapped) < 6000;
+    if (o.state == OTA_AVAILABLE) snprintf(b, sizeof(b), "%s >", o.latest);             // tap: update screen
+    else if (o.state == OTA_CHECKING) snprintf(b, sizeof(b), "Checking...");
+    else if (o.state == OTA_DOWNLOADING) snprintf(b, sizeof(b), "%d%%", o.progress);
+    else if (just_checked && o.state == OTA_UP_TO_DATE) snprintf(b, sizeof(b), "Up to date");
+    else if (just_checked && o.state == OTA_FAILED) snprintf(b, sizeof(b), "Failed");
+    else snprintf(b, sizeof(b), "Check now >");
+    lv_label_set_text(cfg_val[R_UPDATE], b);
+    bool armed = restart_armed && lv_tick_elaps(restart_armed) < 4000;
+    lv_label_set_text(cfg_val[R_RESTART], armed ? "Tap again" : "");
+    if (!lv_obj_has_state(cfg_zone, LV_STATE_PRESSED)) {
+        lv_arc_set_value(cfg_arc, c.bright_pct);
+        lv_label_set_text_fmt(cfg_bright, "Brightness %d%%", c.bright_pct);
+    }
+}
+
+static void cfg_tick(lv_timer_t *t)
+{
+    if (lv_screen_active() == scr_cfg) cfg_refresh();      // update state, changes made from the phone
+}
+
+static void do_restart(lv_timer_t *t) { esp_restart(); }
+
+static void cfg_tap(lv_event_t *e)
+{
+    int r = (int)(intptr_t)lv_event_get_user_data(e);
+    presence_cfg_t c;
+    presence_status_t st;
+    units_t u;
+    presence_get_config(&c);
+    presence_get_status(&st);
+    config_get_units(&u);
+    ESP_LOGI("ui", "settings row %d", r);
+    switch (r) {
+    case R_DIM: c.enabled = !c.enabled; presence_set_config(&c); break;
+    case R_MOTION: presence_set_motion(!presence_motion_wake(), st.motion_thr); break;
+    case R_TIMING: {
+        int p = (cfg_preset(&c) + 1) % 3;                       // custom -> Short
+        c.dim_s = cfg_presets[p].dim;
+        c.off_s = cfg_presets[p].off - cfg_presets[p].dim;
+        c.wake_s = cfg_presets[p].wake;
+        presence_set_config(&c);
+        break;
+    }
+    case R_TEMP: u.fahrenheit = !u.fahrenheit; config_set_units(&u); ui_units_changed(); break;
+    case R_WIND: u.wind = (u.wind + 1) % 3; config_set_units(&u); ui_units_changed(); break;
+    case R_CLOCK: u.h12 = !u.h12; config_set_units(&u); ui_units_changed(); break;
+    case R_PHONE: back_to_cfg = true; lv_screen_load(scr_main); show_settings(NULL); return;
+    case R_WIFI: back_to_cfg = true; ui_wifi_setup(NULL); return;
+    case R_UPDATE: {
+        ota_status_t o;
+        ota_get_status(&o);
+        if (o.state == OTA_AVAILABLE) { update_show(); return; }
+        if (o.state != OTA_CHECKING && o.state != OTA_DOWNLOADING) { ota_check_now(); check_tapped = lv_tick_get(); }
+        break;
+    }
+    case R_RESTART:
+        if (restart_armed && lv_tick_elaps(restart_armed) < 4000) {
+            ESP_LOGI("ui", "restart from the settings screen");
+            lv_label_set_text(cfg_val[R_RESTART], "Restarting...");
+            lv_timer_create(do_restart, 400, NULL);
+            return;
+        }
+        restart_armed = lv_tick_get();
+        break;
+    }
+    cfg_refresh();
+}
+
+// Brightness: the band under the arc follows the finger's x (left 5 %, right 100 %); the arc only shows the value.
+// (A clickable full-size lv_arc caught every touch on the screen, rows and Done included.)
+#define BR_X0 60
+#define BR_X1 406
+static void cfg_bright_changed(lv_event_t *e)
+{
+    lv_indev_t *in = lv_indev_active();
+    if (!in) return;
+    lv_point_t pt;
+    lv_indev_get_point(in, &pt);
+    int v = 5 + (pt.x - BR_X0) * 95 / (BR_X1 - BR_X0);
+    v = v < 5 ? 5 : v > 100 ? 100 : v;
+    lv_arc_set_value(cfg_arc, v);
+    lv_label_set_text_fmt(cfg_bright, "Brightness %d%%", v);
+    presence_preview_brightness(v);                           // the screen follows the finger
+    lv_event_code_t code = lv_event_get_code(e);
+    if (code == LV_EVENT_RELEASED || code == LV_EVENT_PRESS_LOST) {   // save when the finger lifts (NVS write)
+        presence_cfg_t c;
+        presence_get_config(&c);
+        c.bright_pct = v;
+        presence_set_config(&c);
+        ESP_LOGI("ui", "brightness %d%%", v);
+    }
+}
+
+static void cfg_close(lv_event_t *e)
+{
+    lv_screen_load_anim(scr_main, LV_SCR_LOAD_ANIM_MOVE_BOTTOM, 260, 0, false);
+}
+
+static void cfg_gesture(lv_event_t *e)
+{
+    lv_indev_t *in = lv_indev_active();
+    if (!in) return;
+    if (lv_indev_get_gesture_dir(in) == LV_DIR_RIGHT) cfg_close(e);   // swipe right = back
+    lv_indev_wait_release(in);
+}
+
+static void open_cfg(lv_event_t *e)                // long-press on the weather screen
+{
+    if (!net_is_connected()) {                       // offline: Wi-Fi setup is what's needed
+        ESP_LOGI("ui", "long press while offline -> Wi-Fi setup");
+        ui_wifi_setup(NULL);
+        return;
+    }
+    ESP_LOGI("ui", "long press -> settings");
+    restart_armed = 0;
+    check_tapped = 0;
+    back_to_cfg = false;
+    cfg_refresh();
+    lv_obj_scroll_to_y(lv_obj_get_parent(cfg_row[0]), 0, LV_ANIM_OFF);
+    lv_screen_load_anim(scr_cfg, LV_SCR_LOAD_ANIM_MOVE_TOP, 260, 0, false);
+    lv_indev_t *in = lv_indev_active();
+    if (in) lv_indev_wait_release(in);               // the long-press's release isn't a tap on a row
+}
+
+static lv_obj_t *cfg_add_row(lv_obj_t *box, int r, const char *name, bool is_switch)
+{
+    lv_obj_t *row = cfg_row[r] = lv_obj_create(box);
+    lv_obj_remove_style_all(row);
+    lv_obj_set_size(row, 300, 52);
+    lv_obj_set_style_radius(row, 12, 0);
+    lv_obj_set_style_bg_color(row, lv_color_hex(0x1A2027), 0);
+    lv_obj_set_style_bg_opa(row, LV_OPA_COVER, LV_STATE_PRESSED);
+    lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_GESTURE_BUBBLE);
+    lv_obj_remove_flag(row, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_event_cb(row, cfg_tap, LV_EVENT_CLICKED, (void *)(intptr_t)r);
+    lv_obj_t *l = lv_label_create(row);
+    lv_obj_set_style_text_font(l, f_small, 0);
+    lv_obj_set_style_text_color(l, C_TEXT, 0);
+    lv_label_set_text(l, name);
+    lv_obj_align(l, LV_ALIGN_LEFT_MID, 14, 0);
+    if (is_switch) {
+        lv_obj_t *sw = cfg_val[r] = lv_switch_create(row);
+        lv_obj_set_size(sw, 54, 30);
+        lv_obj_set_style_bg_color(sw, lv_color_hex(0x2A3138), 0);
+        lv_obj_set_style_bg_color(sw, C_ACCENT, LV_PART_INDICATOR | LV_STATE_CHECKED);
+        lv_obj_remove_flag(sw, LV_OBJ_FLAG_CLICKABLE);         // the whole row is the button
+        lv_obj_align(sw, LV_ALIGN_RIGHT_MID, -12, 0);
+    } else {
+        lv_obj_t *v = cfg_val[r] = lv_label_create(row);
+        lv_obj_set_style_text_font(v, f_small, 0);
+        lv_obj_set_style_text_color(v, C_ACCENT, 0);
+        lv_label_set_text(v, "");
+        lv_obj_align(v, LV_ALIGN_RIGHT_MID, -14, 0);
+    }
+    return row;
+}
+
+static void cfg_section(lv_obj_t *box, const char *name)
+{
+    lv_obj_t *l = lv_label_create(box);
+    lv_obj_set_style_text_font(l, f_micro, 0);
+    lv_obj_set_style_text_color(l, C_DIM, 0);
+    lv_obj_set_style_pad_top(l, 6, 0);
+    lv_obj_set_width(l, 290);
+    lv_label_set_text(l, name);
+    lv_obj_add_flag(l, LV_OBJ_FLAG_GESTURE_BUBBLE);
+}
+
+static void cfg_create(void)
+{
+    scr_cfg = base_screen();
+    lv_obj_t *done = lv_button_create(scr_cfg);                // top: Done
+    lv_obj_set_size(done, 120, 40);
+    lv_obj_set_style_radius(done, 20, 0);
+    lv_obj_set_style_bg_color(done, lv_color_hex(0x2A3138), 0);
+    lv_obj_set_style_shadow_width(done, 0, 0);
+    lv_obj_align(done, LV_ALIGN_TOP_MID, 0, 22);
+    lv_obj_t *dl = lv_label_create(done);
+    lv_obj_set_style_text_font(dl, f_small, 0);
+    lv_label_set_text(dl, "Done");
+    lv_obj_center(dl);
+    lv_obj_add_event_cb(done, cfg_close, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t *box = lv_obj_create(scr_cfg);                    // the rows scroll; Done and brightness stay
+    lv_obj_remove_style_all(box);
+    lv_obj_set_size(box, 300, 290);
+    lv_obj_align(box, LV_ALIGN_TOP_MID, 0, 70);
+    lv_obj_set_flex_flow(box, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(box, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_row(box, 6, 0);
+    lv_obj_set_scroll_dir(box, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(box, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_add_flag(box, LV_OBJ_FLAG_GESTURE_BUBBLE);
+    cfg_section(box, "SCREEN");
+    cfg_add_row(box, R_DIM, "Dim when quiet", true);
+    cfg_add_row(box, R_MOTION, "Wake on pick-up", true);
+    cfg_add_row(box, R_TIMING, "Timing", false);
+    cfg_section(box, "UNITS");
+    cfg_add_row(box, R_TEMP, "Temperature", false);
+    cfg_add_row(box, R_WIND, "Wind", false);
+    cfg_add_row(box, R_CLOCK, "Clock", false);
+    cfg_section(box, "MORE");
+    cfg_add_row(box, R_PHONE, "More on your phone", false);
+    cfg_add_row(box, R_WIFI, "Wi-Fi network", false);
+    cfg_add_row(box, R_UPDATE, "Updates", false);
+    cfg_add_row(box, R_RESTART, "Restart", false);
+    lv_label_set_text(cfg_val[R_PHONE], ">");
+    lv_label_set_text(cfg_val[R_WIFI], ">");
+
+    cfg_bright = label(scr_cfg, f_tiny, C_DIM, 372);           // brightness: an arc along the bottom edge
+    cfg_arc = lv_arc_create(scr_cfg);
+    lv_obj_set_size(cfg_arc, DISP_W - 14, DISP_W - 14);
+    lv_obj_center(cfg_arc);
+    lv_arc_set_bg_angles(cfg_arc, 35, 145);
+    lv_arc_set_mode(cfg_arc, LV_ARC_MODE_REVERSE);             // drag towards the right = brighter
+    lv_arc_set_range(cfg_arc, 5, 100);
+    lv_obj_set_style_arc_width(cfg_arc, 10, LV_PART_MAIN);
+    lv_obj_set_style_arc_color(cfg_arc, lv_color_hex(0x2A3138), LV_PART_MAIN);
+    lv_obj_set_style_arc_width(cfg_arc, 10, LV_PART_INDICATOR);
+    lv_obj_set_style_arc_color(cfg_arc, lv_color_hex(0xFFC83D), LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(cfg_arc, lv_color_white(), LV_PART_KNOB);
+    lv_obj_set_style_pad_all(cfg_arc, 6, LV_PART_KNOB);
+    lv_obj_remove_flag(cfg_arc, LV_OBJ_FLAG_CLICKABLE);       // display only (see cfg_bright_changed)
+    cfg_zone = lv_obj_create(scr_cfg);                         // touch band: the bottom of the circle
+    lv_obj_remove_style_all(cfg_zone);
+    lv_obj_set_size(cfg_zone, DISP_W, DISP_H - 364);
+    lv_obj_align(cfg_zone, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_obj_remove_flag(cfg_zone, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_GESTURE_BUBBLE);
+    lv_obj_add_event_cb(cfg_zone, cfg_bright_changed, LV_EVENT_PRESSING, NULL);
+    lv_obj_add_event_cb(cfg_zone, cfg_bright_changed, LV_EVENT_RELEASED, NULL);
+    lv_obj_add_event_cb(cfg_zone, cfg_bright_changed, LV_EVENT_PRESS_LOST, NULL);
+
+    lv_obj_add_event_cb(scr_cfg, cfg_gesture, LV_EVENT_GESTURE, NULL);
+    lv_timer_create(cfg_tick, 1000, NULL);
+}
+
 void ui_init(void)
 {
     display_lock(-1);
@@ -1629,7 +1920,7 @@ void ui_init(void)
     scr_radar = radar_create(f_small, f_small, f_micro);
     page_dots(scr_radar, 3);
     lv_obj_add_event_cb(scr_main, gesture_cb, LV_EVENT_GESTURE, NULL);
-    lv_obj_add_event_cb(scr_main, show_settings, LV_EVENT_LONG_PRESSED, NULL);
+    lv_obj_add_event_cb(scr_main, open_cfg, LV_EVENT_LONG_PRESSED, NULL);
     lv_obj_add_event_cb(scr_main, main_tap, LV_EVENT_SHORT_CLICKED, NULL);
     hour_create();
     update_create();                // pill on scr_main (made non-clickable by passthrough) + update screen
@@ -1661,6 +1952,7 @@ void ui_init(void)
     alert_create();
     extras_create();
     status_create();
+    cfg_create();
     touch_register_lvgl();
 
     lv_timer_create(clock_tick, 1000, NULL);
@@ -1840,7 +2132,8 @@ lv_draw_buf_t *ui_snapshot(const char *screen)
 {
     lv_obj_t *s = !strcmp(screen, "weather") ? scr_main : !strcmp(screen, "extras") ? scr_extras :
                   !strcmp(screen, "status") ? scr_status : !strcmp(screen, "radar") ? scr_radar :
-                  !strcmp(screen, "update") ? scr_update : !strcmp(screen, "alert") ? scr_alert : lv_screen_active();
+                  !strcmp(screen, "update") ? scr_update : !strcmp(screen, "alert") ? scr_alert :
+                  !strcmp(screen, "settings") ? scr_cfg : lv_screen_active();
     if (!strncmp(screen, "hourly", 6) && have_wx) {
         s = scr_hour;
         if (lv_screen_active() != scr_hour) {
@@ -1852,6 +2145,7 @@ lv_draw_buf_t *ui_snapshot(const char *screen)
         }
     }
     if (s == scr_status) status_refresh();
+    if (s == scr_cfg) cfg_refresh();
     if (s == scr_extras) extras_refresh();
     lv_obj_update_layout(s);
     return lv_snapshot_take(s, LV_COLOR_FORMAT_RGB565);
