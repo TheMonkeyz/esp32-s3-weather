@@ -22,6 +22,7 @@ function fresh() {
                 level_db: -48, threshold_db: -55, baseline_db: -60, margin_db: 5, wake_progress: 0, wake_s: 3,
                 quiet_s: 12, dim_s: 600, off_s: 3000, bright_pct: 100, dim_pct: 20,
                 imu_ok: true, motion_g: 0.01, motion_wake: true, motion_thr: 0.1 },
+    sound: { level: 2, volume: 60, quiet_from: '22:00', quiet_to: '07:00', ok: true, tests: 0 },
     wifi: null,
     log: [],                                  // every API call: {method, url, body}
   };
@@ -78,6 +79,13 @@ const routes = {
   'POST /api/calibrate': () => [200, { ok: true }],
   'GET /api/scan': () => [200, [{ ssid: 'HomeNet', rssi: -50, secure: true }, { ssid: 'Cafe', rssi: -75, secure: false }]],
   'POST /api/wifi': b => { st.wifi = b; return [200, { ok: true }]; },
+  'GET /api/sound': () => [200, st.sound],
+  'POST /api/sound': b => {
+    if (!b) return [400, 'bad json'];
+    if (b.test) st.sound.tests++;
+    else for (const k of ['level', 'volume', 'quiet_from', 'quiet_to']) if (k in b) st.sound[k] = b[k];
+    return [200, st.sound];
+  },
 };
 
 http.createServer(async (req, res) => {

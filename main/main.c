@@ -22,6 +22,7 @@
 #include "ota.h"
 #include "esp_timer.h"
 #include "i18n.h"
+#include "sound.h"
 
 static const char *TAG = "app";
 #define BOOT_BTN        GPIO_NUM_0
@@ -52,6 +53,31 @@ static location_t wx_at[MAX_PLACES];
 static bool have[MAX_PLACES];
 static location_t shown;                  // the place alerts, air quality and radar are for
 static char map_id[80];                   // alert whose region map is shown
+
+// Alerts already seen for the place shown: only a new one chimes (not the ones there at start-up or after a
+// switch, which the first fetch for a place just records).
+#define SEEN_MAX 16
+static char seen[SEEN_MAX][80];
+static int nseen;
+static bool seen_primed;
+
+static int severity(char c) { return c == 'r' ? 3 : c == 'o' ? 2 : c == 'y' ? 1 : 0; }
+
+static void chime_new_alerts(const alerts_t *al)
+{
+    int best = -1;                                 // most severe new alert
+    char best_c = 0;
+    for (int i = 0; i < al->n; i++) {
+        bool known = false;
+        for (int k = 0; k < nseen && !known; k++) known = !strcmp(seen[k], al->a[i].id);
+        if (known) continue;
+        if (nseen == SEEN_MAX) { memmove(seen[0], seen[1], sizeof(seen[0]) * (SEEN_MAX - 1)); nseen--; }   // drop the oldest
+        strlcpy(seen[nseen++], al->a[i].id, sizeof(seen[0]));
+        if (seen_primed && severity(al->a[i].colour) > best) { best = severity(al->a[i].colour); best_c = al->a[i].colour; }
+    }
+    seen_primed = true;
+    if (best_c) sound_alert(best_c);
+}
 
 static bool cached(int i, const location_t *loc)     // display lock held
 {
@@ -87,6 +113,8 @@ static void follow_active(bool all)
         ui_alerts(&none);
         ui_alert_map(NULL, 0, 0);
         map_id[0] = 0;
+        nseen = 0;                               // the new place's current alerts don't chime
+        seen_primed = false;
         ui_air(&no_air);
         radar_relocate();
     }
@@ -167,6 +195,7 @@ void app_main(void)
     diag_mark("net init");
     diag_start(60);             // "diag:" lines in the log every 60 s (heap, frames, CPU/stack per task)
     presence_start();           // microphones -> screen brightness (uses touch's I2C bus + NVS)
+    sound_start();              // alert chimes (speaker shares the microphones' I2S bus)
     diag_mark("presence");
     ui_init();
     ota_start(ui_ota);          // update checks start once Wi-Fi is up; marks a new firmware valid after 60 s
@@ -227,6 +256,7 @@ void app_main(void)
             static EXT_RAM_BSS_ATTR alerts_t al;
             if (alerts_fetch(loc.lat, loc.lon, &al) && a == config_active_place()) {   // failed: keep the last ones
                 ui_alerts(&al);
+                chime_new_alerts(&al);
                 if (!al.n) { if (map_id[0]) { ui_alert_map(NULL, 0, 0); map_id[0] = 0; } }
                 else if (strcmp(map_id, al.a[0].id)) {                   // map of the top alert's region
                     uint16_t *m = alerts_map(&al.a[0], loc.lat, loc.lon, ALERT_MAP_W, ALERT_MAP_H);

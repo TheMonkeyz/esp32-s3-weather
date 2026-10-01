@@ -8,6 +8,7 @@
 | Display | CO5300 AMOLED 466×466, QSPI, RGB565 | CS 12, CLK 38, D0–D3 4/5/6/7, RST 39; column offset **+6** |
 | Touch | CST9217, I2C addr `0x5A` | SDA 15, SCL 14, RST 40, INT 11 (unused) |
 | Microphones | 2× digital mics via ES7210 ADC (I2C `0x40`, shared bus with touch), I2S 16 kHz stereo 16-bit | MCLK 42, BCLK 9, WS 45, DIN 10 |
+| Speaker | ES8311 codec (I2C `0x18`, 8-bit `0x30`, shared bus) + amplifier enabled on GPIO 46; same I2S port as the microphones (DOUT 8) | DOUT 8, PA 46 |
 | Motion sensor | QMI8658 6-axis IMU, I2C `0x6B` (shared bus with touch); only the accelerometer is used, polled at 10 Hz (its INT pins aren't used). Waveshare's BSP doesn't drive it (`BSP_CAPS_IMU 0`) | SDA 15, SCL 14 |
 | Buttons | BOOT = GPIO0 (also the strapping pin) | |
 | USB | COM5 on the dev PC | |
@@ -319,6 +320,27 @@ LVGL timer and event callbacks already run inside the lock.
   - On the home network, everything redirects to HTTPS.
 - On the plain-HTTP page the GPS button can't work (browsers only allow geolocation on secure pages). The page shows a
   link to the HTTPS version instead, and puts the Wi-Fi card first when opened on 192.168.4.1.
+
+## Alert sounds (`sound.c`)
+
+- **I2S shared with the microphones:** `presence.c` opens I2S0 in both directions (`i2s_new_channel(&cc, &tx,
+  &rx)`, 16 kHz stereo 16-bit, DOUT 8, `auto_clear` so the speaker gets silence between sounds) and keeps one
+  `audio_codec_data_if_t` (`presence_audio_data_if()`) for the ES7210 (in) and the ES8311 (out). `sound.c` opens the
+  speaker device only while a sound plays (`esp_codec_dev_open` / `close`), so the amplifier is off otherwise. The
+  microphones keep working during and after a sound (checked).
+- **Sounds:** synthesised beeps, by alert level: yellow / statement 2 beeps (1.5 kHz), orange 3 + 3 quick beeps
+  (1.8 kHz), red a hi-lo siren (1.8 / 1.35 kHz, ~3 s). Sine + 30 % 3rd harmonic, 6 ms raised-cosine edges, amplitude
+  0.32 (headroom); the codec volume (0–100) scales it. The whole sound is **rendered into PSRAM first, then
+  streamed** in 4 KB writes: computing it while playing crackled (the I2S DMA starved). Deliberately unlike
+  Canada's Alert Ready attention signal.
+- **When:** `main.c` `chime_new_alerts()` after each successful alert fetch for the place shown. An alert sounds once
+  (ids remembered, 16 max); the first fetch for a place (start-up, place switch) only records what is already
+  there. The most severe new alert decides the sound. `sound_alert()` applies the level setting (0 off, 1 red, 2
+  orange and red, 3 all) and quiet hours (local time of the place shown; red always sounds).
+- **Settings:** NVS `sound` (`level`, `vol`, `qfrom`, `qto`); defaults orange and red, 60 %, 22:00–07:00. Display
+  Settings rows (SOUND: alert chime cycles Off / Red / Orange+ / All, volume cycles 20–100 % and plays the orange
+  sound, test). `GET /api/sound`, `POST /api/sound` (any of `level`, `volume`, `quiet_from`, `quiet_to` "HH:MM",
+  or `test`: true / 1–3); the page's Sound card.
 
 ## Presence dimming (`presence.c`)
 

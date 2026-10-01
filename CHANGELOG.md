@@ -9,6 +9,9 @@ How to write an entry: add a `## vX.Y.Z - YYYY-MM-DD` section at the top **befor
 their own `## vX.Y.Z-rc.N` section. Those are shown only to Beta users, while the final release's section should
 list everything again.
 
+## v1.8.0 - 2026-10-01
+- Alert sounds: the display beeps when a new weather alert appears (two beeps for yellow, more for orange, a siren for red). Choose which alerts sound, the volume and quiet hours on the settings page (red alerts sound even during quiet hours); the level, the volume and a test are also in Settings on the display.
+
 ## v1.7.0 - 2026-10-01
 - The display and the settings page now speak French: choose Français in Settings on the display (Langue) or in the Units card of the settings page. Weather alerts come in French too. The "What's new" notes stay in English for now.
 - On the weather screen, a blue drop marks the humidity and a wind symbol marks the wind speed.

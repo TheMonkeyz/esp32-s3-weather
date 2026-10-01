@@ -19,6 +19,7 @@
 #include "display.h"
 #include "ui.h"
 #include "i18n.h"
+#include "sound.h"
 #include "lwip/sockets.h"
 
 static const char *TAG = "web";
@@ -111,6 +112,53 @@ static esp_err_t config_get(httpd_req_t *req)
         cJSON_AddItemToArray(langs, o);
     }
     return send_json(req, j);
+}
+
+// Alert chime: {"level":0..3 (off, red, orange+red, all), "volume":0..100, "quiet_from":"22:00", "quiet_to":"07:00",
+// "ok":speaker present}. POST any subset, or {"test":true|1|2|3} to hear it.
+static esp_err_t sound_get(httpd_req_t *req)
+{
+    sound_cfg_t c;
+    sound_get_config(&c);
+    char a[16], b[16];
+    snprintf(a, sizeof(a), "%02d:%02d", c.quiet_from / 60, c.quiet_from % 60);
+    snprintf(b, sizeof(b), "%02d:%02d", c.quiet_to / 60, c.quiet_to % 60);
+    cJSON *j = cJSON_CreateObject();
+    cJSON_AddNumberToObject(j, "level", c.level);
+    cJSON_AddNumberToObject(j, "volume", c.volume);
+    cJSON_AddStringToObject(j, "quiet_from", a);
+    cJSON_AddStringToObject(j, "quiet_to", b);
+    cJSON_AddBoolToObject(j, "ok", sound_ok());
+    return send_json(req, j);
+}
+
+static double num_or(cJSON *j, const char *k, double def);   // below
+
+static int hhmm_or(cJSON *j, const char *k, int def)
+{
+    cJSON *v = cJSON_GetObjectItem(j, k);
+    int h, m;
+    return cJSON_IsString(v) && sscanf(v->valuestring, "%d:%d", &h, &m) == 2 && h >= 0 && h < 24 && m >= 0 && m < 60
+           ? h * 60 + m : def;
+}
+
+static esp_err_t sound_post(httpd_req_t *req)
+{
+    cJSON *j = read_json(req);
+    if (!j) return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "bad json");
+    cJSON *tst = cJSON_GetObjectItem(j, "test");                // true (orange) or 1..3 (yellow, orange, red)
+    if (cJSON_IsTrue(tst) || cJSON_IsNumber(tst)) sound_test(cJSON_IsNumber(tst) ? tst->valueint : 2);
+    else {
+        sound_cfg_t c;
+        sound_get_config(&c);
+        c.level = (int)num_or(j, "level", c.level);
+        c.volume = (int)num_or(j, "volume", c.volume);
+        c.quiet_from = hhmm_or(j, "quiet_from", c.quiet_from);
+        c.quiet_to = hhmm_or(j, "quiet_to", c.quiet_to);
+        sound_set_config(&c);
+    }
+    cJSON_Delete(j);
+    return sound_get(req);
 }
 
 // {"select": i} shows place i on the display; {"delete": i} removes it (not the last one)
@@ -442,7 +490,7 @@ static void start_https(void)
     conf.servercert_len = cert_len;
     conf.prvtkey_pem = (const uint8_t *)key;
     conf.prvtkey_len = key_len;
-    conf.httpd.max_uri_handlers = 14;
+    conf.httpd.max_uri_handlers = 18;
     conf.httpd.stack_size = 7168;      // measured peak ~3.3 KB (TLS handshake)
     conf.httpd.max_open_sockets = 5;
     conf.httpd.lru_purge_enable = true;
@@ -462,6 +510,8 @@ static void start_https(void)
         { .uri = "/api/update",   .method = HTTP_GET,  .handler = update_get },
         { .uri = "/api/update",   .method = HTTP_POST, .handler = update_post },
         { .uri = "/api/snapshot", .method = HTTP_GET,  .handler = snapshot_get },
+        { .uri = "/api/sound",    .method = HTTP_GET,  .handler = sound_get },
+        { .uri = "/api/sound",    .method = HTTP_POST, .handler = sound_post },
     };
     for (int i = 0; i < sizeof(uris) / sizeof(uris[0]); i++) httpd_register_uri_handler(s, &uris[i]);
 }

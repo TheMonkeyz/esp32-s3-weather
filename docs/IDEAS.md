@@ -12,7 +12,6 @@ The board also has a speaker (ES8311), a motion sensor (QMI8658), a real-time cl
 charging (AXP2101).
 
 - [ ] **Night clock** — when dimmed, a very dim large clock instead of a black screen.
-- [ ] **Alarm / chime** — sound through the speaker, e.g. for a weather warning.
 - [ ] **Battery level** — when running on a battery.
 
 ## Everyday use
@@ -35,6 +34,8 @@ charging (AXP2101).
   settings page (v1.5.0).
 - [x] **Several places** — up to 4, one weather page each, drag up/down to switch; everything follows the place
   shown (v1.5.0).
+- [x] **Alert sounds** — warning beeps for new weather alerts, by level; level / volume / quiet hours (v1.8.0).
+  An alarm clock or an hourly chime could reuse `sound.c`.
 - [x] **French interface** — English / Canadian French for the display and the settings page, one setting;
   built so more languages are a column in `i18n_strings.h` (v1.7.0).
 - [x] **Settings on the display** — long-press: screen (dimming, pick-up, timing, brightness), units, phone QR,
