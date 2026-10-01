@@ -317,15 +317,23 @@ static void page_dots(lv_obj_t *scr, int active)   // 0 status, 1 extras, 2 weat
 /* ---------- Hourly detail (tap a forecast day) ----------
  * Three day pages side by side in a horizontal scroller that snaps one page at a time,
  * so the pages follow the finger. Each page's hour list scrolls vertically and is drawn
- * by one draw callback (no per-row objects). */
+ * by one draw callback (no per-row objects). The list starts with the day's temperature graph and the
+ * column headers, so they scroll away with it. The graph is drawn once into a canvas per day (about 200 shapes,
+ * too many to redraw on every scroll frame) and redrawn only for a new forecast or a new hour. */
 
 #define ROW_H   46
 #define LIST_W  316
+#define GRAPH_H 120                  // temperature graph at the top of each day's list
+#define HDR_H   24                   // column headers under it
+#define TOP_H   (GRAPH_H + HDR_H)    // rows start here
 typedef struct {
-    lv_obj_t *page, *title, *sum, *list, *content;
+    lv_obj_t *page, *title, *sum, *list, *content, *graph;
+    int day;
     int first, count, now;           // hour indexes into wx.hour
+    int g_gen, g_now;                // what the graph canvas shows (forecast generation, now)
 } day_page_t;
 static day_page_t pg[WX_DAYS];
+static int wx_gen;                   // bumped by every new forecast
 static lv_obj_t *hr_pager, *hr_dot[WX_DAYS];
 static EXT_RAM_BSS_ATTR weather_t wx;   // copy of the last forecast (PSRAM)
 static bool have_wx;
@@ -345,7 +353,129 @@ static void draw_text(lv_layer_t *layer, lv_font_t *f, lv_color_t c, int x, int 
     lv_draw_label(layer, &d, &a);
 }
 
-// Draws only the rows inside the clip area
+static void draw_text_top(lv_layer_t *layer, lv_font_t *f, lv_color_t c, int x, int y, int w,
+                          lv_text_align_t align, const char *txt)
+{
+    lv_draw_label_dsc_t d;
+    lv_draw_label_dsc_init(&d);
+    d.font = f;
+    d.color = c;
+    d.align = align;
+    d.text = txt;
+    d.text_local = 1;
+    lv_area_t a = { x, y, x + w - 1, y + lv_font_get_line_height(f) - 1 };
+    lv_draw_label(layer, &d, &a);
+}
+
+static int round_temp(float t) { return (int)(t < 0 ? t - 0.5f : t + 0.5f); }
+
+// Temperature graph, midnight to midnight (0 to 24, the last point is the next day's 00:00): filled curve, a line
+// at every hour, hours labelled every 3 h, the day's high and low labelled.
+// Today: the hours already past are dimmed and a dot marks now. (x0, y0) = top-left of the block.
+#define G_X0  28                     // plot area inside the block
+#define G_W   (LIST_W - 56)
+#define G_Y0  26
+#define G_H   50
+static void graph_draw(lv_layer_t *layer, const day_page_t *dp, int x0, int y0)
+{
+    int base = dp->day * 24, n = wx.nhours - base;              // points: hours 0..24
+    if (n > 25) n = 25;
+    if (n < 2) return;
+    float lo = wx.hour[base].temp, hi = lo, smin = lo, smax = lo;
+    int ilo = 0, ihi = 0;
+    for (int i = 1; i < n; i++) {
+        float t = wx.hour[base + i].temp;
+        if (i < 24 && t < lo) { lo = t; ilo = i; }             // the day's own low and high (00:00 to 23:00)
+        if (i < 24 && t > hi) { hi = t; ihi = i; }
+        if (t < smin) smin = t;                                 // the scale also fits the next day's 00:00
+        if (t > smax) smax = t;
+    }
+    float span = smax - smin < 4 ? 4 : smax - smin, mid = (smax + smin) / 2;   // a flat day stays flat
+    float bot = mid - span / 2;
+    int now = dp->now >= 0 ? dp->now - base : -1;              // hour index of "now" (today only)
+    #define GX(i) (x0 + G_X0 + (i) * G_W / 24.0f)
+    #define GY(t) (y0 + G_Y0 + G_H - ((t) - bot) / span * G_H)
+    const lv_color_t warm = lv_color_hex(0xFFC83D);
+
+    // Fill under the curve: 2-px columns, interpolated between the hours. Opaque colours pre-mixed with the black
+    // background: same look as a translucent fill, much cheaper to render while the list scrolls.
+    lv_draw_rect_dsc_t r;
+    lv_draw_rect_dsc_init(&r);
+    lv_color_t fill = lv_color_mix(warm, C_BG, 60), fill_past = lv_color_mix(warm, C_BG, 24);
+    int ybase = y0 + G_Y0 + G_H + 4;
+    for (int x = (int)GX(0); x < (int)GX(n - 1); x += 2) {
+        float fi = (x - GX(0)) * 24.0f / G_W;
+        int i = (int)fi;
+        if (i >= n - 1) i = n - 2;
+        float t = wx.hour[base + i].temp + (wx.hour[base + i + 1].temp - wx.hour[base + i].temp) * (fi - i);
+        r.bg_color = now >= 0 && fi < now ? fill_past : fill;
+        lv_area_t a = { x, (int)GY(t), x + 1, ybase };
+        lv_draw_rect(layer, &r, &a);
+    }
+
+    // A thin line at every hour, brighter every 3 h (the labelled ones)
+    for (int h = 0; h <= 24; h++) {
+        r.bg_color = lv_color_hex(h % 3 ? 0x1E252D : 0x3A4450);
+        int x = (int)GX(h);
+        lv_area_t a = { x, y0 + G_Y0 - 4, x, ybase };
+        lv_draw_rect(layer, &r, &a);
+    }
+
+    // Curve
+    lv_draw_line_dsc_t l;
+    lv_draw_line_dsc_init(&l);
+    l.width = 3;
+    l.round_start = l.round_end = 1;
+    for (int i = 0; i + 1 < n; i++) {
+        l.color = now >= 0 && i < now ? C_DIM : warm;
+        l.p1.x = GX(i);     l.p1.y = GY(wx.hour[base + i].temp);
+        l.p2.x = GX(i + 1); l.p2.y = GY(wx.hour[base + i + 1].temp);
+        lv_draw_line(layer, &l);
+    }
+
+    // Hours under the plot, every 3 h
+    char buf[12];
+    for (int h = 0; h <= 24; h += 3) {
+        snprintf(buf, sizeof(buf), "%d", h);
+        draw_text_top(layer, f_micro, C_DIM, (int)GX(h) - 15, y0 + G_Y0 + G_H + 22, 30, LV_TEXT_ALIGN_CENTER, buf);
+    }
+
+    // High above its point, low below its point
+    snprintf(buf, sizeof(buf), "%d°", round_temp(hi));
+    draw_text_top(layer, f_tiny, C_TEXT, (int)GX(ihi) - 30, (int)GY(hi) - 24, 60, LV_TEXT_ALIGN_CENTER, buf);
+    if (round_temp(lo) != round_temp(hi)) {
+        snprintf(buf, sizeof(buf), "%d°", round_temp(lo));
+        draw_text_top(layer, f_micro, C_DIM, (int)GX(ilo) - 30, (int)GY(lo) + 4, 60, LV_TEXT_ALIGN_CENTER, buf);
+    }
+
+    // Now
+    if (now >= 0 && now < n) {
+        lv_draw_rect_dsc_t d;
+        lv_draw_rect_dsc_init(&d);
+        d.bg_color = lv_color_white();
+        d.radius = LV_RADIUS_CIRCLE;
+        int cx = (int)GX(now), cy = (int)GY(wx.hour[base + now].temp);
+        lv_area_t a = { cx - 5, cy - 5, cx + 5, cy + 5 };
+        lv_draw_rect(layer, &d, &a);
+    }
+    #undef GX
+    #undef GY
+}
+
+// Redraws the day's graph canvas if the forecast or the current hour changed. Display lock held.
+static void graph_render(day_page_t *dp)
+{
+    if (dp->g_gen == wx_gen && dp->g_now == dp->now) return;
+    dp->g_gen = wx_gen;
+    dp->g_now = dp->now;
+    lv_canvas_fill_bg(dp->graph, C_BG, LV_OPA_COVER);
+    lv_layer_t layer;
+    lv_canvas_init_layer(dp->graph, &layer);
+    graph_draw(&layer, dp, 0, 0);
+    lv_canvas_finish_layer(dp->graph, &layer);
+}
+
+// Draws the column headers and only the rows inside the clip area (the graph is a canvas child)
 static void hr_draw(lv_event_t *e)
 {
     lv_obj_t *o = lv_event_get_target(e);
@@ -355,8 +485,16 @@ static void hr_draw(lv_event_t *e)
     lv_obj_get_coords(o, &c);
     const lv_area_t *clip = &layer->_clip_area;
     char buf[16];
+    if (c.y1 + TOP_H > clip->y1) {
+        static const struct { int x, w; const char *t; } hdr[] = {   // aligned with the columns below
+            { 118, 56, "Temp" }, { 180, 54, "Rain" }, { 236, 72, "Wind" },
+        };
+        for (int i = 0; i < 3; i++)
+            draw_text_top(layer, f_micro, i == 1 ? C_ACCENT : C_DIM, c.x1 + hdr[i].x, c.y1 + GRAPH_H + 4, hdr[i].w,
+                          LV_TEXT_ALIGN_RIGHT, hdr[i].t);
+    }
     for (int r = 0; r < dp->count; r++) {
-        int y = c.y1 + r * ROW_H;
+        int y = c.y1 + TOP_H + r * ROW_H;
         if (y + ROW_H <= clip->y1 || y > clip->y2) continue;
         int i = dp->first + r;
         const wx_hour_t *h = &wx.hour[i];
@@ -375,7 +513,7 @@ static void hr_draw(lv_event_t *e)
         P_layer = layer; P_x = c.x1 + 76; P_y = y + (ROW_H - 37) / 2;
         draw_icon(NULL, weather_kind(h->code), h->is_day, 30, 0);
         P_layer = NULL;
-        snprintf(buf, sizeof(buf), "%d°", (int)(h->temp < 0 ? h->temp - 0.5f : h->temp + 0.5f));
+        snprintf(buf, sizeof(buf), "%d°", round_temp(h->temp));
         draw_text(layer, f_small, C_TEXT, c.x1 + 118, y, 56, LV_TEXT_ALIGN_RIGHT, buf);
         snprintf(buf, sizeof(buf), "%d%%", h->pop);
         draw_text(layer, f_tiny, h->pop >= 30 ? C_ACCENT : C_DIM, c.x1 + 180, y, 54, LV_TEXT_ALIGN_RIGHT, buf);
@@ -418,7 +556,8 @@ static void fill_page(int day)
     }
     lv_label_set_text(dp->title, name);
     lv_label_set_text_fmt(dp->sum, "%s  ·  %.0f° / %.0f°", weather_text(d->code), d->tmax, d->tmin);
-    lv_obj_set_height(dp->content, dp->count * ROW_H);
+    lv_obj_set_height(dp->content, TOP_H + dp->count * ROW_H);
+    graph_render(dp);
     lv_obj_invalidate(dp->page);
 }
 
@@ -501,6 +640,7 @@ static void hour_create(void)
 
     for (int d = 0; d < WX_DAYS; d++) {
         day_page_t *dp = &pg[d];
+        dp->day = d;
         dp->page = lv_obj_create(hr_pager);
         lv_obj_remove_style_all(dp->page);
         lv_obj_set_size(dp->page, DISP_W, DISP_H);
@@ -512,32 +652,27 @@ static void hour_create(void)
         lv_obj_set_width(dp->sum, 340);
         lv_label_set_long_mode(dp->sum, LV_LABEL_LONG_DOT);
 
-        // Column headers, aligned with the columns drawn in hr_draw()
-        static const struct { int x, w; const char *t; } hdr[] = {
-            { 118, 56, "Temp" }, { 180, 54, "Rain" }, { 236, 72, "Wind" },
-        };
-        for (int i = 0; i < 3; i++) {
-            lv_obj_t *h = label(dp->page, f_micro, i == 1 ? C_ACCENT : C_DIM, 0);
-            lv_obj_set_width(h, hdr[i].w);
-            lv_obj_set_style_text_align(h, LV_TEXT_ALIGN_RIGHT, 0);
-            lv_label_set_text(h, hdr[i].t);
-            lv_obj_align(h, LV_ALIGN_TOP_LEFT, (DISP_W - LIST_W) / 2 + hdr[i].x, 100);
-        }
-
-        dp->list = lv_obj_create(dp->page);
+        dp->list = lv_obj_create(dp->page);                    // graph + headers + hour rows (hr_draw)
         lv_obj_remove_style_all(dp->list);
-        lv_obj_set_size(dp->list, LIST_W, 290);
-        lv_obj_align(dp->list, LV_ALIGN_TOP_MID, 0, 120);
+        lv_obj_set_size(dp->list, LIST_W, 314);
+        lv_obj_align(dp->list, LV_ALIGN_TOP_MID, 0, 96);
         lv_obj_set_scroll_dir(dp->list, LV_DIR_VER);
         lv_obj_set_scrollbar_mode(dp->list, LV_SCROLLBAR_MODE_OFF);
         lv_obj_add_flag(dp->list, LV_OBJ_FLAG_EVENT_BUBBLE | LV_OBJ_FLAG_GESTURE_BUBBLE);
 
         dp->content = lv_obj_create(dp->list);
         lv_obj_remove_style_all(dp->content);
-        lv_obj_set_size(dp->content, LIST_W, ROW_H);
+        lv_obj_set_size(dp->content, LIST_W, TOP_H + ROW_H);
         lv_obj_remove_flag(dp->content, LV_OBJ_FLAG_CLICKABLE);
         lv_obj_add_flag(dp->content, LV_OBJ_FLAG_EVENT_BUBBLE | LV_OBJ_FLAG_GESTURE_BUBBLE);
         lv_obj_add_event_cb(dp->content, hr_draw, LV_EVENT_DRAW_MAIN, dp);
+
+        dp->graph = lv_canvas_create(dp->content);             // ~76 KB each, LVGL heap (PSRAM)
+        lv_canvas_set_draw_buf(dp->graph, lv_draw_buf_create(LIST_W, GRAPH_H, LV_COLOR_FORMAT_RGB565, LV_STRIDE_AUTO));
+        lv_obj_set_pos(dp->graph, 0, 0);
+        lv_obj_remove_flag(dp->graph, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_add_flag(dp->graph, LV_OBJ_FLAG_EVENT_BUBBLE | LV_OBJ_FLAG_GESTURE_BUBBLE);
+        dp->g_gen = -1;
     }
 
     lv_obj_t *dots = lv_obj_create(scr_hour);                 // centred row of page dots
@@ -1562,6 +1697,7 @@ void ui_weather(const weather_t *w)
     }
     wx = *w;
     have_wx = true;
+    wx_gen++;
     if (lv_screen_active() == scr_extras) extras_refresh();
     if (lv_screen_active() == scr_hour) for (int i = 0; i < WX_DAYS; i++) hour_fill(i);
     clock_tick(NULL);
@@ -1595,6 +1731,17 @@ lv_draw_buf_t *ui_snapshot(const char *screen)
     lv_obj_t *s = !strcmp(screen, "weather") ? scr_main : !strcmp(screen, "extras") ? scr_extras :
                   !strcmp(screen, "status") ? scr_status : !strcmp(screen, "radar") ? scr_radar :
                   !strcmp(screen, "update") ? scr_update : !strcmp(screen, "alert") ? scr_alert : lv_screen_active();
+    if (!strncmp(screen, "hourly", 6) && have_wx) {
+        s = scr_hour;
+        if (lv_screen_active() != scr_hour) {
+            int day = atoi(screen + 6);
+            if (day < 0 || day >= wx.ndays) day = 0;
+            for (int i = 0; i < WX_DAYS; i++) { fill_page(i); lv_obj_scroll_to_y(pg[i].list, 0, LV_ANIM_OFF); }
+            lv_obj_update_layout(hr_pager);
+            lv_obj_scroll_to_x(hr_pager, day * DISP_W, LV_ANIM_OFF);
+            set_dots(day);
+        }
+    }
     if (s == scr_status) status_refresh();
     if (s == scr_extras) extras_refresh();
     lv_obj_update_layout(s);

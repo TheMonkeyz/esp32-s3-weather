@@ -104,6 +104,9 @@ RAM for the two 8 KB draw stacks. Reverted.
   | radar animation + zoom | 7.3 fps, frames avg 88 ms, worst 235 ms | 10.2 fps, avg 72 ms, worst 263 ms |
   | hourly view dragging | 9.9 fps, avg 90 ms | 14.9 fps, avg 58 ms, worst gap 174 ms |
 
+  v1.5.0 temperature graph, hourly view dragging: drawn on every frame 12.1 fps (avg 73.5 ms); cached in a canvas
+  15.4 / 14.8 fps (avg 55–59 ms, worst gap 175 ms), back to the reference.
+
   Radar zoom is the heaviest case: the scale animation transforms a full-screen image every frame.
 - The radar task holds `display_lock()` for up to ~75 ms while it swaps in a composed frame, so the UI can miss
   a frame or two during radar loading. Candidate fix if it's ever visible: compose outside the lock, swap under it.
