@@ -336,7 +336,8 @@ LVGL timer and event callbacks already run inside the lock.
 - **When:** `main.c` `chime_new_alerts()` after each successful alert fetch for the place shown. An alert sounds once
   (ids remembered, 16 max); the first fetch for a place (start-up, place switch) only records what is already
   there. The most severe new alert decides the sound. `sound_alert()` applies the level setting (0 off, 1 red, 2
-  orange and red, 3 all) and quiet hours (local time of the place shown; red always sounds).
+  orange and red, 3 all) and quiet hours (local time of the place shown; red always sounds). Tested with fake
+  alerts (see CLAUDE.md): silent in quiet hours, a known alert doesn't sound again, a new one does.
 - **Settings:** NVS `sound` (`level`, `vol`, `qfrom`, `qto`); defaults orange and red, 60 %, 22:00–07:00. Display
   Settings rows (SOUND: alert chime cycles Off / Red / Orange+ / All, volume cycles 20–100 % and plays the orange
   sound, test). `GET /api/sound`, `POST /api/sound` (any of `level`, `volume`, `quiet_from`, `quiet_to` "HH:MM",

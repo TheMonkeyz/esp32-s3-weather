@@ -172,8 +172,14 @@ Windows build gets both from `main/idf_component.yml`. `components/dns_server` *
 - **Speaker:** shares I2S0 with the microphones (presence.c opens it both ways). Render a whole sound into PSRAM
   before playing it (generating it on the fly crackled). Hear the levels from the PC with
   `POST /api/sound {"test":1|2|3}` (yellow / orange / red); ask the user to listen, there is no other check. The
-  user wanted warning beeps, not a chime; keep them unlike Canada's official Alert Ready signal. The "new alert"
-  path (`chime_new_alerts()`) wasn't tested with a real alert (none active at the time).
+  user wanted warning beeps, not a chime; keep them unlike Canada's official Alert Ready signal.
+- **Testing the "new alert" path without a real alert** (done October 1 with `v1.8.0-alerttest.0`, never
+  committed): in `main.c`, right after `alerts_fetch()` succeeds, append fake orange alerts (`id` "TEST-ORANGE-1"
+  at 30 s of uptime, "-2" at 60 s) and shorten the loop's wait so it fetches at 31 s and 61 s. Between them, turn
+  quiet hours off with `POST /api/sound {"quiet_from":"00:00","quiet_to":"00:00"}`. Expected log: at 30 s
+  `sound: new alert (o): quiet hours` (if inside quiet hours), at 60 s only alert 2 sounds (`alert sound, level
+  2`); the fake ids' region maps give HTTP 404 (expected). Then restore quiet hours, `git checkout main/main.c`, and
+  flash a clean build.
 - **Motion sensor (QMI8658 at I2C 0x6B):** register notes are at the top of `main/imu.c`. Real numbers from this
   board, for tuning: still 0.001–0.005 g, firm table bump ~0.07 g, pick-up 0.14–0.33 g (threshold 0.10 g). The
   presence log prints `motion peak X g` every 5 s and `picked up / moved (X g): wake`; the page shows a live meter.
