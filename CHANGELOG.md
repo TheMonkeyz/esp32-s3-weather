@@ -14,6 +14,10 @@ list everything again.
 - On the settings page, tap a place to change it, and pick the exact spot on a map: tap the map or drag the pin. Handy for a cottage or anywhere you aren't right now.
 - Units on the settings page: temperature in °C or °F, wind in km/h, mph or m/s, and a 24-hour or 12-hour clock. The display switches right away. With mph, the radar shows distances in miles.
 
+## v1.5.0-rc.2 - 2026-09-30
+- Test version of several places: add up to 4 on the settings page, then drag up or down on the weather screen to switch. Each place has its own local time, and alerts, air quality, the hourly view and the radar follow it.
+- Test version of the new place editor on the settings page: tap a place to change it, and pick the exact spot on a map.
+
 ## v1.4.0 - 2026-09-30
 - The hourly view now starts with a graph of the day's temperature, from midnight to midnight, with the high and low marked. On today's page, the hours already past are greyed out and a dot shows the current hour.
 - New status page: swipe right twice from the weather screen. It shows the firmware version, the Wi-Fi signal, and whether each online service the display uses is working, when it was last reached and why it failed.
