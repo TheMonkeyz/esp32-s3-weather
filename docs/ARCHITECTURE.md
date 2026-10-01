@@ -8,6 +8,7 @@
 | Display | CO5300 AMOLED 466×466, QSPI, RGB565 | CS 12, CLK 38, D0–D3 4/5/6/7, RST 39; column offset **+6** |
 | Touch | CST9217, I2C addr `0x5A` | SDA 15, SCL 14, RST 40, INT 11 (unused) |
 | Microphones | 2× digital mics via ES7210 ADC (I2C `0x40`, shared bus with touch), I2S 16 kHz stereo 16-bit | MCLK 42, BCLK 9, WS 45, DIN 10 |
+| Motion sensor | QMI8658 6-axis IMU, I2C `0x6B` (shared bus with touch); only the accelerometer is used, polled at 10 Hz (its INT pins aren't used). Waveshare's BSP doesn't drive it (`BSP_CAPS_IMU 0`) | SDA 15, SCL 14 |
 | Buttons | BOOT = GPIO0 (also the strapping pin) | |
 | USB | COM5 on the dev PC | |
 
@@ -283,10 +284,22 @@ LVGL timer and event callbacks already run inside the lock.
   - DIM: the score reaching `wake_s` → ACTIVE. A loud tick restarts the off countdown. `dim_s + off_s` of quiet → OFF.
   - OFF: the score reaching `wake_s` → ACTIVE.
   - Touch: `presence_touch()` → ACTIVE; the waking touch is swallowed in `touch.c` if the screen was off.
+  - Movement (`moved`): → ACTIVE from DIM or OFF; while ACTIVE it resets the quiet timer like noise.
+- **Wake on pick-up** (`imu.c` + the presence loop): every 100 ms the accelerometer is read (QMI8658: ±2 g,
+  62.5 Hz, gyroscope off). `rest` is a slow average of the acceleration vector (5 % per tick, ~2 s); movement =
+  distance from it in g, so lifting or tilting counts and lying still in any position doesn't. Above `motion_thr` →
+  `moved`. Measured on the board: still 0.001–0.005 g, a firm bump on the table ~0.07 g, picking it up 0.14–0.33 g.
+  Sensitivity: High 0.05 g (a firm bump wakes it), Normal 0.10 g (default), Low 0.20 g (a clear lift). The first
+  second of samples after boot is skipped (a 3.7 g junk reading came out before the sensor settled).
+- **Settings storage:** `presence/cfg` is a blob of `presence_cfg_t`; a blob of another size is ignored on load,
+  so **don't add fields to `presence_cfg_t`** (an update would reset everyone's screen settings). The pick-up
+  settings are separate keys: `presence/motion` (u8) and `presence/motion_mg` (u16, threshold in milli-g).
 - **Brightness:** CO5300 command `0x51`, faded in 10% steps per tick (about 1 s full ↔ off), under `display_lock()`.
   Rendering continues while the screen is off.
 - **API:** `GET /api/presence` (config and live status: level, threshold, state, wake_progress, quiet_s, calibrating,
-  brightness), `POST /api/presence` (config), `POST /api/calibrate {seconds}`. The page polls status every 700 ms
+  brightness, `imu_ok`, `motion_g` (recent peak, decays in ~1 s, for the page's meter), `motion_thr`,
+  `motion_wake`), `POST /api/presence` (config, including `motion_wake` and `motion_thr`), `POST /api/calibrate
+  {seconds}`. The page polls status every 700 ms
   while visible.
 - **Presets & units:** firmware stores `dim_s` and `off_s` (off is *after* dim). The page shows "Turn off after" as
   total quiet time (`dim_s + off_s`) with s/min/h unit selectors and converts back on save. Presets

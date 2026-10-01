@@ -154,6 +154,14 @@ Windows build gets both from `main/idf_component.yml`. `components/dns_server` *
 
 ## Useful facts
 
+- **Motion sensor (QMI8658 at I2C 0x6B):** register notes are at the top of `main/imu.c`. Real numbers from this
+  board, for tuning: still 0.001–0.005 g, firm table bump ~0.07 g, pick-up 0.14–0.33 g (threshold 0.10 g). The
+  presence log prints `motion peak X g` every 5 s and `picked up / moved (X g): wake`; the page shows a live meter.
+- **Testing dim/off/wake without waiting 10 min:** read `GET /api/presence`, `POST {"dim_s":10,"off_s":20}`, ask
+  the user to stay quiet and still, test, then **post the original values back**.
+- **Don't grow `presence_cfg_t`:** it's saved as one NVS blob and a size change drops the user's settings. Add new
+  presence settings as separate NVS keys (as `motion` / `motion_mg` do).
+
 - Diagnostics without flashing: `echo 300 > reboot.request`, wait for `flash.status` = idle, then
   `python3 tools/diag_summary.py serial_log.txt` from the device shell.
 

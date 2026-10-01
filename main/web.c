@@ -220,6 +220,10 @@ static esp_err_t presence_get(httpd_req_t *req)
     cJSON_AddNumberToObject(j, "calib_left_s", st.calib_left_s);
     cJSON_AddBoolToObject(j, "mic_ok", st.mic_ok);
     cJSON_AddNumberToObject(j, "brightness", st.brightness);
+    cJSON_AddBoolToObject(j, "imu_ok", st.imu_ok);
+    cJSON_AddNumberToObject(j, "motion_g", st.motion_g);
+    cJSON_AddBoolToObject(j, "motion_wake", presence_motion_wake());
+    cJSON_AddNumberToObject(j, "motion_thr", st.motion_thr);
     return send_json(req, j);
 }
 
@@ -243,6 +247,11 @@ static esp_err_t presence_post(httpd_req_t *req)
     c.off_s = num_or(j, "off_s", c.off_s);
     c.bright_pct = (int)num_or(j, "bright_pct", c.bright_pct);
     c.dim_pct = (int)num_or(j, "dim_pct", c.dim_pct);
+    cJSON *mw = cJSON_GetObjectItem(j, "motion_wake");
+    presence_status_t ps;
+    presence_get_status(&ps);
+    if (cJSON_IsBool(mw) || cJSON_IsNumber(cJSON_GetObjectItem(j, "motion_thr")))
+        presence_set_motion(cJSON_IsBool(mw) ? cJSON_IsTrue(mw) : presence_motion_wake(), num_or(j, "motion_thr", ps.motion_thr));
     cJSON_Delete(j);
     presence_set_config(&c);
     return presence_get(req);

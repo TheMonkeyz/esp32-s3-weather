@@ -20,7 +20,8 @@ function fresh() {
     update: { current: 'v1.5.0-test', latest: '', channel: 'stable', state: 'up_to_date', progress: 0, error: '' },
     presence: { enabled: true, state: 'active', mic_ok: true, calibrating: false, calib_left_s: 0, brightness: 100,
                 level_db: -48, threshold_db: -55, baseline_db: -60, margin_db: 5, wake_progress: 0, wake_s: 3,
-                quiet_s: 12, dim_s: 600, off_s: 3000, bright_pct: 100, dim_pct: 20 },
+                quiet_s: 12, dim_s: 600, off_s: 3000, bright_pct: 100, dim_pct: 20,
+                imu_ok: true, motion_g: 0.01, motion_wake: true, motion_thr: 0.1 },
     wifi: null,
     log: [],                                  // every API call: {method, url, body}
   };
