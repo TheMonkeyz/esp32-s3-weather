@@ -9,8 +9,11 @@ How to write an entry: add a `## vX.Y.Z - YYYY-MM-DD` section at the top **befor
 their own `## vX.Y.Z-rc.N` section. Those are shown only to Beta users, while the final release's section should
 list everything again.
 
+## v1.3.1 - 2026-10-01
+- The update screen and the settings page now show what's new before you install.
+
 ## v1.3.0 - 2026-09-30
-- Updates over Wi-Fi: an "Update" pill appears on the weather screen when a new version is out. Tap it to see what's new and install. Settings are kept.
+- Updates over Wi-Fi: an "Update" pill appears on the weather screen when a new version is out. Tap it, then Install. Settings are kept.
 - Choose Stable or Beta updates on the settings page (Firmware).
 - If a new version doesn't start properly, the display goes back to the previous one by itself.
 - Weather alerts from Environment Canada: tap the alert at the top for the details and a map of the area.
