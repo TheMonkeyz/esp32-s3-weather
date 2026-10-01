@@ -159,6 +159,7 @@ Windows build gets both from `main/idf_component.yml`. `components/dns_server` *
 - **French = Canadian French (Québec), standard written:** "endroit(s)" for places (not "lieux"), "tamiser" for dim
   (not "atténuer"), "balayez le code QR", "appuyez longuement", **1er** for the first of the month. No joual, slang
   or anglicisms. Check grammar agreement when a noun changes (un endroit → "Nouvel endroit", "cet endroit").
+- The font has no symbols or emoji: small icons are drawn shapes (see `drop_draw` / `wind_draw` in `ui.c`).
 - New display text goes in `main/i18n_strings.h` (both languages) and page text in `I18N` in `index.html`; never a
   bare string literal on screen. Check French in snapshots: it is longer and wraps (widen the label, shorten, or
   use the smaller font for that value).

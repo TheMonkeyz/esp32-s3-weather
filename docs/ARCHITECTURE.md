@@ -50,6 +50,10 @@ LVGL timer and event callbacks already run inside the lock.
 - Layout was tuned for the round screen using the host simulator (see CLAUDE.md). Everything stays inside the
   circle; the forecast row ends at about y=408.
 - Icons are built from LVGL primitives (circles, rounded rectangles, one line for the lightning bolt), scaled per use.
+- The detail line is a flex row (`p->detail`): feels-like, then a blue droplet (`drop_draw`: circle + triangle, the
+  raindrops' `0x4DA3FF`) before the humidity and a light-grey wind mark (`wind_draw`: three staggered strokes,
+  `0xC9D1DA`) before the speed. The TinyTTF Montserrat has no symbol glyphs, so small icons are drawn
+  (`LV_EVENT_DRAW_MAIN`), not typed.
   Decorative objects are made non-clickable so presses bubble up to the screen.
 - Gestures: `LV_EVENT_GESTURE` on both screens → `lv_screen_load_anim` (move left/right).
 - **Places:** the weather widgets live on one page per place (`place_page_t pp[MAX_PLACES]`) in a vertical pager

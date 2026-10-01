@@ -47,7 +47,8 @@ static uint16_t *al_map_buf;
 static EXT_RAM_BSS_ATTR alerts_t alerts;           // ~4 KB, in PSRAM
 // Weather screen: one page per place in a vertical pager (pager.c); pills, page dots and place dots stay on top.
 typedef struct {
-    lv_obj_t *time, *city, *icon, *temp, *cond, *detail, *nowcast, *fc_day[3], *fc_temp[3], *fc_icon[3];
+    lv_obj_t *time, *city, *icon, *temp, *cond, *nowcast, *fc_day[3], *fc_temp[3], *fc_icon[3];
+    lv_obj_t *detail, *feels, *hum, *wind;      // "Feels 8°  ·  (drop) 86 %  ·  (wind) 8 km/h" (a row)
     char name[48];
     int utc_offset;
     bool has_wx;                               // pw[i] holds this place's forecast
@@ -1541,6 +1542,65 @@ static void update_create(void)
     lv_obj_add_event_cb(scr_update, alert_gesture, LV_EVENT_GESTURE, NULL);
 }
 
+// Tiny icons for the weather screen's detail row, drawn like the weather icons (the font has no symbols).
+// Droplet = humidity (rain blue), three staggered strokes = wind (a light grey, brighter than the text).
+static void drop_draw(lv_event_t *e)
+{
+    lv_layer_t *layer = lv_event_get_layer(e);
+    lv_area_t a;
+    lv_obj_get_coords(lv_event_get_target(e), &a);
+    int cx = (a.x1 + a.x2) / 2, w = lv_area_get_width(&a), r = w * 4 / 10;
+    lv_draw_rect_dsc_t c;
+    lv_draw_rect_dsc_init(&c);
+    c.bg_color = lv_color_hex(0x4DA3FF);                     // the rain drops' blue
+    c.radius = LV_RADIUS_CIRCLE;
+    lv_area_t ball = { cx - r, a.y2 - 2 * r, cx + r, a.y2 };
+    lv_draw_rect(layer, &c, &ball);
+    lv_draw_triangle_dsc_t t;
+    lv_draw_triangle_dsc_init(&t);
+    t.bg_color = lv_color_hex(0x4DA3FF);
+    t.p[0].x = cx;          t.p[0].y = a.y1;
+    t.p[1].x = cx - r;      t.p[1].y = a.y2 - r;
+    t.p[2].x = cx + r + 1;  t.p[2].y = a.y2 - r;
+    lv_draw_triangle(layer, &t);
+}
+
+static void wind_draw(lv_event_t *e)
+{
+    lv_layer_t *layer = lv_event_get_layer(e);
+    lv_area_t a;
+    lv_obj_get_coords(lv_event_get_target(e), &a);
+    int w = lv_area_get_width(&a), h = lv_area_get_height(&a);
+    lv_draw_line_dsc_t l;
+    lv_draw_line_dsc_init(&l);
+    l.color = lv_color_hex(0xC9D1DA);                        // whiter than the text
+    l.width = 2;
+    l.round_start = l.round_end = 1;
+    static const struct { int y, x0, x1; } s[3] = { { 20, 30, 100 }, { 50, 0, 85 }, { 80, 20, 70 } };   // % of the box
+    for (int i = 0; i < 3; i++) {
+        l.p1.x = a.x1 + w * s[i].x0 / 100; l.p2.x = a.x1 + w * s[i].x1 / 100;
+        l.p1.y = l.p2.y = a.y1 + h * s[i].y / 100;
+        lv_draw_line(layer, &l);
+    }
+}
+
+static lv_obj_t *row_label(lv_obj_t *row)
+{
+    lv_obj_t *l = lv_label_create(row);
+    lv_obj_set_style_text_font(l, f_small, 0);
+    lv_obj_set_style_text_color(l, C_DIM, 0);
+    lv_label_set_text(l, "");
+    return l;
+}
+
+static void row_icon(lv_obj_t *row, int w, int h, lv_event_cb_t draw)
+{
+    lv_obj_t *o = lv_obj_create(row);
+    lv_obj_remove_style_all(o);
+    lv_obj_set_size(o, w, h);
+    lv_obj_add_event_cb(o, draw, LV_EVENT_DRAW_MAIN, NULL);
+}
+
 // One place's weather page: the layout the weather screen always had
 static void place_page_create(int i, lv_obj_t *pg)
 {
@@ -1560,7 +1620,21 @@ static void place_page_create(int i, lv_obj_t *pg)
     lv_obj_set_style_text_color(p->temp, C_TEXT, 0);
     lv_label_set_text(p->temp, "");
     p->cond = label(pg, f_cond, C_TEXT, 214);
-    p->detail = label(pg, f_small, C_DIM, 248);
+    p->detail = lv_obj_create(pg);                          // feels-like · humidity · wind, centred
+    lv_obj_remove_style_all(p->detail);
+    lv_obj_set_size(p->detail, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(p->detail, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(p->detail, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(p->detail, 6, 0);
+    lv_obj_align(p->detail, LV_ALIGN_TOP_MID, 0, 248);
+    p->feels = row_label(p->detail);
+    lv_label_set_text(row_label(p->detail), "·");
+    row_icon(p->detail, 12, 16, drop_draw);
+    p->hum = row_label(p->detail);
+    lv_label_set_text(row_label(p->detail), "·");
+    row_icon(p->detail, 18, 14, wind_draw);
+    p->wind = row_label(p->detail);
+    lv_obj_add_flag(p->detail, LV_OBJ_FLAG_HIDDEN);
     p->nowcast = label(pg, f_tiny, C_ACCENT, 273);           // "Rain around 14:45" (hidden when none)
     lv_obj_add_flag(p->nowcast, LV_OBJ_FLAG_HIDDEN);
     lv_obj_t *div = lv_obj_create(pg);
@@ -2046,7 +2120,7 @@ void ui_place(int i, const char *name, const weather_t *w)
         p->has_wx = false;
         lv_label_set_text(p->temp, "-");
         lv_label_set_text(p->cond, tr(T_LOADING));
-        lv_label_set_text(p->detail, "");
+        lv_obj_add_flag(p->detail, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(p->nowcast, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(p->icon, LV_OBJ_FLAG_HIDDEN);
         for (int k = 0; k < 3; k++) {
@@ -2070,8 +2144,10 @@ void ui_place(int i, const char *name, const weather_t *w)
     lv_label_set_text(p->cond, weather_text(w->code));
     char wind[16];
     config_fmt_wind(w->wind, wind, sizeof(wind));
-    snprintf(buf, sizeof(buf), tr(T_FEELS), config_temp(w->feels), w->humidity, wind);
-    lv_label_set_text(p->detail, buf);
+    lv_label_set_text_fmt(p->feels, tr(T_FEELS), config_temp(w->feels));
+    lv_label_set_text_fmt(p->hum, tr(T_PERCENT), w->humidity);
+    lv_label_set_text(p->wind, wind);
+    lv_obj_remove_flag(p->detail, LV_OBJ_FLAG_HIDDEN);
     draw_icon(p->icon, weather_kind(w->code), w->is_day, 80, i * 4);
     lv_obj_remove_flag(p->icon, LV_OBJ_FLAG_HIDDEN);
     if (w->nc_kind == NC_NONE) lv_obj_add_flag(p->nowcast, LV_OBJ_FLAG_HIDDEN);
