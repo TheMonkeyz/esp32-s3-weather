@@ -3,6 +3,7 @@
 # The request file may contain the number of seconds to log (default 60).
 # "reboot.request" does the same without flashing: restarts the board and logs it
 # (used to re-run the diagnostics, see docs/DIAGNOSTICS.md).
+# Stop the serial log early with "stop.request" or by pressing Q / Esc in this window.
 # Only ever flashes the files in .\firmware with .\tools\esptool.exe. Close this window to stop it.
 Set-Location $PSScriptRoot
 $Host.UI.RawUI.WindowTitle = "ESP flash helper - waiting"
@@ -29,6 +30,7 @@ while ($true) {
   if ($txt -match '^\s*(\d{1,4})\s*$') { $secs = [int]$Matches[1] }
   Remove-Item $req -Force
   Remove-Item "flash.done" -Force -ErrorAction SilentlyContinue
+  Remove-Item "stop.request" -Force -ErrorAction SilentlyContinue
   $start = Get-Date
   Set-Content "flash.running" (Get-Date -Format s)
   Write-Host ""
@@ -78,8 +80,10 @@ while ($true) {
   # ---- serial log ----
   Status "logging"
   $Host.UI.RawUI.WindowTitle = "ESP flash helper - logging serial ($secs s)"
-  Say "Logging serial output for $secs s (saved to serial_log.txt) ..."
+  Say "Logging serial output for $secs s (saved to serial_log.txt). Press Q or Esc to stop early ..."
   & powershell -NoProfile -ExecutionPolicy Bypass -File "monitor.ps1" -Port $port -Seconds $secs | Out-Null
+  $early = if ($LASTEXITCODE -eq 2) { 1 } else { 0 }
+  if ($early) { Say "Serial log stopped early" "Yellow" }
 
   # ---- summary ----
   $log = Get-Content "serial_log.txt" -ErrorAction SilentlyContinue
@@ -89,7 +93,7 @@ while ($true) {
   $color = if ($errs -gt 0 -or $resets -gt 0) { "Yellow" } else { "Green" }
   Say ("Serial log saved: {0} lines, {1} errors, {2} warnings, {3} resets" -f $log.Count, $errs, $warns, $resets) $color
   $total = [int]((Get-Date) - $start).TotalSeconds
-  Set-Content "flash.done" "exit=0 port=$port flash_s=$flashSecs total_s=$total errors=$errs warnings=$warns resets=$resets started=$(Get-Date $start -Format s) finished=$(Get-Date -Format s)"
+  Set-Content "flash.done" "exit=0 port=$port flash_s=$flashSecs total_s=$total errors=$errs warnings=$warns resets=$resets stopped_early=$early started=$(Get-Date $start -Format s) finished=$(Get-Date -Format s)"
   Remove-Item "flash.running" -Force -ErrorAction SilentlyContinue
   Status "idle"
   Say "=== Done in $total s. Waiting for the next flash.request ===" "Cyan"

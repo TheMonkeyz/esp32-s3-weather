@@ -57,6 +57,8 @@ Windows build gets both from `main/idf_component.yml`. `components/dns_server` *
   push and compare checksums before writing `flash.request`.
 - **Flash helper feedback:** read `flash.status`, then `flash.done` (it includes error, warning and reset counts),
   then grep `serial_log.txt`. A plain-text `flash_log.txt` shows exactly what esptool wrote.
+- **Don't wait out a long log window:** ask for a generous one (e.g. 330 s), then `echo > stop.request` as soon as
+  the line you need has appeared (the user can press Q or Esc in the helper window). The log is saved within ~1 s.
 
 ## Bugs hit, and their fixes (don't repeat these)
 
@@ -127,6 +129,8 @@ Windows build gets both from `main/idf_component.yml`. `components/dns_server` *
   booting `ota_1`. The flash helper only picks up script changes after a restart.
 - Test OTA end to end with the real site: flash a build labelled `vX.Y.Z-rc.0`, tag `vX.Y.Z-rc.1`, set the channel to
   Beta. A test build must be labelled above the current stable release or it will offer that release.
+- Before an on-device OTA test, check the `ota: Running vX from ota_N` line in a fresh log. On September 30 the board
+  was found on an older rc in `ota_1` instead of the test build that had been flashed, which invalidated a test.
 
 ## User preferences learned
 

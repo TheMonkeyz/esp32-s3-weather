@@ -121,7 +121,7 @@ https://github.com/espressif/esptool/releases (`esptool-v4.8.1-win64.zip`) and a
 - `flash.bat`: flashes `firmware\*.bin` (COM port auto-detected), then logs serial output to `serial_log.txt`.
   - `flash.bat`: interactive, logs for 40 s, then waits for a key press.
   - `flash.bat auto 90`: no pause at the end (for scripts or Claude Code), logs for 90 s.
-- `monitor.ps1 -Port COM5 -Seconds 60`: serial log only.
+- `monitor.ps1 -Port COM5 -Seconds 60`: serial log only. Press Q or Esc (or create `stop.request`) to stop early.
 - `start_flash_helper.bat`: opens the **flash helper** window (`flash_helper.ps1`). Whenever a file named
   `flash.request` appears in this folder, it flashes `firmware\*.bin` and logs serial output for the number of seconds
   written in the file (default 60). This lets tools that can only write files (like the Claude desktop app) trigger a
@@ -129,10 +129,12 @@ https://github.com/espressif/esptool/releases (`esptool-v4.8.1-win64.zip`) and a
   or **FLASH FAILED** with the last esptool lines, the board's serial output, and a summary (errors, warnings,
   resets). It also writes:
   - `flash.status`: `idle`, `flashing`, `logging` or `flash_failed`.
-  - `flash.done`: exit code, port, timings and counts.
+  - `flash.done`: exit code, port, timings and counts (`stopped_early=1` if the log was cut short).
   - `flash_helper.log`: a running history.
 
-  Close the window to stop it.
+  To end the serial log before its time is up, press **Q** or **Esc** in the window, or create a file named
+  `stop.request` (`echo > stop.request`). The log so far is saved and the helper waits for the next request.
+  Close the window to stop the helper itself.
 
 Flash layout: bootloader at `0x0`, partition table at `0x8000`, app at `0x10000`. Flash settings: DIO, 80 MHz, 16 MB.
 
