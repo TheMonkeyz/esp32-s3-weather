@@ -38,6 +38,8 @@ charging (AXP2101).
   An alarm clock or an hourly chime could reuse `sound.c`.
 - [x] **French interface** — English / Canadian French for the display and the settings page, one setting;
   built so more languages are a column in `i18n_strings.h` (v1.8.0).
+- [x] **Inuktitut interface (draft)** — syllabics, generated from `docs/translations/iu.tsv` (v1.9.0). Still needs
+  a fluent speaker's review: see `docs/translations/iu-review.md`.
 - [x] **Settings on the display** — long-press: screen (dimming, pick-up, timing, brightness), units, phone QR,
   Wi-Fi, updates, restart (v1.6.0).
 - [x] **Wake on pick-up** — the motion sensor wakes the screen when it's lifted or tilted (a table bump doesn't, at

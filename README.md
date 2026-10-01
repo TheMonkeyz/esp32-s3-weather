@@ -21,7 +21,7 @@ USB-C data cable). Ready-made images are also attached to each
 | **Weather alerts** | Environment Canada watches, warnings, advisories and statements for the location: a pill in the alert colour replaces the city name (`+1` if there are more). Details: map of the affected region on OpenStreetMap, until when, area and text | **Tap the top half** of the weather screen for details; drag to scroll; tap to close |
 | **Hourly view** | 7 days (the weather screen shows the first 3). Weekday, conditions and high/low; the day's temperature graph (0 to 24 h, a line every hour, high and low marked; today's past hours greyed with a dot at now); one row per hour: time, icon, temperature, chance of rain, wind. Today starts at the current hour ("Now") | Drag **up/down** to scroll hours. Drag **left/right** to change day (the page follows the finger and snaps). **Tap** to close |
 | **Settings page** (phone) | Location: *Use my phone's location* (GPS), city search, or manual lat/lon. Units: °C/°F, wind in km/h, mph or m/s (miles on the radar with mph), 24- or 12-hour clock. Screen & presence (live sound meter, calibration, delays, brightness). Wi-Fi network | Opened from the QR code; served over HTTPS |
-| **Settings** (long-press the weather screen) | Screen: dim when quiet, wake on pick-up, timing (Short / Normal / Long), brightness. Units: temperature, wind, clock, language (English / Français). More: the phone settings QR code, Wi-Fi network, check for updates, restart | Tap a row to switch or change it (saved at once, same settings as the phone page). Slide along the bottom band for brightness (it follows the finger). **Done** or swipe **right** to close. Restart needs two taps |
+| **Settings** (long-press the weather screen) | Screen: dim when quiet, wake on pick-up, timing (Short / Normal / Long), brightness. Units: temperature, wind, clock, language (English / Français / ᐃᓄᒃᑎᑐᑦ). More: the phone settings QR code, Wi-Fi network, check for updates, restart | Tap a row to switch or change it (saved at once, same settings as the phone page). Slide along the bottom band for brightness (it follows the finger). **Done** or swipe **right** to close. Restart needs two taps |
 | **Alert sounds** | Warning beeps through the speaker when a new weather alert appears for the place shown: yellow 2 beeps, orange 3 + 3, red a hi-lo siren. Each alert sounds once | Level (off / red / orange and red / all), volume and quiet hours (red still sounds) on the settings page; level, volume and a test on the display's Settings screen |
 | **Presence dimming** | The microphones act as a presence sensor: quiet room → dim → screen off; sustained sound (not a single bang), a touch, or picking the display up (motion sensor) → back on | Configured on the settings page: timing, sound sensitivity, wake on pick-up (on/off, High/Normal/Low, with a live movement meter) |
 
@@ -109,9 +109,11 @@ The two onboard microphones measure the room's sound level every 0.1 s.
   place shown: alerts, air quality, the hourly view, extras and the radar. Every place's forecast is refreshed every
   10 minutes, so it appears at once; the radar map is cached for the first place only, so other places' maps load
   in a few seconds.
-- **Language:** English or French (Canadian French), for the display and the settings page together: the
+- **Language:** English, French (Canadian French) or Inuktitut (syllabics; a draft not yet reviewed by a fluent
+  speaker, see docs/translations/), for the display and the settings page together: the
   **Langue / Language** row on the display's Settings screen, or the selector in the page's Units card. Weather
-  alerts come in the chosen language (Environment Canada publishes both); the "What's new" notes stay in English.
+  alerts come in the chosen language (Environment Canada publishes English and French; Inuktitut shows English);
+  the "What's new" notes stay in English.
 - **Units:** on the same page, the **Units** card: temperature (°C/°F), wind (km/h, mph, m/s; the radar's distances
   follow: miles with mph, km otherwise) and clock (24-hour or 12-hour). The display redraws at once.
 - **Wi-Fi:** long-press the weather screen, then tap **Wi-Fi network**. The display starts

@@ -10,22 +10,25 @@ static const char *const texts[T_COUNT][LANG_COUNT] = {
 #undef X
 };
 
-static const char *const LANG_CODE[LANG_COUNT] = { "en", "fr" };
-static const char *const LANG_NAME[LANG_COUNT] = { "English", "Français" };
+static const char *const LANG_CODE[LANG_COUNT] = { "en", "fr", "iu" };
+static const char *const LANG_NAME[LANG_COUNT] = { "English", "Français", "ᐃᓄᒃᑎᑐᑦ" };
 
 static const char *const WD_FULL[LANG_COUNT][7] = {
     { "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday" },
     { "Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi" },
+    { "ᓈᑦᓰᖑᔭᖅ", "ᓇᒡᒐᔾᔭᐅ", "ᐊᐃᑉᐱᖅ", "ᐱᖓᑦᓯᖅ", "ᓯᑕᒻᒥᖅ", "ᑕᓪᓕᕐᒥᖅ", "ᓯᕙᑖᕐᕕᒃ" },   // Nunavut usage (Tusaalanga)
 };
 static const char *const WD_SHORT[LANG_COUNT][7] = {
     { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" },
     { "Dim.", "Lun.", "Mar.", "Mer.", "Jeu.", "Ven.", "Sam." },
+    { "ᓈᑦᓰᖑᔭᖅ", "ᓇᒡᒐᔾᔭᐅ", "ᐊᐃᑉᐱᖅ", "ᐱᖓᑦᓯᖅ", "ᓯᑕᒻᒥᖅ", "ᑕᓪᓕᕐᒥᖅ", "ᓯᕙᑖᕐᕕᒃ" },   // no usual short forms: full names
 };
 static const char *const MONTH[LANG_COUNT][12] = {
     { "January", "February", "March", "April", "May", "June", "July", "August", "September", "October",
       "November", "December" },
     { "janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre",
       "novembre", "décembre" },                      // lowercase: they're used inside a date
+    { "ᔮᓐᓄᐊᕆ", "ᕖᕝᕗᐊᕆ", "ᒫᑦᓯ", "ᐄᐳᕆ", "ᒪᐃ", "ᔫᓂ", "ᔪᓚᐃ", "ᐋᒡᒌᓯ", "ᓯᑎᐱᕆ", "ᐅᑐᐱᕆ", "ᓄᕕᐱᕆ", "ᑎᓯᐱᕆ" },
 };
 
 static volatile lang_t lang = LANG_EN;
@@ -70,8 +73,9 @@ void tr_date_long(const struct tm *tm, char *out, int n)
     int m = tm->tm_mon % 12, d = tm->tm_mday;
     if (cur() == LANG_FR)                                    // 1er for the first of the month, else the number
         snprintf(out, n, "%s %d%s %s", WD_FULL[LANG_FR][tm->tm_wday % 7], d, d == 1 ? "er" : "", MONTH[LANG_FR][m]);
-    else
-        snprintf(out, n, "%s, %s %d", WD_FULL[LANG_EN][tm->tm_wday % 7], MONTH[LANG_EN][m], d);
+    else                                                     // English order, also used for Inuktitut
+        snprintf(out, n, "%s, %s %d", WD_FULL[cur() == LANG_IU ? LANG_IU : LANG_EN][tm->tm_wday % 7],
+                 MONTH[cur() == LANG_IU ? LANG_IU : LANG_EN][m], d);
 }
 
 void tr_date_ymd(int y, int m, int d, char *out, int n)
@@ -79,7 +83,7 @@ void tr_date_ymd(int y, int m, int d, char *out, int n)
     m = (m - 1) % 12;
     if (m < 0) m = 0;
     if (cur() == LANG_FR) snprintf(out, n, "%d%s %s %d", d, d == 1 ? "er" : "", MONTH[LANG_FR][m], y);
-    else snprintf(out, n, "%s %d, %d", MONTH[LANG_EN][m], d, y);
+    else snprintf(out, n, "%s %d, %d", MONTH[cur() == LANG_IU ? LANG_IU : LANG_EN][m], d, y);
 }
 
 const char *tr_weather(int code)

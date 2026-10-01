@@ -8,6 +8,7 @@ own licenses. Firmware images built from this repository contain all of them.
 | Component | Where | License |
 |---|---|---|
 | Montserrat font (Julieta Ulanovsky and the Montserrat Project Authors) | `main/montserrat.ttf` | SIL Open Font License 1.1, see [`main/montserrat-OFL.txt`](main/montserrat-OFL.txt) |
+| Noto Sans Canadian Aboriginal font, subset to the syllabics block (The Noto Project Authors) | `main/syllabics.ttf` | SIL Open Font License 1.1, see [`main/syllabics-OFL.txt`](main/syllabics-OFL.txt) |
 | Captive-portal DNS server (from ESP-IDF's `captive_portal` example, Espressif Systems) | `components/dns_server/` | Unlicense OR CC0-1.0 |
 
 ## Fetched at build time

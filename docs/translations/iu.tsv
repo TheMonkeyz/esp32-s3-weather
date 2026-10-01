@@ -1,0 +1,316 @@
+# Inuktitut translation source (see tools/i18n_iu.py). Columns: key, english, inuktitut (Latin ICI or
+# syllabics), confidence (high / medium / low), note. Edit the inuktitut column, then run the build.
+fw:T_TODAY	Today	Ullumi	high	Tusaalanga glossary: ullumi = today
+fw:T_NOW	Now	Maanna	medium	maanna = now (common word)
+fw:T_HDR_TEMP	Temp	°	medium	hourly column header: "uunarniq" wrapped in the narrow column; the degree sign is clear
+fw:T_HDR_RAIN	Rain	Silaluk	medium	Tusaalanga glossary: silaluttuq = it is raining; column of chance of rain
+fw:T_HDR_WIND	Wind	Anuri	medium	Tusaalanga glossary: anuraaqtuq = windy (anuri = wind)
+fw:T_LOADING	Loading...	Utaqqiritsi...	low	Tusaalanga glossary: utaqqijuq = waiting; "please wait"
+fw:T_FEELS	Feels %d°	Ippinnaqtuq %d°	low	"it feels" + temperature; check wording for feels-like
+fw:T_PERCENT	%d%%	%d%%	high	number only
+fw:T_RAIN_AROUND	Rain around %s	Silaluliqtuq %s	medium	silalu- (rain) + -liq- (starting) + time
+fw:T_RAIN_UNTIL	Rain until about %s	Silaluttuq %s tikillugu	low	"raining until" time; check tikillugu
+fw:T_SNOW_AROUND	Snow around %s	Qanniliqtuq %s	medium	Tusaalanga glossary: qanniqtuq = snowing; -liq- starting
+fw:T_SNOW_UNTIL	Snow until about %s	Qanniqtuq %s tikillugu	low	"snowing until" time
+fw:T_UNTIL	Until %s %s	%s %s tikillugu	low	alert end: weekday + time + "until"
+fw:T_ALERT_ALSO	\n\nAlso: %s (%s)\n\n%s	\n\nAmmalu: %s (%s)\n\n%s	medium	ammalu = and also
+fw:T_DAYLIGHT	Daylight\n%d h %02d	Qaumaniq\n%d `h` %02d	low	qauma- = light; daylight length
+fw:T_SUNRISE	Sunrise\n%s	Siqiniq nuijuq\n%s	high	Tusaalanga glossary: siqiniq nuijuq = sunrise
+fw:T_UV_MAX	(max %d)	(anginirpaaq %d)	medium	angi- big + -nirpaaq (most); "the highest of the day"
+fw:T_UV_INDEX	UV index	`UV`	medium	UV kept as is
+fw:T_LOW	Low	Mikijuq	medium	mikijuq = small / low
+fw:T_MODERATE	Moderate	Akunnganiittuq	low	"in between"
+fw:T_HIGH	High	Angijuq	medium	angijuq = big / high
+fw:T_VERY_HIGH	Very high	Angijualuk	medium	angijuq + -aluk (very)
+fw:T_EXTREME	Extreme	Ulurianaqtuq	medium	ulurianaqtuq = dangerous
+fw:T_MOON	Moon	Taqqiq	high	Tusaalanga glossary: taqqiq = moon; month
+fw:T_MOON_NEW	New moon	Nutaaq	medium	"new" (the row label already says taqqiq, moon)
+fw:T_MOON_WAX_CR	Waxing crescent	Angilliqtuq	low	"growing"
+fw:T_MOON_FIRST_Q	First quarter	Avvanga	medium	"its half"
+fw:T_MOON_WAX_GIB	Waxing gibbous	Angilliqtualuk	low	"growing, more than half"
+fw:T_MOON_FULL	Full moon	Tatattuq	medium	"full"
+fw:T_MOON_WAN_GIB	Waning gibbous	Mikilliqtualuk	low	"shrinking, more than half"
+fw:T_MOON_LAST_Q	Last quarter	Avvanga kingulliq	low	"its half, the later one"
+fw:T_MOON_WAN_CR	Waning crescent	Mikilliqtuq	low	"shrinking"
+fw:T_AIR_QUALITY	Air quality	Anirsaq	low	anirsaq = air one breathes. Shortened: "silaup salummaninga" wrapped in the 160 px label column of the extras page
+fw:T_AQI_GOOD	Good	Piujuq	high	piujuq = good
+fw:T_AQI_MODERATE	Moderate	Naammaktuq	medium	naammak- = acceptable, enough
+fw:T_AQI_SENSITIVE	Sensitive groups	Aanniaqtunut	low	"for those who are sick"
+fw:T_AQI_UNHEALTHY	Unhealthy	Aanniarnaqtuq	low	"makes one sick"
+fw:T_AQI_VERY_UNH	Very unhealthy	Aanniarnaqtualuk	low	+ -aluk (very)
+fw:T_AQI_HAZARDOUS	Hazardous	Ulurianaqtuq	medium	dangerous
+fw:T_POLLEN	Pollen	`Pollen`	low	no term found; shown only in Europe
+fw:T_POLLEN_ALDER	Alder	`Alder`	low	no term found; shown only in Europe
+fw:T_POLLEN_BIRCH	Birch	`Birch`	low	no term found; shown only in Europe
+fw:T_POLLEN_GRASS	Grass	Ivik	medium	ivik = grass
+fw:T_POLLEN_RAGWEED	Ragweed	`Ragweed`	low	no term found; shown only in Europe
+fw:T_WX_CLEAR	Clear sky	Silaqqiqtuq	high	Tusaalanga glossary: silaqqiqtuq = clear skies
+fw:T_WX_MAINLY_CLEAR	Mainly clear	Silaqqiqtuinnaq	low	clear skies + -innaq (mostly)
+fw:T_WX_PARTLY	Partly cloudy	Nuvujaqaqtuq	medium	Tusaalanga glossary: nuvuja = cloud; -qaq- = there are
+fw:T_WX_OVERCAST	Overcast	Nuvujajuq	high	Tusaalanga glossary: nuvujajuq = cloudy
+fw:T_WX_FOG	Fog	Tatsiqtuq	high	Tusaalanga glossary: tatsiqtuq = foggy
+fw:T_WX_DRIZZLE	Drizzle	Silalukuluk	medium	silalu- + -kuluk (small)
+fw:T_WX_FRZ_DRIZZLE	Freezing drizzle	Silalukuluk quaqtuq	low	Tusaalanga glossary: quaqtuq = frozen
+fw:T_WX_LIGHT_RAIN	Light rain	Silaluttukuluk	low	raining + -kuluk (a little)
+fw:T_WX_RAIN	Rain	Silaluttuq	high	Tusaalanga glossary: silaluttuq = raining
+fw:T_WX_HEAVY_RAIN	Heavy rain	Silaluttualuk	medium	raining + -aluk (a lot)
+fw:T_WX_FRZ_RAIN	Freezing rain	Silaluk quaqtuq	low	rain + frozen
+fw:T_WX_LIGHT_SNOW	Light snow	Qanniqtukuluk	low	snowing + -kuluk (a little)
+fw:T_WX_SNOW	Snow	Qanniqtuq	high	Tusaalanga glossary: qanniqtuq = snowing
+fw:T_WX_HEAVY_SNOW	Heavy snow	Qanniqtualuk	medium	snowing + -aluk (a lot)
+fw:T_WX_SNOW_GRAINS	Snow grains	Qannikuluit	low	small snowflakes
+fw:T_WX_RAIN_SHOWERS	Rain showers	Silaluttuq	medium	same as rain (showers not distinguished)
+fw:T_WX_SNOW_SHOWERS	Snow showers	Qanniqtuq	medium	same as snow (showers not distinguished)
+fw:T_WX_STORM	Thunderstorm	Kalliqtuq	medium	kalliq = thunder
+fw:T_WX_STORM_HAIL	Thunderstorm, hail	Kalliqtuq, natatqurnaq	low	hail word uncertain (natatqurnaq?)
+fw:T_STATUS	Status	Qanuilinganinga	high	Microsoft Inuktitut terminology (Pirurvik): status
+fw:T_STABLE	Stable	Aulajjuittuq	low	"does not move" for the stable channel
+fw:T_BETA	Beta	`Beta`	medium	kept as is
+fw:T_WIFI_UP	Wi-Fi %d dBm  ·  %s  ·  up %s	`Wi-Fi` %d `dBm`  ·  %s  ·  %s	medium	the word for "up" (aulajuq) was dropped: the line wrapped on the status page; the last value is the uptime
+fw:T_WIFI_OFFLINE	Wi-Fi offline  ·  up %s	`Wi-Fi` kasuujjaaqsimajuq  ·  %s	medium	offline = kasuujjaaqsimajuq (Microsoft); uptime without a word, like the line above
+fw:T_AGE_S	%d s	%d `s`	high	units kept
+fw:T_AGE_MIN	%d min	%d `min`	high	units kept
+fw:T_AGE_H	%d h %02d	%d `h` %02d	high	units kept
+fw:T_AGE_D	%d d	%d ulluit	medium	Tusaalanga glossary: ulluq = day
+fw:T_SVC_NOT_USED	not used yet	atuqtaunngittuq suli	low	"not used yet"
+fw:T_SVC_WAIT_SYNC	waiting for sync	utaqqijuq	medium	Tusaalanga glossary: utaqqijuq = waiting
+fw:T_SVC_CHECKING	checking...	qaujigiaqtuq...	medium	Microsoft Inuktitut terminology (Pirurvik): check = qaujigiarli
+fw:T_SVC_IN_A_ROW	%d in a row	%d tuglirijut	low	"%d in a row" (failures)
+fw:T_SVC_OK_AGO	OK %s ago	`OK` %s qaangiqtuq	low	"OK, %s ago"
+fw:T_SVC_NEVER_OK	never OK	aturunnanngittuq	low	"could not be used"
+fw:T_SVC_OFFERS	offers %s	%s atuinnaq	medium	Microsoft Inuktitut terminology (Pirurvik): available = atuinnaq
+fw:T_API_FORECAST	Forecast API v1	`API v1` silamut	low	"API v1 for the weather"
+fw:T_API_AIR	Air quality API v1	`API v1` anirsaq	low	air quality API; shortened to fit the status line
+fw:T_API_TILES	tiles	nunannguat	medium	nunannguaq = map
+fw:T_API_UPDATES	updates	nutaaruriarniit	medium	Microsoft Inuktitut terminology (Pirurvik): update = nutaaruriarli
+fw:T_ERR_CONNECT	Can't connect	Kasurunnanngittuq	medium	Microsoft Inuktitut terminology (Pirurvik): connect = kasurli; -runnanngit- cannot
+fw:T_ERR_TIMEOUT	Timed out	Piviksaq qaangiqtuq	low	"the time passed"
+fw:T_ERR_NO_REPLY	No reply	Kiujjuittuq	medium	"does not answer"
+fw:T_ERR_BAD_REPLY	Bad response	Kiujjutaa tammaqtuq	low	Microsoft Inuktitut terminology (Pirurvik): error = tammarniq
+fw:T_ERR_EMPTY	Empty reply	Kiujjutaa imaqanngittuq	low	"its answer is empty"
+fw:T_WHATS_NEW	What's new	Nutaat	medium	"new things"
+fw:T_PILL_UPDATE	Update %s	Nutaaq %s	medium	"new %s" (pill on the weather screen)
+fw:T_PILL_UPDATING	Updating %d%%	Nutaaruriaqtuq %d%%	medium	Microsoft Inuktitut terminology (Pirurvik): update
+fw:T_UP_DOWNLOADING	Downloading... keep it plugged in	Minarijuq... kasuqsimatillugu	low	Microsoft Inuktitut terminology (Pirurvik): download = minarili; keep plugged in
+fw:T_UP_INSTALLED	Installed. Restarting...	Ilitaujuq. Ikitikkannirtuq...	medium	Microsoft Inuktitut terminology (Pirurvik): install = ilili, restart = ikitikkannirli
+fw:T_UP_KEPT	Your settings are kept	Aaqqissimautitit pigijaujut	low	Microsoft Inuktitut terminology (Pirurvik): setting = aaqqissimaut
+fw:T_UP_DONE	Updated	Nutaarurijuq	medium	Microsoft Inuktitut terminology (Pirurvik): update
+fw:T_UP_BUSY	Updating	Nutaaruriaqtuq	medium	Microsoft Inuktitut terminology (Pirurvik): update
+fw:T_UP_AVAILABLE	Update available	Nutaaq atuinnaq	medium	"new, available"
+fw:T_UP_YOU_HAVE	%s  ·  you have %s	%s  ·  pigijait %s	low	"you have %s"
+fw:T_INSTALL	Install	Ilili	high	Microsoft Inuktitut terminology (Pirurvik): install
+fw:T_OTA_NO_SITE	Can't reach the update site	Nutaarurivik kasurunnanngittuq	low	update site unreachable
+fw:T_OTA_NO_IMAGE	No app image in the manifest	Ilitaksaq piqanngittuq	low	no app image
+fw:T_OTA_NO_START	Download failed to start	Minarniq aulalaunngittuq	low	Microsoft Inuktitut terminology (Pirurvik): download = minarniq
+fw:T_OTA_WRONG	Wrong firmware image	Ilitaksaq tammaqtuq	low	wrong image
+fw:T_OTA_INTERRUPTED	Download interrupted	Minarniq nuqqaqtuq	low	download stopped
+fw:T_OTA_INVALID	Downloaded image is invalid	Minaq atujunnanngittuq	low	Microsoft Inuktitut terminology (Pirurvik): download (noun) = minaq
+fw:T_DONE	Done	Pijariiqtuq	medium	"it is finished"; the longer pijariiqsimajuq was clipped by the circle at the top of Settings
+fw:T_SEC_SCREEN	SCREEN	Igalaujaq	medium	Microsoft Inuktitut terminology (Pirurvik): full screen = igalaujalimaaq
+fw:T_SEC_UNITS	UNITS	Uuktuutit	low	"measures"
+fw:T_SEC_MORE	MORE	Suli	high	Microsoft Inuktitut terminology (Pirurvik): more = suli
+fw:T_DIM_QUIET	Dim when quiet	Taanikilliq	low	"dims"; the full "taanikilliq nipaittumi" (dim when quiet) ran into the switch
+fw:T_WAKE_PICKUP	Wake on pick-up	Kivittaugaangat	low	"when it is lifted" (wakes); "ikitsiq kivittaugaangat" ran into the switch
+fw:T_TIMING	Timing	Piviksait	low	"set times" (dim / off delays)
+fw:T_T_SHORT	Short	Naittut	medium	naittuq = short
+fw:T_T_NORMAL	Normal	Naammaktut	low	"suitable / normal"
+fw:T_T_LONG	Long	Takijut	medium	takijuq = long
+fw:T_T_CUSTOM	Custom	Namminiq	medium	Microsoft Inuktitut terminology (Pirurvik): manual = namminiq kamagilugu
+fw:T_TEMPERATURE	Temperature	Uunarniq	medium	temperature (warmth)
+fw:T_WIND	Wind	Anuri	medium	wind
+fw:T_CLOCK	Clock	Ikarraat	low	Tusaalanga glossary: ikarraaq = hour
+fw:T_LANGUAGE	Language	Uqausiq	high	Microsoft Inuktitut terminology (Pirurvik): language = pilirijjutinut uqausiq
+fw:T_SEC_SOUND	SOUND	Nipi	high	nipi = sound
+fw:T_CHIME	Alert chime	Inirtiruti nipi	medium	Microsoft Inuktitut terminology (Pirurvik): warning = inirtiruti
+fw:T_CHIME_OFF	Off	Qamittuq	medium	Microsoft Inuktitut terminology (Pirurvik): turn off = qamilli
+fw:T_CHIME_RED	Red	Aupaluktut	high	aupaluktuq = red
+fw:T_CHIME_ORANGE	Orange+	`Orange`+	low	no confident word for orange
+fw:T_CHIME_ALL	All	Tamarmik	high	tamarmik = all
+fw:T_VOLUME	Volume	Nipiqquqtusigiarut	high	Microsoft Inuktitut terminology (Pirurvik): volume
+fw:T_TEST_SOUND	Test the chime	Naalaguk nipi	medium	"listen to the sound"
+fw:T_PHONE	More on your phone	Suli uqaalautiralaarmi	medium	Microsoft Inuktitut terminology (Pirurvik)/Tusaalanga glossary: mobile phone = uqaalautiralaaq
+fw:T_WIFI_NETWORK	Wi-Fi network	`Wi-Fi` kasuqatigiit	medium	Microsoft Inuktitut terminology (Pirurvik): network = kasuqatigiitsimajut
+fw:T_UPDATES	Updates	Nutaat	low	"new things"; "nutaaruriarniit" ran into the "Check now >" value on the Settings row
+fw:T_RESTART	Restart	Ikitikkannirli	high	Microsoft Inuktitut terminology (Pirurvik): restart
+fw:T_CHECK_NOW	Check now >	Qaujigiarli >	high	Microsoft Inuktitut terminology (Pirurvik): check = qaujigiarli
+fw:T_CHECKING	Checking...	Qaujigiaqtuq...	medium	Microsoft Inuktitut terminology (Pirurvik): check
+fw:T_UP_TO_DATE	Up to date	Nutaaujuq	medium	"is new / current"
+fw:T_FAILED	Failed	Tammaqtuq	medium	Microsoft Inuktitut terminology (Pirurvik): error = tammarniq
+fw:T_TAP_AGAIN	Tap again	Naqikkannirli	medium	Microsoft Inuktitut terminology (Pirurvik): tap = naqilli; -kanniq- again
+fw:T_RESTARTING	Restarting...	Ikitikkannirtuq...	medium	Microsoft Inuktitut terminology (Pirurvik): restart
+fw:T_BRIGHTNESS	Brightness %d%%	Qaumaninga %d%%	high	Microsoft Inuktitut terminology (Pirurvik): brightness = qaumaninga
+fw:T_SETTINGS	Settings	Aaqqissimautit	medium	Microsoft Inuktitut terminology (Pirurvik): setting = aaqqissimaut
+fw:T_OV_HELP	%s\nScan with your phone and accept\nthe certificate warning.\n\nLong-press for Wi-Fi setup\nTap to close	%s\nAjjiliurli uqaalautiralaarmut ammalu\ninirtiruti angiqtauli.\n\nNaqillugu naqimmili: `Wi-Fi`\nNaqilli: matuli	low	Microsoft Inuktitut terminology (Pirurvik): scan = ajjiliurli, press and hold = naqillugu naqimmili, tap = naqilli, close = matuli
+fw:T_WIFI_RECEIVED	Wi-Fi received	`Wi-Fi` pijaujuq	low	"Wi-Fi received"
+fw:T_WIFI_GOT	Got \"%s\" from your phone.\nRestarting...	"%s" uqaalautiralaarmit.\nIkitikkannirtuq...	low	"%s" from the phone, restarting
+fw:T_WIFI_DPP_FAIL	That didn't work. Scan again,\nor swipe right for other phones.	Tammaqtuq. Ajjiliukkannirli,\nuvvaluunniit nirululli taliqpimut.	low	uvvaluunniit = or; taliqpik = right
+fw:T_WIFI_SETUP	Wi-Fi setup	`Wi-Fi` aaqqissimautit	medium	Microsoft Inuktitut terminology (Pirurvik): setting
+fw:T_WIFI_JOIN	Scan to join %s\n(password %s).\nAndroid? Swipe left to skip\nthe password	Ajjiliurli kasurlugu %s\n(isirut %s).\n`Android`? Nirululli saumimut\nisirut piiqlugu	low	Microsoft Inuktitut terminology (Pirurvik): password = isirut, swipe = nirululli; saumik = left
+fw:T_WIFI_DPP_TITLE	Android: Easy Connect	`Android: Easy Connect`	high	product names
+fw:T_WIFI_DPP_HOW	In Wi-Fi settings, tap the QR icon\nand scan this.\nYour phone sends its network.\nSwipe right for other phones	`Wi-Fi` aaqqissimautini naqilli `QR`\nammalu ajjiliurlugu.\nUqaalautiralaaq kasuqatigiinnik tuniijuq.\nNirululli taliqpimut: asingit	low	tuniijuq = gives; asingit = the others
+fw:T_WIFI_DPP_NONE	Easy Connect isn't available.\nSwipe right for other phones.	`Easy Connect` atuinnaunngittuq.\nNirululli taliqpimut: asingit.	low	Microsoft Inuktitut terminology (Pirurvik): available = atuinnaq
+fw:T_TAP_CANCEL	Tap to cancel	Naqilli: qujanaarli	medium	Microsoft Inuktitut terminology (Pirurvik): cancel = qujanaarli
+fw:T_WEATHER	Weather	Sila	high	Tusaalanga glossary: sila = weather
+fw:T_STARTING	Starting...	Pigiaqtuq...	medium	"starting"
+fw:T_CONNECTING	Connecting to\n%s\n\nLong-press for Wi-Fi setup	Kasuqtuq\n%s\n\nNaqillugu naqimmili: `Wi-Fi`	medium	Microsoft Inuktitut terminology (Pirurvik): connect
+fw:T_FETCHING	Fetching forecast...\n\nLong-press for Wi-Fi setup	Silamik qaujisaqtuq...\n\nNaqillugu naqimmili: `Wi-Fi`	low	"looking up the weather"
+fw:T_CONNECTED	Connected	Kasuqsimajuq	high	Microsoft Inuktitut terminology (Pirurvik): online = kasuqsimajuq
+fw:T_CANT_REACH	Can't reach %s\n(still trying)	%s kasurunnanngittuq\n(suli piliriaqtuq)	low	"cannot reach %s (still trying)"
+fw:T_FIRST_SETUP	First-time setup	Sivulliq aaqqiksuiniq	low	"first arrangement"
+fw:T_RADAR	Radar	`Radar`	medium	kept as is
+fw:T_RADAR_AT	Radar %s  ·  %s	`Radar` %s  ·  %s	medium	
+fw:T_RADAR_NOTIME	Radar  ·  %s	`Radar`  ·  %s	medium	
+fw:T_PAST_3H	Past 3 hours  ·  tap to stop	3 ikarraat qaangiqtut  ·  naqilli nuqqarlugu	low	"past 3 hours, tap to stop"
+fw:T_LOADING_PAST	Loading past 3 h... %d/%d	3 ikarraat... %d/%d	low	loading the last 3 hours
+fw:T_NO_WIFI	No Wi-Fi	`Wi-Fi` piqanngittuq	medium	"no Wi-Fi"
+fw:T_LOADING_RADAR	Loading radar...	`Radar`... utaqqiritsi	low	
+fw:T_RADAR_NA	Radar unavailable	`Radar` atuinnaunngittuq	medium	Microsoft Inuktitut terminology (Pirurvik): available = atuinnaq
+fw:T_PREP_MAPS	Preparing maps	Nunannguat upalungaijaqtut	low	upalungaiji- = prepare
+fw:T_PREP_PROGRESS	Downloading radar maps\nzoom level %d of %d\n\n%d / %d tiles	Nunannguat minarijut\n%d / %d\n\n%d / %d nunannguat	low	zoom level x of y, tiles x of y
+fw:T_LOADING_MAP	Loading map %d/%d	Nunannguaq %d/%d	medium	
+fw:T_MAPS_LOADING	Maps still downloading	Nunannguat suli minarijut	medium	Microsoft Inuktitut terminology (Pirurvik): download
+fw:T_ZOOM_CLOSEST	Closest zoom	Angilligiarunnanngittuq	medium	"cannot zoom in more"
+fw:T_ZOOM_WIDEST	Widest zoom	Mikilligiarunnanngittuq	medium	"cannot zoom out more"
+fw:T_ZOOM_IN	Zoom in	Angilligiarli	high	Microsoft Inuktitut terminology (Pirurvik): zoom in
+fw:T_ZOOM_OUT	Zoom out	Mikilligiarli	high	Microsoft Inuktitut terminology (Pirurvik): zoom out
+web:title	Weather display	Silamut saqqijaut	low	"weather display" (saqqijaut = shower/display device)
+web:places	Places	Iniit	high	Tusaalanga glossary: ini = place
+web:placesHelp	Tap a place to change it. On the display, drag up or down on the weather screen to switch.	Ini naqilli asijjirlugu. Saqqijaummi, silaup igalaujaani nusuarli qulimut uvvaluunniit atimut asianut ikaarlugu.	low	Microsoft Inuktitut terminology (Pirurvik): tap = naqilli, drag = nusuarli; qulimut = up, atimut = down
+web:addPlace	＋ Add a place	＋ Ini ilali	medium	Microsoft Inuktitut terminology (Pirurvik): add = ilali
+web:nameLabel	Name shown on the display	Atiq saqqijaummi	medium	Microsoft Inuktitut terminology (Pirurvik): name = atiq
+web:namePh	e.g. Cottage	assinga: Aujarvik	low	aujarvik = summer place / camp
+web:findCity	Find a city	Nunalik qinirli	medium	Tusaalanga glossary: nunalik = community; Microsoft Inuktitut terminology (Pirurvik): search = qinirli
+web:cityPh	e.g. Québec	assinga: Iqaluit	medium	example place name
+web:gps	📍 Use my phone's location	📍 Uqaalautiralaaq namiinninga	medium	Microsoft Inuktitut terminology (Pirurvik): location = namiivvik
+web:gpsNote1	Phone location only works on the secure page: 	Uqaalautiralaaq namiinninga atuinnaq mappigarmi pijjaiqsimajumi: 	low	Microsoft Inuktitut terminology (Pirurvik): page = mappigaq; protected = pijjaiqsimajuq
+web:gpsNote2	 (open it in your browser and accept the certificate warning).	 (matuirlugu ammalu inirtiruti angiqtauli).	low	open it and accept the warning
+web:coords	Coordinates	Namiinninga naasautit	low	"location numbers"
+web:lat	Latitude	`Latitude`	low	no term found
+web:lon	Longitude	`Longitude`	low	no term found
+web:cancel	Cancel	Qujanaarli	high	Microsoft Inuktitut terminology (Pirurvik): cancel
+web:save	Save	Jagajjairli	high	Microsoft Inuktitut terminology (Pirurvik): save
+web:delPlace	Delete this place	Ini una piirli	medium	Microsoft Inuktitut terminology (Pirurvik): delete = piirli
+web:units	Units	Uuktuutit	low	"measures"
+web:language	Language	Uqausiq	high	Microsoft Inuktitut terminology (Pirurvik): language
+web:temperature	Temperature	Uunarniq	medium	temperature (warmth)
+web:wind	Wind	Anuri	medium	wind
+web:clock	Clock	Ikarraat	low	Tusaalanga glossary: ikarraaq = hour
+web:clock24	24-hour (14:45)	24 ikarraat (14:45)	medium	
+web:clock12	12-hour (2:45 PM)	12 ikarraat (2:45 `PM`)	medium	
+web:unitsNote	Changes apply on the display right away.	Asijjiqsimajut atuliqtut saqqijaummi maanna.	low	Microsoft Inuktitut terminology (Pirurvik): apply = atuliqtilli
+web:presTitle	Screen & presence	Igalaujaq ammalu inuit	low	"screen and people"
+web:calibrate	🎙️ Calibrate background (stay quiet 5 s)	🎙️ Nipiit uuktuqsiurli (nipaillutit 5 `s`)	low	"measure the sounds (be quiet 5 s)"
+web:dimQuiet	Dim and turn off the screen when the room is quiet	Taanikilligiarli ammalu qamilli igalaujaq nipaittumi	low	Microsoft Inuktitut terminology (Pirurvik): dim, turn off
+web:motionWake	Wake up when the display is picked up or moved	Ikilli saqqijaut kivittaugaangat	low	Microsoft Inuktitut terminology (Pirurvik): turn on = ikilli; kivit- = lift
+web:pickSens	Pick-up sensitivity	Kivittauniup pituinnaunginninga	low	Microsoft Inuktitut terminology (Pirurvik): sensitivity = pituinnaunginninga
+web:sensHigh	High: a firm bump on the table wakes it	Angijuq: nirraliqtuq ikitsijuq	low	"high: a knock wakes it"
+web:sensNormal	Normal: picking it up or tilting it	Naammaktuq: kivittaugaangat	low	"normal: when lifted"
+web:sensLow	Low: only a clear lift	Mikijuq: kivittaualuugaangat taima	low	"low: only when clearly lifted"
+web:timingPreset	Timing preset	Piviksait	low	"set times"
+web:pTesting	Testing: dim 10 s, off 30 s	Uuktuut: 10 `s` · 30 `s`	low	test preset: dim 10 s, off 30 s
+web:pShort	Short: dim 2 min, off 15 min	Naittut: 2 `min` · 15 `min`	medium	dim / off times
+web:pNormal	Normal: dim 10 min, off 60 min	Naammaktut: 10 `min` · 60 `min`	low	dim / off times
+web:pLong	Long: dim 30 min, off 3 h	Takijut: 30 `min` · 3 `h`	medium	dim / off times
+web:pCustom	Custom	Namminiq	medium	Microsoft Inuktitut terminology (Pirurvik): manual
+web:dimAfter	Dim after (quiet)	Taanikilligiarli (nipaittumi)	low	Microsoft Inuktitut terminology (Pirurvik): dim
+web:offAfter	Turn off after (total quiet)	Qamilli (nipaittumi tamarmik)	low	Microsoft Inuktitut terminology (Pirurvik): turn off
+web:wakeAfter	Wake after (s of sound)	Ikilli (`s` nipimik)	low	seconds of sound
+web:sensDb	Sensitivity (dB)	Pituinnaunginninga (`dB`)	medium	Microsoft Inuktitut terminology (Pirurvik): sensitivity
+web:bright	Brightness (%)	Qaumaninga (%)	high	Microsoft Inuktitut terminology (Pirurvik): brightness
+web:dimmed	Dimmed (%)	Taanikilliqsimajuq (%)	low	Microsoft Inuktitut terminology (Pirurvik): dim
+web:saveScreen	Save screen settings	Igalaujaup aaqqissimautinga jagajjairli	low	Microsoft Inuktitut terminology (Pirurvik): save, setting
+web:connectedTo	Connected to: 	Kasuqsimajuq: 	high	Microsoft Inuktitut terminology (Pirurvik): online
+web:scan	📶 Scan for networks	📶 Kasuqatigiit qinirli	medium	Microsoft Inuktitut terminology (Pirurvik): network, search
+web:scanAgain	📶 Scan again	📶 Qinikkannirli	medium	search again
+web:scanning	Scanning…	Qiniqtuq…	medium	searching
+web:netName	Network name	Kasuqatigiit atingat	medium	network name
+web:netPh	Pick one above or type it	Niruarli qulaaniittumit uvvaluunniit naqittaurlugu	low	Microsoft Inuktitut terminology (Pirurvik): choose = niruarli; keyboard = naqittaut
+web:password	Password	Isirut	high	Microsoft Inuktitut terminology (Pirurvik): password = isirut
+web:show	Show	Saqqilli	high	Microsoft Inuktitut terminology (Pirurvik): show = saqqilli
+web:hide	Hide	Iriqsili	low	hide
+web:showPw	Show password	Isirut saqqilli	medium	
+web:hidePw	Hide password	Isirut iriqsili	low	
+web:pwTip	Password saved on your phone? Copy it	Isirut uqaalautiralaarmiittuq? Ajjiliurli	low	
+web:pwTipList	<li><b>iPhone</b> (iOS 16+): Settings → Wi-Fi → tap <b>ⓘ</b> next to your network → tap <b>Password</b> (Face ID) → <b>Copy</b>, then come back here and paste.</li><li><b>Android</b> 10+: no typing needed. On the display's Wi-Fi setup screen, swipe left for <b>Easy Connect</b> and scan its code from your phone's Wi-Fi settings (the QR icon). Or Settings → Wi-Fi → your network → <b>Share</b>: the password is under the QR code.</li>	`<li><b>iPhone</b> (iOS 16+): Settings → Wi-Fi → ⓘ → <b>Password</b> (Face ID) → <b>Copy</b>.</li><li><b>Android</b> 10+: Easy Connect · Settings → Wi-Fi → <b>Share</b>.</li>`	low	steps kept with the phones' own (English) menu names; a reviewer could add Inuktitut instructions
+web:saveWifi	Save Wi-Fi & restart	`Wi-Fi` jagajjairli ammalu ikitikkannirli	medium	Microsoft Inuktitut terminology (Pirurvik): save, restart
+web:firmware	Firmware	Qarasaujaup pilirijjutinga	low	firmware (device program)
+web:installed	Installed: 	Ilitaujuq: 	medium	Microsoft Inuktitut terminology (Pirurvik): install
+web:updatesLbl	Updates	Nutaaruriarniit	medium	Microsoft Inuktitut terminology (Pirurvik): update
+web:chStable	Stable releases	Aulajjuittut	low	stable releases
+web:chBeta	Beta (release candidates)	`Beta`	medium	
+web:checkUpd	Check for updates	Nutaaruriarniit qaujigiarli	medium	Microsoft Inuktitut terminology (Pirurvik): check, update
+web:saved	Saved	Jagajjairsimajuq	medium	Microsoft Inuktitut terminology (Pirurvik): save
+web:notSaved	Not saved ({0})	Jagajjairsimanngittuq ({0})	medium	
+web:noReach	Could not reach the display	Saqqijaut kiujjuittuq	low	"the display does not answer"
+web:showing	Showing {0} on the display.	{0} saqqijaummi saqqiqtuq.	low	"{0} is showing on the display"
+web:newPlace	New place	Ini nutaaq	medium	new place
+web:editPlace	Edit {0}	{0} aaqqigiarli	high	Microsoft Inuktitut terminology (Pirurvik): edit = aaqqigiarli
+web:onScreen	On screen	Igalaujarmi	medium	on the screen
+web:mapHelp	Tap the map or drag the pin to the exact spot.	Nunannguaq naqilli uvvaluunniit kikiak nusuarli.	low	Microsoft Inuktitut terminology (Pirurvik): pin = kikiagli, drag = nusuarli
+web:mapNoNet	The map needs internet on this phone. Find a city, or enter the coordinates below.	Nunannguaq `internet`-mik pijariaqaqtuq. Nunalik qinirli uvvaluunniit naasautit naqittaurlugit.	low	
+web:failed	That didn't work.	Tammaqtuq.	medium	error
+web:delConfirm	Delete {0}?	{0} piirli?	medium	Microsoft Inuktitut terminology (Pirurvik): delete
+web:deleted	Deleted {0}.	{0} piiqsimajuq.	medium	
+web:cantRead	Could not read settings from the display	Aaqqissimautit atuqtaujunnanngittut	low	
+web:noNets	No networks found. Try again.	Kasuqatigiinnik nanisinngittuq. Qinikkannirli.	low	
+web:enterPw	Enter the password for {0}.	{0} isiruta naqittaurlugu.	low	
+web:openNet	{0} is an open network; no password needed.	{0} matuirsimajuq; isirut pijariaqanngittuq.	low	
+web:scanFail	Scan failed, try again.	Qiniqtuq tammaqtuq. Qinikkannirli.	low	
+web:myLocation	My location	Namiinninga	medium	Microsoft Inuktitut terminology (Pirurvik): location
+web:myPlace	My place	Iniga	medium	my place
+web:needSecure	Phone location needs the secure page (link above).	Namiinninga mappigarmi pijjaiqsimajumi atuinnaq.	low	
+web:gettingLoc	Getting your location…	Namiinninga qiniqtuq…	low	
+web:gotIt	Got it. Check the pin, then tap Save.	Nanijuq. Kikiak qaujigiarli, jagajjairlilu.	low	
+web:locUnavail	Location unavailable: {0}	Namiinninga atuinnaunngittuq: {0}	medium	
+web:cityPicked	{0}: move the pin if needed, then tap Save.	{0}: kikiak nusuarli, jagajjairlilu.	low	
+web:searchNoNet	City search needs internet on this phone.	Qiniqtuq `internet`-mik pijariaqaqtuq.	low	
+web:badCoords	Pick a spot on the map or enter valid coordinates.	Nunannguarmi ini niruarli uvvaluunniit naasautit naqittaurlugit.	low	
+web:savedUpdating	Saved. The display is updating.	Jagajjairsimajuq. Saqqijaut nutaaruriaqtuq.	medium	
+web:addedPlace	Added {0}. Drag up or down on the display to see it.	{0} ilaliqsimajuq. Saqqijaummi nusuarli qulimut uvvaluunniit atimut.	low	
+web:savedPlace	Saved {0}. Drag up or down on the display to see it.	{0} jagajjairsimajuq. Saqqijaummi nusuarli qulimut uvvaluunniit atimut.	low	
+web:saveFailed	Save failed.	Jagajjairniq tammaqtuq.	medium	
+web:chooseNet	Choose a network.	Kasuqatigiit niruarli.	medium	Microsoft Inuktitut terminology (Pirurvik): choose
+web:wifiSaved	Saved. The display is restarting.	Jagajjairsimajuq. Saqqijaut ikitikkannirtuq.	medium	
+web:stActive	Active	Aulajuq	medium	active
+web:stDim	Dimmed	Taanikilliqsimajuq	low	Microsoft Inuktitut terminology (Pirurvik): dim
+web:stOff	Screen off	Igalaujaq qamittuq	medium	Microsoft Inuktitut terminology (Pirurvik): turn off
+web:calibrating	Calibrating… {0} s	Uuktuqsiuqtuq… {0} `s`	low	
+web:noMic	No microphone	Nipiliurut piqanngittuq	low	no microphone
+web:brightNow	brightness {0}%	qaumaninga {0}%	high	Microsoft Inuktitut terminology (Pirurvik): brightness
+web:soundLine	Sound {0} dB · trigger {1} dB (background {2} + {3})	Nipi {0} `dB` · {1} `dB` ({2} + {3})	low	sound level, trigger, background
+web:quietFor	Quiet for {0} (dims at {1})	Nipaittuq {0} ({1})	low	quiet for, dims at
+web:wakeProg	Wake-up progress {0}% (needs {1} s of sound)	Ikitsiniq {0}% ({1} `s` nipimik)	low	
+web:movement	Movement {0} g · wakes at {1} g	Aulaniq {0} `g` · {1} `g`	low	movement, wake threshold
+web:calStart	Calibrating: stay quiet for 5 seconds…	Uuktuqsiuqtuq: nipaillutit 5 `s`…	low	
+web:calNA	Calibration unavailable.	Uuktuqsiurniq atuinnaunngittuq.	low	
+web:calFail	Calibration failed.	Uuktuqsiurniq tammaqtuq.	low	
+web:offLonger	"Turn off after" must be longer than "Dim after".	"Qamilli" takinirualuujariaqaqtuq "Taanikilligiarli"-mit.	low	
+web:savedDot	Saved.	Jagajjairsimajuq.	medium	
+web:presetFilled	Preset filled in. Tap Save to apply.	Piviksait ilisimaliqtut. Jagajjairli.	low	
+web:fwIdle	Checks for updates a minute after start-up, then every 6 hours.	Nutaaruriarniit qaujigiaqtuq ikarraaq 6 tamaan.	low	every 6 hours
+web:fwChecking	Checking…	Qaujigiaqtuq…	medium	
+web:fwUpToDate	Up to date{0}.	Nutaaujuq{0}.	medium	
+web:fwLatest	 (latest: {0})	 (kingulliq: {0})	medium	latest
+web:fwAvailable	Version {0} is available.	{0} atuinnaq.	medium	Microsoft Inuktitut terminology (Pirurvik): available
+web:fwDownloading	Downloading {0}… {1} %. Keep the display plugged in.	{0} minarijuq… {1} %. Saqqijaut kasuqsimatillugu.	low	
+web:fwDone	Installed. The display is restarting…	Ilitaujuq. Saqqijaut ikitikkannirtuq…	medium	
+web:fwFailed	Update check failed: {0}.	Qaujigiarniq tammaqtuq: {0}.	low	
+web:unknownErr	unknown error	tammarniq	medium	Microsoft Inuktitut terminology (Pirurvik): error
+web:installX	Install {0}	{0} ilili	high	Microsoft Inuktitut terminology (Pirurvik): install
+web:theUpdate	update	nutaaruriarniq	medium	
+web:installConfirm	Install {0}? The display restarts when it is done; settings are kept.	{0} ilili? Saqqijaut ikitikkannirniaqtuq; aaqqissimautit pigijaujut.	low	
+web:noAnswer	The display did not answer	Saqqijaut kiunngittuq	low	
+web:whatsNew	What's new	Nutaat	medium	
+web:pageError	Page error: {0} (line {1})	Tammarniq: {0} ({1})	medium	
+web:soundTitle	Sound	Nipi	high	sound
+web:chimeFor	Chime for new weather alerts	Nipi silamut inirtirutinut nutaanut	low	Microsoft Inuktitut terminology (Pirurvik): warning = inirtiruti
+web:lvOff	Off	Qamittuq	medium	
+web:lvRed	Red alerts only	Aupaluktut taima	medium	red only
+web:lvOrange	Orange and red alerts	`Orange` ammalu aupaluktut	low	
+web:lvAll	All alerts (yellow and statements too)	Tamarmik	high	all
+web:volume	Volume	Nipiqquqtusigiarut	high	Microsoft Inuktitut terminology (Pirurvik): volume
+web:quietFrom	Quiet from	Nipaittuq	low	quiet from
+web:quietTo	Until	Tikillugu	low	until
+web:testChime	🔔 Test the chime	🔔 Naalaguk nipi	medium	
+web:quietNote	No chime during quiet hours, except for red alerts. Each alert chimes once.	Nipaittumi nipiqanngittuq, aupaluktut kisiani. Inirtiruti atausiaq nipiqaqtuq.	low	
+web:noSpeaker	No speaker found on this display.	Nipiqaut piqanngittuq.	low	Microsoft Inuktitut terminology (Pirurvik): speaker = nipiqaut

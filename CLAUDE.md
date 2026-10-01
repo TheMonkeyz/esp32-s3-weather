@@ -58,6 +58,10 @@ Windows build gets both from `main/idf_component.yml`. `components/dns_server` *
 - **Settings page tests:** `cd tools/webtest && npm test` (Playwright + mock display, see docs/TESTING.md §5). Run
   them and look at `shots/` before building firmware with a page change. In the first session a headless test
   proved the page's JS was fine, which pointed at the device.
+- **Translations: check fit with snapshots, not by guessing.** The Inuktitut draft (docs/translations/) looked fine
+  in a width estimate but six labels collided or wrapped on the board. Set the language with `POST /api/units`,
+  snapshot every screen (including `settings1..3`, `phone`, `setup0/1`), shorten in the TSV, regenerate, reflash.
+  Unit letters (`s`, `min`, `h`) must be in backticks in `iu.tsv`, or the converter turns them into syllabics ("56 ᐢ").
 - **Always check file transfers:** `md5sum` the firmware on the PC against the build output. **Twice**, pushing a
   rebuilt file from the *same* staging path delivered the *previous* version. Use a fresh staging directory for every
   push and compare checksums before writing `flash.request`.
