@@ -104,6 +104,11 @@ Windows build gets both from `main/idf_component.yml`. `components/dns_server` *
     `lv_event_get_current_target()` and ignore events whose target is someone else.
 17. **Sending non-ASCII through curl from Git Bash** mangles it (Montréal stored as Latin-1). Put the JSON in a file
     (`printf` with `\u00e9`) and use `--data-binary @file`; a phone sends proper UTF-8.
+18. **A full-size `lv_arc` is a full-size touch target:** on the Settings screen it caught every tap and drag (rows,
+    Done, scrolling did nothing; only "brightness" appeared in the log). Draw arcs non-clickable and give them a
+    separate touch zone. Snapshots can't show this: ask the user to tap through a new screen during a log window.
+19. **Sliders must act while dragging:** the user expects the screen to change under the finger
+    (`presence_preview_brightness()`); save on release.
 
 - Internal RAM ran out silently (10 KB free, 0 KB min ever) because LVGL's small allocations went to internal RAM
   first. Fixed with `lvgl_mem.c` (LVGL heap in PSRAM). Font kerning cost 71% of render time; fonts now use
@@ -151,6 +156,9 @@ Windows build gets both from `main/idf_component.yml`. `components/dns_server` *
   being called done.
 - Screen-to-screen moves should feel like the hourly view: follow the finger, snap, bounce at the ends, no
   wrap-around. Reuse `pager.c` for that.
+- Sliders follow the finger's horizontal movement within a band, even on the round screen (not drag-along-an-arc).
+- Rows that open something need an obvious label and a `>` (a bare "QR" wasn't clear); a screen opened from
+  Settings closes back to Settings.
 
 ## Useful facts
 

@@ -128,6 +128,24 @@ void presence_get_status(presence_status_t *st)
     st->motion_thr = motion_thr;
 }
 
+// Brightness while a finger drags the settings screen's slider: applied at once (the task skips its 1 s fade),
+// not saved; presence_set_config() saves the final value.
+static volatile int preview_pct = -1;
+static volatile TickType_t preview_until;
+void presence_preview_brightness(int pct)
+{
+    taskENTER_CRITICAL(&mux);
+    cfg.bright_pct = pct < 5 ? 5 : pct > 100 ? 100 : pct;
+    taskEXIT_CRITICAL(&mux);
+    preview_pct = cfg.bright_pct;
+    preview_until = xTaskGetTickCount() + pdMS_TO_TICKS(300);
+    state = PRESENCE_ACTIVE;
+    display_lock(-1);                                    // right away (called from the LVGL task)
+    display_brightness((uint8_t)(preview_pct * 255 / 100));
+    display_unlock();
+    cur_pct = preview_pct;
+}
+
 bool presence_motion_wake(void) { return motion_wake; }
 
 void presence_set_motion(bool on, float threshold_g)
@@ -314,7 +332,12 @@ static void presence_task(void *arg)
                      level_db, c.baseline_db + c.margin_db);
             last_state = state;
         }
-        apply_brightness(state == PRESENCE_ACTIVE ? c.bright_pct : state == PRESENCE_DIM ? c.dim_pct : 0);
+        if (preview_pct >= 0 && (int)(preview_until - xTaskGetTickCount()) > 0) {
+            // a finger is on the brightness slider: presence_preview_brightness() sets it, no fade here
+        } else {
+            preview_pct = -1;
+            apply_brightness(state == PRESENCE_ACTIVE ? c.bright_pct : state == PRESENCE_DIM ? c.dim_pct : 0);
+        }
 
         if (++log_tick % 50 == 0) {                            // every 5 s
             ESP_LOGI(TAG, "level %.1f dB (threshold %.1f), score %.1f/%.1f, quiet %.0f s, motion peak %.3f g",

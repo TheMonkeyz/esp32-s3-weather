@@ -16,11 +16,12 @@ USB-C data cable). Ready-made images are also attached to each
 |---|---|---|
 | **Status** (swipe right twice) | Firmware version, update channel and app slot; Wi-Fi signal, IP address and uptime; every online service the display uses (Open-Meteo forecast and air quality, Environment Canada alerts and radar, OpenStreetMap, GitHub Pages for updates, the time server) with a coloured dot, when it was last contacted, how long it took, or why it failed. Opening the page checks any service not contacted in the last 5 min | Swipe **left** to go back; drag to scroll |
 | **Extras** (swipe right) | Date; sun arc from sunrise to sunset with the sun at the current time (daylight length, or next sunrise at night); UV index now and today's max; moon phase with picture and % lit; air quality (US AQI); pollen when available (Open-Meteo only has it for Europe, so the row is hidden in Canada) | Swipe **left** to go back, **right** for the status page |
-| **Weather** | Clock, city, icon and temperature, conditions, feels-like / humidity / wind, rain or snow starting or stopping within 2 h ("Rain around 14:45"), 3-day high/low with icons. With several places, one page per place (dots on the right edge), each with its own local time | Drag **up/down** to change place (the page follows the finger, snaps, and bounces at the first and last). **Tap a day** of the forecast for its hourly view. Swipe **right** for the extras page, **left** for the radar. **Long-press** for the settings QR code; **long-press again** for Wi-Fi setup |
+| **Weather** | Clock, city, icon and temperature, conditions, feels-like / humidity / wind, rain or snow starting or stopping within 2 h ("Rain around 14:45"), 3-day high/low with icons. With several places, one page per place (dots on the right edge), each with its own local time | Drag **up/down** to change place (the page follows the finger, snaps, and bounces at the first and last). **Tap a day** of the forecast for its hourly view. Swipe **right** for the extras page, **left** for the radar. **Long-press** for the Settings screen |
 | **Radar** | Area around the location: dimmed OpenStreetMap map, Environment Canada radar, range ring, clock, radar time and radius | **Tap** to play the last 3 h (15 frames, 3 fps), looping for a minute (new radar images join the loop); tap again to stop. Swipe **down** to zoom in, **up** to zoom out (≈25 km up to ≈1,550 km radius in 7 doubling steps, animated). Swipe **right** to go back |
 | **Weather alerts** | Environment Canada watches, warnings, advisories and statements for the location: a pill in the alert colour replaces the city name (`+1` if there are more). Details: map of the affected region on OpenStreetMap, until when, area and text | **Tap the top half** of the weather screen for details; drag to scroll; tap to close |
 | **Hourly view** | 7 days (the weather screen shows the first 3). Weekday, conditions and high/low; the day's temperature graph (0 to 24 h, a line every hour, high and low marked; today's past hours greyed with a dot at now); one row per hour: time, icon, temperature, chance of rain, wind. Today starts at the current hour ("Now") | Drag **up/down** to scroll hours. Drag **left/right** to change day (the page follows the finger and snaps). **Tap** to close |
 | **Settings page** (phone) | Location: *Use my phone's location* (GPS), city search, or manual lat/lon. Units: °C/°F, wind in km/h, mph or m/s (miles on the radar with mph), 24- or 12-hour clock. Screen & presence (live sound meter, calibration, delays, brightness). Wi-Fi network | Opened from the QR code; served over HTTPS |
+| **Settings** (long-press the weather screen) | Screen: dim when quiet, wake on pick-up, timing (Short / Normal / Long), brightness. Units: temperature, wind, clock. More: the phone settings QR code, Wi-Fi network, check for updates, restart | Tap a row to switch or change it (saved at once, same settings as the phone page). Slide along the bottom band for brightness (it follows the finger). **Done** or swipe **right** to close. Restart needs two taps |
 | **Presence dimming** | The microphones act as a presence sensor: quiet room → dim → screen off; sustained sound (not a single bang), a touch, or picking the display up (motion sensor) → back on | Configured on the settings page: timing, sound sensitivity, wake on pick-up (on/off, High/Normal/Low, with a live movement meter) |
 
 Data sources:
@@ -95,7 +96,9 @@ The two onboard microphones measure the room's sound level every 0.1 s.
 
 ## Changing settings later
 
-- **Location:** long-press the weather screen, scan the **Settings** QR code and open the page. Your phone must be on
+- **Quick settings on the display:** long-press the weather screen (see the Settings row above). Places, the Wi-Fi
+  password, custom timings and sound calibration are on the phone page.
+- **Location:** long-press the weather screen, tap **More on your phone**, scan the QR code and open the page. Your phone must be on
   the same Wi-Fi. The phone will warn that the certificate isn't trusted. That's expected, because the display signs
   its own certificate; choose *Advanced → Proceed*. HTTPS is what allows **Use my phone's location**. Location changes
   apply immediately: the map and radar reload within seconds.
@@ -107,7 +110,7 @@ The two onboard microphones measure the room's sound level every 0.1 s.
   in a few seconds.
 - **Units:** on the same page, the **Units** card: temperature (°C/°F), wind (km/h, mph, m/s; the radar's distances
   follow: miles with mph, km otherwise) and clock (24-hour or 12-hour). The display redraws at once.
-- **Wi-Fi:** long-press the weather screen, then **long-press again** on the Settings screen. The display starts
+- **Wi-Fi:** long-press the weather screen, then tap **Wi-Fi network**. The display starts
   **Weather-Setup** alongside its current connection and shows a QR code to join it. The sign-in page then opens on
   the phone as during first-time setup. Tap the display to cancel; the setup network also switches off after 10 min.
   When the display is offline, the first long-press goes straight to the Wi-Fi setup QR code.

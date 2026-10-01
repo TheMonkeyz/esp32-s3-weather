@@ -76,7 +76,25 @@ LVGL timer and event callbacks already run inside the lock.
   (places, vertical).
 - Its scroll handler must ignore bubbled events (`target != current_target`): the hourly lists scroll vertically
   inside the pages and their `LV_EVENT_SCROLL` bubbles up; reading pager state from the list crashed the board.
-- Long-press opens a settings overlay with a QR code (`lv_qrcode`) for `https://<ip>`.
+- Long-press opens the Settings screen (below). Its *More on your phone* row shows the overlay with a QR code
+  (`lv_qrcode`) for `https://<ip>`.
+
+## Settings screen (`ui.c`, `cfg_*`)
+
+- `scr_cfg`, opened by a long-press on the weather screen (offline: the Wi-Fi setup screen instead). Rows in a
+  scrolling box (y 70–360) under a fixed *Done* button: Dim when quiet and Wake on pick-up (`lv_switch`, the whole
+  row is the button), Timing (cycles Short / Normal / Long; the same presets as the page's `PRESETS`, *Custom* if
+  none matches), Temperature / Wind / Clock (cycle), More on your phone (the QR overlay), Wi-Fi network
+  (`ui_wifi_setup`), Updates (*Check now* → `ota_check_now()`, shows *Checking...* then the result for 6 s; with an
+  update offered, opens the update screen), Restart (a second tap within 4 s). Every change goes through
+  `presence_set_config()` / `presence_set_motion()` / `config_set_units()` + `ui_units_changed()`, the same calls
+  as the web API, so the page and the display agree. A 1 s timer refreshes the rows while the screen is shown.
+- **Brightness:** `cfg_arc` along the bottom edge is display-only; the band under it (`cfg_zone`, y ≥ 364) maps the
+  finger's x to 5–100 % (`BR_X0`..`BR_X1`). While dragging, `presence_preview_brightness()` applies it at once
+  (the presence task skips its fade for 300 ms); the value is saved on release. A clickable full-screen `lv_arc`
+  caught every touch on the screen (rows, Done, scrolling): keep it non-clickable.
+- The QR overlay and the Wi-Fi setup screen return to Settings when opened from it (`back_to_cfg`), else to the
+  weather screen. *Done* or a swipe right closes Settings.
 - Unused swipes call `lv_indev_wait_release()`; otherwise their release is also delivered as a `SHORT_CLICKED`.
 
 ## Updates over Wi-Fi (`ota.c`)
@@ -243,10 +261,10 @@ LVGL timer and event callbacks already run inside the lock.
   retry is postponed while `net_ap_clients() > 0`. SNTP starts on the first `GOT_IP`, whenever that happens.
 - **Status screens** (`scr_msg`) take a long-press too: it starts the AP and shows the Wi-Fi QR (not in first-boot
   setup, which already shows it). A 10-minute timer stops that AP only once the board is online.
-- On the weather screen, a long-press while offline skips the settings QR (useless without a network) and opens the
-  Wi-Fi setup step directly.
+- On the weather screen, a long-press while offline skips the Settings screen (useless without a network) and opens
+  the Wi-Fi setup screen directly.
 - **Wi-Fi setup screen** (`scr_setup` in `ui.c`, `ui_wifi_setup(note)`): used by first-time setup, offline setup,
-  status-screen long-press and the settings overlay's second long-press. Page 1 = setup AP QR (`net_setup_ap_start()`),
+  status-screen long-press, the Settings screen's *Wi-Fi network* row and the QR overlay's long-press. Page 1 = setup AP QR (`net_setup_ap_start()`),
   page 2 = Wi-Fi Easy Connect; swipe switches. A tap closes it only if it was opened while online; a 10-minute timer
   closes it once online.
 - **Easy Connect (DPP enrollee, `net.c`)**: `CONFIG_ESP_WIFI_DPP_SUPPORT=y`, `wpa_supplicant` in REQUIRES. The radio
@@ -257,7 +275,7 @@ LVGL timer and event callbacks already run inside the lock.
   `wifi_config_t`: saved with `net_save_creds()`, restart after 2.5 s. `ESP_SUPP_DPP_FAIL` re-listens. Leaving page 2
   deinitialises DPP and resumes reconnects.
 - **Settings overlay state machine** (`ui.c`): 0 = hidden, 1 = settings QR (`https://<ip>`), 2 = Wi-Fi setup.
-  A long-press on the weather screen goes to 1; a long-press on the overlay opens the Wi-Fi setup screen above.
+  The Settings screen's *More on your phone* goes to 1; a long-press on the overlay opens the Wi-Fi setup screen.
   Gestures are ignored while the overlay is open.
 - **Access point:** `ap_up()` switches to APSTA, so the station connection stays up and the AP follows its channel.
   It sets DHCP option 114 (captive-portal URI `http://192.168.4.1/`) and starts the DNS server

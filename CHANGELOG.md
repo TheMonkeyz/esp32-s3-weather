@@ -10,6 +10,7 @@ their own `## vX.Y.Z-rc.N` section. Those are shown only to Beta users, while th
 list everything again.
 
 ## v1.6.0 - 2026-09-30
+- Settings right on the display: long-press the weather screen. Turn dimming and wake on pick-up on or off, pick the timing (Short, Normal, Long), set the brightness by sliding along the bottom, change the units, open the phone settings or the Wi-Fi setup, check for updates, or restart.
 - Wake on pick-up: when the screen is dimmed or off, picking up or tilting the display wakes it. A bump on the table doesn't. On the settings page (Screen & presence) you can turn it off, choose the sensitivity, and watch a live movement meter.
 
 ## v1.5.0 - 2026-09-30
