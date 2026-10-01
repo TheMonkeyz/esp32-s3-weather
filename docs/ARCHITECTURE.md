@@ -316,6 +316,13 @@ LVGL timer and event callbacks already run inside the lock.
     a top-down 24-bit BMP in 16-row chunks. Used by `tools/snapshot.py` (docs/TESTING.md).
 - The page runs the phone's geolocation, reverse geocoding (Nominatim) and city search (Open-Meteo geocoding) in the
   **browser**; the device only stores the result.
+- **Places card:** a list (tap a place to edit it; *Show* puts it on the display) and an editor that replaces the
+  list while open: name, city search, a map with a draggable pin (tap to move it), phone location, coordinates
+  folded under *Coordinates*, Cancel / Save, Delete. A spot picked on the map or by GPS suggests a name (reverse
+  geocoding) unless the name was typed; editing an existing place keeps its name.
+- **Map:** Leaflet 1.9.4 with OpenStreetMap tiles, loaded from unpkg the first time the editor opens, pinned and
+  integrity-checked (SRI hashes in the page; `tools/webtest` checks them against the npm package). The phone needs
+  internet for it, as for the city search; without it the editor says so and opens the coordinate fields.
 - Location is stored in NVS namespace `loc`. `config_local_time()` uses Open-Meteo's `utc_offset_seconds`, which
   handles any time zone and DST; before the first fetch it falls back to the `EST5EDT` TZ rule.
 - **Units** (NVS namespace `units`: `temp`, `wind`, `h12`; default °C, km/h, 24 h). Data is always fetched in metric;

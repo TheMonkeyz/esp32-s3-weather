@@ -99,8 +99,9 @@ The two onboard microphones measure the room's sound level every 0.1 s.
   the same Wi-Fi. The phone will warn that the certificate isn't trusted. That's expected, because the display signs
   its own certificate; choose *Advanced → Proceed*. HTTPS is what allows **Use my phone's location**. Location changes
   apply immediately: the map and radar reload within seconds.
-- **Places:** up to 4 (home, cottage, work...), in the **Places** card of the same page: *Show*, *Edit*, delete, or
-  *Add as a new place*. On the display, drag up or down on the weather screen to change place. Everything follows the
+- **Places:** up to 4 (home, cottage, work...), in the **Places** card of the same page. Tap a place to change it
+  (name, city search, or tap the **map** / drag the pin to the exact spot, or use the phone's location), *Show* to put
+  it on the display, or *＋ Add a place*. The map needs internet on the phone. On the display, drag up or down on the weather screen to change place. Everything follows the
   place shown: alerts, air quality, the hourly view, extras and the radar. Every place's forecast is refreshed every
   10 minutes, so it appears at once; the radar map is cached for the first place only, so other places' maps load
   in a few seconds.
@@ -243,6 +244,7 @@ docs/TESTING.md       how changes are tested on the board: test builds, flash he
 docs/IDEAS.md         feature ideas / backlog
 tools/diag_summary.py summarises the diag: lines of serial_log.txt
 tools/snapshot.py     saves a screen as PNG, rendered by the device (GET /api/snapshot); see docs/TESTING.md
+tools/webtest/        Playwright tests of the settings page against a mock display (npm test); see docs/TESTING.md
 tools/make_flasher_site.py  release files (dist) and the web-flasher site with Stable/Beta channels (site)
 web/flash/            web flasher page (ESP Web Tools) + screenshots
 .github/workflows/firmware.yml  CI: build, GitHub Pages flasher, releases

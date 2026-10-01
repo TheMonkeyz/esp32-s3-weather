@@ -1,0 +1,14 @@
+{
+  "name": "weather-display-webtest",
+  "version": "1.0.0",
+  "description": "Browser tests of the settings page against a mock display (see docs/TESTING.md)",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "type": "commonjs",
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "leaflet": "1.9.4"
+  },
+  "private": true
+}
