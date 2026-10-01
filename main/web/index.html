@@ -40,151 +40,293 @@ button.danger{background:#3a1f1f;color:#ff9a9a}
 details.coords{margin-top:10px;font-size:14px;color:var(--dim)}details.coords summary{cursor:pointer}
 #msg{min-height:20px;margin-top:10px;font-size:14px}.ok{color:#6fd08c}.err{color:#ff7a7a}
 </style></head><body>
-<h1>Weather display</h1>
+<h1 data-i18n="title">Weather display</h1>
 
 <div class="card" id="locCard">
-  <h2>Places</h2>
+  <h2 data-i18n="places">Places</h2>
   <div id="placeList">
-    <div class="muted">Tap a place to change it. On the display, drag up or down on the weather screen to switch.</div>
+    <div class="muted" data-i18n="placesHelp"></div>
     <div id="places"></div>
-    <button class="sec" id="addPlace">＋ Add a place</button>
+    <button class="sec" id="addPlace" data-i18n="addPlace"></button>
   </div>
   <div id="editor" style="display:none">
     <div id="edTitle"></div>
-    <label for="name">Name shown on the display</label>
-    <input id="name" maxlength="40" placeholder="e.g. Cottage">
-    <label for="q">Find a city</label>
-    <input id="q" placeholder="e.g. Québec" autocomplete="off">
+    <label for="name" data-i18n="nameLabel"></label>
+    <input id="name" maxlength="40" data-i18n-ph="namePh">
+    <label for="q" data-i18n="findCity"></label>
+    <input id="q" data-i18n-ph="cityPh" autocomplete="off">
     <div id="results"></div>
     <div id="map"></div>
     <div class="muted" id="mapNote" style="margin-top:6px"></div>
-    <button class="sec" id="gps">📍 Use my phone's location</button>
-    <div class="muted" id="gpsNote" style="display:none;margin-top:8px">Phone location only works on the secure page:
-      <a id="secureLink" style="color:var(--acc)" href="#"></a> (open it in your browser and accept the certificate warning).</div>
-    <details class="coords" id="coords"><summary>Coordinates</summary>
+    <button class="sec" id="gps" data-i18n="gps"></button>
+    <div class="muted" id="gpsNote" style="display:none;margin-top:8px"><span data-i18n="gpsNote1"></span><a
+      id="secureLink" style="color:var(--acc)" href="#"></a><span data-i18n="gpsNote2"></span></div>
+    <details class="coords" id="coords"><summary data-i18n="coords"></summary>
       <div class="row">
-        <div><label for="lat">Latitude</label><input id="lat" inputmode="decimal"></div>
-        <div><label for="lon">Longitude</label><input id="lon" inputmode="decimal"></div>
+        <div><label for="lat" data-i18n="lat"></label><input id="lat" inputmode="decimal"></div>
+        <div><label for="lon" data-i18n="lon"></label><input id="lon" inputmode="decimal"></div>
       </div>
     </details>
     <div class="row">
-      <div><button class="sec" id="cancelEd">Cancel</button></div>
-      <div><button id="saveLoc">Save</button></div>
+      <div><button class="sec" id="cancelEd" data-i18n="cancel"></button></div>
+      <div><button id="saveLoc" data-i18n="save"></button></div>
     </div>
-    <button class="danger" id="delPlace">Delete this place</button>
+    <button class="danger" id="delPlace" data-i18n="delPlace"></button>
   </div>
   <div id="msg"></div>
 </div>
 
 <div class="card" id="unitCard">
-  <h2>Units</h2>
+  <h2 data-i18n="units"></h2>
+  <label for="uLang" data-i18n="language"></label>
+  <select id="uLang"><option value="en">English</option><option value="fr">Français</option></select>
   <div class="row">
-    <div><label for="uTemp">Temperature</label>
+    <div><label for="uTemp" data-i18n="temperature"></label>
       <select id="uTemp"><option value="c">°C</option><option value="f">°F</option></select></div>
-    <div><label for="uWind">Wind</label>
+    <div><label for="uWind" data-i18n="wind"></label>
       <select id="uWind"><option value="kmh">km/h</option><option value="mph">mph</option><option value="ms">m/s</option></select></div>
   </div>
-  <label for="uClock">Clock</label>
-  <select id="uClock"><option value="24">24-hour (14:45)</option><option value="12">12-hour (2:45 PM)</option></select>
-  <div id="umsg" class="muted" style="margin-top:8px">Changes apply on the display right away.</div>
+  <label for="uClock" data-i18n="clock"></label>
+  <select id="uClock"><option value="24" data-i18n="clock24"></option><option value="12" data-i18n="clock12"></option></select>
+  <div id="umsg" class="muted" style="margin-top:8px" data-i18n="unitsNote"></div>
 </div>
 
 <div class="card" id="presCard">
-  <h2>Screen &amp; presence</h2>
+  <h2 data-i18n="presTitle"></h2>
   <div><span class="st" id="pState">…</span> <span class="muted" id="pBright"></span></div>
   <div class="meter" id="pMeter"><div class="fill" id="pFill"></div><div class="mark" id="pMark"></div></div>
-  <div class="muted" id="pLevel">Sound level …</div>
+  <div class="muted" id="pLevel">…</div>
   <div class="meter small"><div class="fill" id="pWake"></div></div>
   <div class="muted" id="pWakeTxt"></div>
-  <button class="sec" id="pCal">🎙️ Calibrate background (stay quiet 5 s)</button>
-  <label class="chk"><input type="checkbox" id="pEn"> Dim and turn off the screen when the room is quiet</label>
+  <button class="sec" id="pCal" data-i18n="calibrate"></button>
+  <label class="chk"><input type="checkbox" id="pEn"> <span data-i18n="dimQuiet"></span></label>
   <div id="pMotionBox">
-    <label class="chk"><input type="checkbox" id="pMotion"> Wake up when the display is picked up or moved</label>
+    <label class="chk"><input type="checkbox" id="pMotion"> <span data-i18n="motionWake"></span></label>
     <div class="meter small" id="pMvMeter"><div class="fill" id="pMv"></div><div class="mark" id="pMvMark"></div></div>
-    <div class="muted" id="pMvTxt">Movement …</div>
-    <label for="pMotionSens">Pick-up sensitivity</label>
+    <div class="muted" id="pMvTxt">…</div>
+    <label for="pMotionSens" data-i18n="pickSens"></label>
     <select id="pMotionSens">
-      <option value="0.05">High: a firm bump on the table wakes it</option>
-      <option value="0.1">Normal: picking it up or tilting it</option>
-      <option value="0.2">Low: only a clear lift</option>
+      <option value="0.05" data-i18n="sensHigh"></option>
+      <option value="0.1" data-i18n="sensNormal"></option>
+      <option value="0.2" data-i18n="sensLow"></option>
     </select>
   </div>
-  <label for="pPreset">Timing preset</label>
+  <label for="pPreset" data-i18n="timingPreset"></label>
   <select id="pPreset">
-    <option value="testing">Testing: dim 10 s, off 30 s</option>
-    <option value="short">Short: dim 2 min, off 15 min</option>
-    <option value="normal">Normal: dim 10 min, off 60 min</option>
-    <option value="long">Long: dim 30 min, off 3 h</option>
-    <option value="custom">Custom</option>
+    <option value="testing" data-i18n="pTesting"></option>
+    <option value="short" data-i18n="pShort"></option>
+    <option value="normal" data-i18n="pNormal"></option>
+    <option value="long" data-i18n="pLong"></option>
+    <option value="custom" data-i18n="pCustom"></option>
   </select>
-  <label for="pDim">Dim after (quiet)</label>
+  <label for="pDim" data-i18n="dimAfter"></label>
   <div class="dur"><input id="pDim" inputmode="decimal"><select id="pDimU"><option>s</option><option>min</option><option>h</option></select></div>
-  <label for="pOffT">Turn off after (total quiet)</label>
+  <label for="pOffT" data-i18n="offAfter"></label>
   <div class="dur"><input id="pOffT" inputmode="decimal"><select id="pOffTU"><option>s</option><option>min</option><option>h</option></select></div>
   <div class="row">
-    <div><label for="pWakeS">Wake after (s of sound)</label><input id="pWakeS" inputmode="decimal"></div>
-    <div><label for="pMargin">Sensitivity (dB)</label><input id="pMargin" inputmode="decimal"></div>
+    <div><label for="pWakeS" data-i18n="wakeAfter"></label><input id="pWakeS" inputmode="decimal"></div>
+    <div><label for="pMargin" data-i18n="sensDb"></label><input id="pMargin" inputmode="decimal"></div>
   </div>
   <div class="row">
-    <div><label for="pBr">Brightness (%)</label><input id="pBr" inputmode="numeric"></div>
-    <div><label for="pDimPct">Dimmed (%)</label><input id="pDimPct" inputmode="numeric"></div>
+    <div><label for="pBr" data-i18n="bright"></label><input id="pBr" inputmode="numeric"></div>
+    <div><label for="pDimPct" data-i18n="dimmed"></label><input id="pDimPct" inputmode="numeric"></div>
   </div>
-  <button id="pSave">Save screen settings</button>
+  <button id="pSave" data-i18n="saveScreen"></button>
   <div id="pmsg"></div>
 </div>
 
 <div class="card" id="wifiCard">
   <h2>Wi-Fi</h2>
-  <div class="muted">Connected to: <span id="curSsid">–</span></div>
-  <button class="sec" id="scanBtn">📶 Scan for networks</button>
+  <div class="muted"><span data-i18n="connectedTo"></span><span id="curSsid">–</span></div>
+  <button class="sec" id="scanBtn" data-i18n="scan"></button>
   <div id="nets"></div>
-  <label for="ssid">Network name</label>
-  <input id="ssid" autocomplete="off" placeholder="Pick one above or type it">
-  <label for="pass">Password</label>
+  <label for="ssid" data-i18n="netName"></label>
+  <input id="ssid" autocomplete="off" data-i18n-ph="netPh">
+  <label for="pass" data-i18n="password"></label>
   <div class="pw"><input id="pass" type="password" autocomplete="off" autocapitalize="off" spellcheck="false">
-    <button type="button" id="showPw" class="eye" aria-label="Show password">Show</button></div>
+    <button type="button" id="showPw" class="eye"></button></div>
   <details class="tip" id="pwTip">
-    <summary>Password saved on your phone? Copy it</summary>
-    <ol>
-      <li><b>iPhone</b> (iOS 16+): Settings → Wi-Fi → tap <b>ⓘ</b> next to your network → tap <b>Password</b>
-        (Face ID) → <b>Copy</b>, then come back here and paste.</li>
-      <li><b>Android</b> 10+: no typing needed. On the display's Wi-Fi setup screen, swipe left for
-        <b>Easy Connect</b> and scan its code from your phone's Wi-Fi settings (the QR icon).
-        Or Settings → Wi-Fi → your network → <b>Share</b>: the password is under the QR code.</li>
-    </ol>
+    <summary data-i18n="pwTip"></summary>
+    <ol data-i18n-html="pwTipList"></ol>
   </details>
-  <button class="sec" id="saveWifi">Save Wi-Fi &amp; restart</button>
+  <button class="sec" id="saveWifi" data-i18n="saveWifi"></button>
   <div id="wmsg"></div>
 </div>
 <div class="card" id="fwCard">
-  <h2>Firmware</h2>
-  <div class="muted">Installed: <b id="fwVer">–</b></div>
-  <label for="fwChan">Updates</label>
+  <h2 data-i18n="firmware"></h2>
+  <div class="muted"><span data-i18n="installed"></span><b id="fwVer">–</b></div>
+  <label for="fwChan" data-i18n="updatesLbl"></label>
   <select id="fwChan">
-    <option value="stable">Stable releases</option>
-    <option value="beta">Beta (release candidates)</option>
+    <option value="stable" data-i18n="chStable"></option>
+    <option value="beta" data-i18n="chBeta"></option>
   </select>
   <div id="fwState" class="muted" style="margin-top:8px">–</div>
   <div id="fwNotes" style="display:none;margin-top:8px"></div>
   <div class="meter" id="fwMeter" style="display:none"><div class="fill" id="fwBar"></div></div>
-  <button class="sec" id="fwCheck">Check for updates</button>
-  <button id="fwInstall" style="display:none">Install update</button>
+  <button class="sec" id="fwCheck" data-i18n="checkUpd"></button>
+  <button id="fwInstall" style="display:none"></button>
   <div id="fwmsg"></div>
 </div>
 
 <script>
-window.onerror = (m, src, line) => { const e = document.getElementById('msg'); if (e) { e.textContent = 'Page error: ' + m + ' (line ' + line + ')'; e.className = 'err'; } };
+window.onerror = (m, src, line) => { const e = document.getElementById('msg'); if (e) { e.textContent = (typeof t === 'function' ? t('pageError', m, line) : 'Page error: ' + m); e.className = 'err'; } };
 const $ = id => document.getElementById(id);
+// Texts in English and Canadian French (Québec usage). Static elements carry data-i18n (text), data-i18n-html
+// (trusted markup from this table) or data-i18n-ph (placeholder); scripts call t('key', args...) ({0}, {1}...).
+// The language is the display's (GET /api/config units.lang) and is changed with it (POST /api/units {lang}).
+// Adding a language: a block here, and the firmware's i18n (main/i18n_strings.h, i18n.c).
+const I18N = {
+ en: {
+  title: 'Weather display', places: 'Places',
+  placesHelp: 'Tap a place to change it. On the display, drag up or down on the weather screen to switch.',
+  addPlace: '＋ Add a place', nameLabel: 'Name shown on the display', namePh: 'e.g. Cottage', findCity: 'Find a city',
+  cityPh: 'e.g. Québec', gps: "📍 Use my phone's location",
+  gpsNote1: 'Phone location only works on the secure page: ',
+  gpsNote2: ' (open it in your browser and accept the certificate warning).',
+  coords: 'Coordinates', lat: 'Latitude', lon: 'Longitude', cancel: 'Cancel', save: 'Save', delPlace: 'Delete this place',
+  units: 'Units', language: 'Language', temperature: 'Temperature', wind: 'Wind', clock: 'Clock',
+  clock24: '24-hour (14:45)', clock12: '12-hour (2:45 PM)', unitsNote: 'Changes apply on the display right away.',
+  presTitle: 'Screen & presence', calibrate: '🎙️ Calibrate background (stay quiet 5 s)',
+  dimQuiet: 'Dim and turn off the screen when the room is quiet',
+  motionWake: 'Wake up when the display is picked up or moved', pickSens: 'Pick-up sensitivity',
+  sensHigh: 'High: a firm bump on the table wakes it', sensNormal: 'Normal: picking it up or tilting it',
+  sensLow: 'Low: only a clear lift', timingPreset: 'Timing preset', pTesting: 'Testing: dim 10 s, off 30 s',
+  pShort: 'Short: dim 2 min, off 15 min', pNormal: 'Normal: dim 10 min, off 60 min', pLong: 'Long: dim 30 min, off 3 h',
+  pCustom: 'Custom', dimAfter: 'Dim after (quiet)', offAfter: 'Turn off after (total quiet)',
+  wakeAfter: 'Wake after (s of sound)', sensDb: 'Sensitivity (dB)', bright: 'Brightness (%)', dimmed: 'Dimmed (%)',
+  saveScreen: 'Save screen settings', connectedTo: 'Connected to: ', scan: '📶 Scan for networks',
+  scanAgain: '📶 Scan again', scanning: 'Scanning…', netName: 'Network name', netPh: 'Pick one above or type it',
+  password: 'Password', show: 'Show', hide: 'Hide', showPw: 'Show password', hidePw: 'Hide password',
+  pwTip: 'Password saved on your phone? Copy it',
+  pwTipList: '<li><b>iPhone</b> (iOS 16+): Settings → Wi-Fi → tap <b>ⓘ</b> next to your network → tap <b>Password</b> (Face ID) → <b>Copy</b>, then come back here and paste.</li><li><b>Android</b> 10+: no typing needed. On the display\'s Wi-Fi setup screen, swipe left for <b>Easy Connect</b> and scan its code from your phone\'s Wi-Fi settings (the QR icon). Or Settings → Wi-Fi → your network → <b>Share</b>: the password is under the QR code.</li>',
+  saveWifi: 'Save Wi-Fi & restart', firmware: 'Firmware', installed: 'Installed: ', updatesLbl: 'Updates',
+  chStable: 'Stable releases', chBeta: 'Beta (release candidates)', checkUpd: 'Check for updates',
+  saved: 'Saved', notSaved: 'Not saved ({0})', noReach: 'Could not reach the display',
+  showing: 'Showing {0} on the display.', newPlace: 'New place', editPlace: 'Edit {0}', onScreen: 'On screen',
+  mapHelp: 'Tap the map or drag the pin to the exact spot.',
+  mapNoNet: 'The map needs internet on this phone. Find a city, or enter the coordinates below.',
+  failed: "That didn't work.", delConfirm: 'Delete {0}?', deleted: 'Deleted {0}.',
+  cantRead: 'Could not read settings from the display', noNets: 'No networks found. Try again.',
+  enterPw: 'Enter the password for {0}.', openNet: '{0} is an open network; no password needed.',
+  scanFail: 'Scan failed, try again.', myLocation: 'My location', myPlace: 'My place',
+  needSecure: 'Phone location needs the secure page (link above).', gettingLoc: 'Getting your location…',
+  gotIt: 'Got it. Check the pin, then tap Save.', locUnavail: 'Location unavailable: {0}',
+  cityPicked: '{0}: move the pin if needed, then tap Save.', searchNoNet: 'City search needs internet on this phone.',
+  badCoords: 'Pick a spot on the map or enter valid coordinates.', savedUpdating: 'Saved. The display is updating.',
+  addedPlace: 'Added {0}. Drag up or down on the display to see it.',
+  savedPlace: 'Saved {0}. Drag up or down on the display to see it.', saveFailed: 'Save failed.',
+  chooseNet: 'Choose a network.', wifiSaved: 'Saved. The display is restarting.',
+  stActive: 'Active', stDim: 'Dimmed', stOff: 'Screen off', calibrating: 'Calibrating… {0} s', noMic: 'No microphone',
+  brightNow: 'brightness {0}%', soundLine: 'Sound {0} dB · trigger {1} dB (background {2} + {3})',
+  quietFor: 'Quiet for {0} (dims at {1})', wakeProg: 'Wake-up progress {0}% (needs {1} s of sound)',
+  movement: 'Movement {0} g · wakes at {1} g', calStart: 'Calibrating: stay quiet for 5 seconds…',
+  calNA: 'Calibration unavailable.', calFail: 'Calibration failed.',
+  offLonger: '"Turn off after" must be longer than "Dim after".', savedDot: 'Saved.',
+  presetFilled: 'Preset filled in. Tap Save to apply.',
+  fwIdle: 'Checks for updates a minute after start-up, then every 6 hours.', fwChecking: 'Checking…',
+  fwUpToDate: 'Up to date{0}.', fwLatest: ' (latest: {0})', fwAvailable: 'Version {0} is available.',
+  fwDownloading: 'Downloading {0}… {1} %. Keep the display plugged in.', fwDone: 'Installed. The display is restarting…',
+  fwFailed: 'Update check failed: {0}.', unknownErr: 'unknown error', installX: 'Install {0}', theUpdate: 'update',
+  installConfirm: 'Install {0}? The display restarts when it is done; settings are kept.',
+  noAnswer: 'The display did not answer', whatsNew: "What's new", pageError: 'Page error: {0} (line {1})',
+ },
+ fr: {
+  title: 'Afficheur météo', places: 'Endroits',
+  placesHelp: "Touchez un endroit pour le modifier. Sur l'afficheur, glissez vers le haut ou le bas sur l'écran météo pour changer d'endroit.",
+  addPlace: '＋ Ajouter un endroit', nameLabel: 'Nom affiché', namePh: 'ex. : Chalet', findCity: 'Trouver une ville',
+  cityPh: 'ex. : Québec', gps: '📍 Utiliser la position du téléphone',
+  gpsNote1: 'La position du téléphone ne fonctionne que sur la page sécurisée : ',
+  gpsNote2: " (ouvrez-la dans votre navigateur et acceptez l'avertissement de certificat).",
+  coords: 'Coordonnées', lat: 'Latitude', lon: 'Longitude', cancel: 'Annuler', save: 'Enregistrer',
+  delPlace: 'Supprimer cet endroit',
+  units: 'Unités', language: 'Langue', temperature: 'Température', wind: 'Vent', clock: 'Horloge',
+  clock24: '24 heures (14 h 45)', clock12: '12 heures (2:45 PM)', unitsNote: "Les changements s'appliquent tout de suite sur l'afficheur.",
+  presTitle: 'Écran et présence', calibrate: '🎙️ Calibrer le bruit de fond (silence 5 s)',
+  dimQuiet: "Tamiser puis éteindre l'écran quand la pièce est calme",
+  motionWake: "Rallumer l'écran quand l'afficheur est soulevé ou déplacé", pickSens: 'Sensibilité au mouvement',
+  sensHigh: 'Élevée : un coup ferme sur la table le rallume', sensNormal: "Normale : le soulever ou l'incliner",
+  sensLow: "Faible : seulement s'il est bien soulevé", timingPreset: 'Délais prédéfinis',
+  pTesting: 'Essai : tamisé 10 s · éteint 30 s', pShort: 'Courts : tamisé 2 min · éteint 15 min',
+  pNormal: 'Normaux : tamisé 10 min · éteint 60 min', pLong: 'Longs : tamisé 30 min · éteint 3 h',
+  pCustom: 'Personnalisés', dimAfter: 'Tamiser après (calme)', offAfter: 'Éteindre après (calme total)',
+  wakeAfter: 'Rallumer après (s de son)', sensDb: 'Sensibilité (dB)', bright: 'Luminosité (%)', dimmed: 'Tamisée (%)',
+  saveScreen: "Enregistrer les réglages de l'écran", connectedTo: 'Connecté à : ', scan: '📶 Rechercher les réseaux',
+  scanAgain: '📶 Rechercher de nouveau', scanning: 'Recherche…', netName: 'Nom du réseau',
+  netPh: 'Choisissez-en un ci-dessus ou saisissez-le', password: 'Mot de passe', show: 'Afficher', hide: 'Masquer',
+  showPw: 'Afficher le mot de passe', hidePw: 'Masquer le mot de passe',
+  pwTip: 'Mot de passe enregistré sur votre téléphone? Copiez-le',
+  pwTipList: "<li><b>iPhone</b> (iOS 16+) : Réglages → Wi-Fi → touchez <b>ⓘ</b> à côté de votre réseau → touchez <b>Mot de passe</b> (Face ID) → <b>Copier</b>, puis revenez ici et collez-le.</li><li><b>Android</b> 10+ : rien à taper. Sur l'écran de configuration Wi-Fi de l'afficheur, glissez vers la gauche pour <b>Easy Connect</b> et balayez son code dans les paramètres Wi-Fi du téléphone (l'icône QR). Ou Paramètres → Wi-Fi → votre réseau → <b>Partager</b> : le mot de passe est sous le code QR.</li>",
+  saveWifi: 'Enregistrer le Wi-Fi et redémarrer', firmware: 'Micrologiciel', installed: 'Installé : ',
+  updatesLbl: 'Mises à jour', chStable: 'Versions stables', chBeta: 'Bêta (versions candidates)',
+  checkUpd: 'Vérifier les mises à jour',
+  saved: 'Enregistré', notSaved: 'Non enregistré ({0})', noReach: "L'afficheur ne répond pas",
+  showing: "{0} est maintenant affiché sur l'afficheur.", newPlace: 'Nouvel endroit', editPlace: 'Modifier {0}',
+  onScreen: "À l'écran", mapHelp: "Touchez la carte ou glissez l'épingle à l'endroit exact.",
+  mapNoNet: "La carte a besoin d'Internet sur ce téléphone. Trouvez une ville ou entrez les coordonnées ci-dessous.",
+  failed: "L'opération a échoué.", delConfirm: 'Supprimer {0}?', deleted: '{0} supprimé.',
+  cantRead: "Impossible de lire les réglages de l'afficheur", noNets: 'Aucun réseau trouvé. Réessayez.',
+  enterPw: 'Entrez le mot de passe de {0}.', openNet: '{0} est un réseau ouvert; aucun mot de passe requis.',
+  scanFail: 'La recherche a échoué, réessayez.', myLocation: 'Ma position', myPlace: 'Mon endroit',
+  needSecure: 'La position du téléphone exige la page sécurisée (lien ci-dessus).', gettingLoc: 'Localisation en cours…',
+  gotIt: "Position trouvée. Vérifiez l'épingle, puis touchez Enregistrer.", locUnavail: 'Position non disponible : {0}',
+  cityPicked: "{0} : déplacez l'épingle au besoin, puis touchez Enregistrer.",
+  searchNoNet: "La recherche de ville a besoin d'Internet sur ce téléphone.",
+  badCoords: 'Choisissez un endroit sur la carte ou entrez des coordonnées valides.',
+  savedUpdating: "Enregistré. L'afficheur se met à jour.",
+  addedPlace: "{0} ajouté. Glissez vers le haut ou le bas sur l'afficheur pour le voir.",
+  savedPlace: "{0} enregistré. Glissez vers le haut ou le bas sur l'afficheur pour le voir.",
+  saveFailed: "L'enregistrement a échoué.", chooseNet: 'Choisissez un réseau.', wifiSaved: "Enregistré. L'afficheur redémarre.",
+  stActive: 'Actif', stDim: 'Tamisé', stOff: 'Écran éteint', calibrating: 'Calibration… {0} s', noMic: 'Aucun micro',
+  brightNow: 'luminosité {0} %', soundLine: 'Son {0} dB · seuil {1} dB (fond {2} + {3})',
+  quietFor: 'Calme depuis {0} (tamisé à {1})', wakeProg: 'Réveil : {0} % (il faut {1} s de son)',
+  movement: 'Mouvement {0} g · réveil à {1} g', calStart: 'Calibration : gardez le silence 5 secondes…',
+  calNA: 'Calibration non disponible.', calFail: 'La calibration a échoué.',
+  offLonger: '« Éteindre après » doit être plus long que « Tamiser après ».', savedDot: 'Enregistré.',
+  presetFilled: 'Délais remplis. Touchez Enregistrer pour appliquer.',
+  fwIdle: 'Vérifie les mises à jour une minute après le démarrage, puis toutes les 6 heures.', fwChecking: 'Vérification…',
+  fwUpToDate: 'À jour{0}.', fwLatest: ' (dernière : {0})', fwAvailable: 'La version {0} est disponible.',
+  fwDownloading: "Téléchargement de {0}… {1} %. Laissez l'afficheur branché.", fwDone: "Installée. L'afficheur redémarre…",
+  fwFailed: 'La vérification a échoué : {0}.', unknownErr: 'erreur inconnue', installX: 'Installer {0}',
+  theUpdate: 'la mise à jour', installConfirm: "Installer {0}? L'afficheur redémarre ensuite; les réglages sont conservés.",
+  noAnswer: "L'afficheur n'a pas répondu", whatsNew: 'Nouveautés', pageError: 'Erreur dans la page : {0} (ligne {1})',
+ },
+};
+let LANG = 'en';
+let fwLast = null;                                  // last /api/update answer (redrawn on a language change)
+function t(k, ...a){
+  const s = (I18N[LANG] && I18N[LANG][k]) ?? I18N.en[k] ?? k;
+  return s.replace(/\{(\d)\}/g, (m, i) => a[i]);
+}
+const num = (x, d) => { const s = (+x).toFixed(d); return LANG === 'fr' ? s.replace('.', ',') : s; };   // 0,10 g
+function applyLang(){
+  document.documentElement.lang = LANG;
+  document.querySelectorAll('[data-i18n]').forEach(e => { e.textContent = t(e.dataset.i18n); });
+  document.querySelectorAll('[data-i18n-html]').forEach(e => { e.innerHTML = t(e.dataset.i18nHtml); });
+  document.querySelectorAll('[data-i18n-ph]').forEach(e => { e.placeholder = t(e.dataset.i18nPh); });
+  $('uLang').value = LANG;
+  const pw = $('pass').type === 'password';
+  $('showPw').textContent = t(pw ? 'show' : 'hide'); $('showPw').setAttribute('aria-label', t(pw ? 'showPw' : 'hidePw'));
+  if (cfg) { showPlaces(); if (editing >= 0) $('edTitle').textContent = editing >= cfg.places.length ? t('newPlace') : t('editPlace', cfg.places[editing].name); }
+  if (fwLast) { $('fwNotes').dataset.t = ''; fwShow(fwLast); }
+}
+
 function say(el, text, ok){ el.textContent = text; el.className = ok ? 'ok' : 'err'; }
 
 async function saveUnits(){
   const body = {temp: $('uTemp').value, wind: $('uWind').value, clock: Number($('uClock').value)};
   try{
     const r = await fetch('/api/units', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
-    say($('umsg'), r.ok ? 'Saved' : 'Not saved (' + r.status + ')', r.ok);
-  }catch(e){ say($('umsg'), 'Could not reach the display', false); }
+    say($('umsg'), r.ok ? t('saved') : t('notSaved', r.status), r.ok);
+  }catch(e){ say($('umsg'), t('noReach'), false); }
 }
 ['uTemp', 'uWind', 'uClock'].forEach(id => $(id).addEventListener('change', saveUnits));
+$('uLang').addEventListener('change', async () => {          // the display's language, and this page's
+  LANG = $('uLang').value; applyLang();
+  try{
+    const r = await fetch('/api/units', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({lang: LANG})});
+    say($('umsg'), r.ok ? t('saved') : t('notSaved', r.status), r.ok);
+  }catch(e){ say($('umsg'), t('noReach'), false); }
+});
 
 /* ---------- Places: a list; tapping a place (or "Add a place") opens the editor with a map ---------- */
 let cfg = null, editing = -1, nameTouched = false;   // editing: place index, places.length = a new one, -1 = list
@@ -196,10 +338,10 @@ function showPlaces(){
     const b = document.createElement('b'); b.textContent = p.name;
     const m = document.createElement('span'); m.className = 'muted'; m.textContent = p.lat.toFixed(4) + ', ' + p.lon.toFixed(4);
     n.append(b, m); d.append(n);
-    if (i === cfg.active) { const o = document.createElement('span'); o.className = 'on'; o.textContent = 'On screen'; d.append(o); }
+    if (i === cfg.active) { const o = document.createElement('span'); o.className = 'on'; o.textContent = t('onScreen'); d.append(o); }
     else {
-      const s = document.createElement('button'); s.className = 'sec'; s.textContent = 'Show';
-      s.onclick = ev => { ev.stopPropagation(); placeAct({select: i}, 'Showing ' + p.name + ' on the display.'); };
+      const s = document.createElement('button'); s.className = 'sec'; s.textContent = t('show');
+      s.onclick = ev => { ev.stopPropagation(); placeAct({select: i}, t('showing', p.name)); };
       d.append(s);
     }
     const c = document.createElement('span'); c.className = 'chev'; c.textContent = '›'; d.append(c);
@@ -212,7 +354,7 @@ function setView(list){ $('placeList').style.display = list ? '' : 'none'; $('ed
 function openEditor(i){
   editing = i;
   const isNew = i >= cfg.places.length, p = isNew ? cfg.places[cfg.active] : cfg.places[i];
-  $('edTitle').textContent = isNew ? 'New place' : 'Edit ' + p.name;
+  $('edTitle').textContent = isNew ? t('newPlace') : t('editPlace', p.name);
   $('name').value = isNew ? '' : p.name; nameTouched = !isNew;
   $('q').value = ''; $('results').innerHTML = '';
   $('delPlace').style.display = !isNew && cfg.places.length > 1 ? '' : 'none';
@@ -253,7 +395,7 @@ function loadLeaflet(){
 }
 const wrapLon = x => ((x + 540) % 360) - 180;
 async function showMap(lat, lon, zoom){
-  $('mapNote').textContent = 'Tap the map or drag the pin to the exact spot.';
+  $('mapNote').textContent = t('mapHelp');
   $('map').style.display = '';
   try{
     const L = await loadLeaflet();
@@ -270,7 +412,7 @@ async function showMap(lat, lon, zoom){
     pin.setLatLng([lat, lon]);
   }catch(e){
     $('map').style.display = 'none';
-    $('mapNote').textContent = 'The map needs internet on this phone. Find a city, or enter the coordinates below.';
+    $('mapNote').textContent = t('mapNoNet');
     $('coords').open = true;
   }
 }
@@ -279,32 +421,34 @@ async function placeAct(body, done){
     const r = await fetch('/api/places', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
     if (!r.ok) throw 0;
     closeEditor(); say($('msg'), done, true); load();
-  }catch(e){ say($('msg'), 'That didn\'t work.', false); }
+  }catch(e){ say($('msg'), t('failed'), false); }
 }
 $('addPlace').onclick = () => openEditor(cfg.places.length);
 $('cancelEd').onclick = () => { closeEditor(); $('msg').textContent = ''; };
 $('delPlace').onclick = () => {
   const p = cfg.places[editing];
-  if (confirm('Delete ' + p.name + '?')) placeAct({delete: editing}, 'Deleted ' + p.name + '.');
+  if (confirm(t('delConfirm', p.name))) placeAct({delete: editing}, t('deleted', p.name));
 };
 
 async function load(){
   try{
     const c = await (await fetch('/api/config')).json();
     cfg = c;
+    if (c.languages) $('uLang').replaceChildren(...c.languages.map(l => new Option(l.name, l.code)));
+    if (c.units && c.units.lang && c.units.lang !== LANG) { LANG = c.units.lang; applyLang(); }
     showPlaces();
     $('curSsid').textContent = c.ssid || '–';
     if (c.units) { $('uTemp').value = c.units.temp; $('uWind').value = c.units.wind; $('uClock').value = String(c.units.clock); }
-  }catch(e){ say($('msg'), 'Could not read settings from the display', false); }
+  }catch(e){ say($('msg'), t('cantRead'), false); }
 }
 function bars(rssi){ return rssi >= -55 ? '▂▄▆█' : rssi >= -67 ? '▂▄▆' : rssi >= -78 ? '▂▄' : '▂'; }
 async function scan(){
   const btn = $('scanBtn');
-  btn.disabled = true; btn.textContent = 'Scanning…';
+  btn.disabled = true; btn.textContent = t('scanning');
   $('nets').innerHTML = '';
   try{
     const nets = await (await fetch('/api/scan')).json();
-    if (!nets.length) $('nets').innerHTML = '<div class="muted">No networks found. Try again.</div>';
+    if (!nets.length) { const d = document.createElement('div'); d.className = 'muted'; d.textContent = t('noNets'); $('nets').appendChild(d); }
     nets.forEach(n => {
       const d = document.createElement('div');
       const name = document.createElement('span'); name.textContent = n.ssid;
@@ -314,50 +458,50 @@ async function scan(){
         document.querySelectorAll('#nets div').forEach(x => x.classList.remove('sel'));
         d.classList.add('sel');
         $('ssid').value = n.ssid;
-        if (n.secure) { $('pass').value = ''; $('pass').focus(); say($('wmsg'), 'Enter the password for ' + n.ssid + '.', true); }
-        else { $('pass').value = ''; say($('wmsg'), n.ssid + ' is an open network; no password needed.', true); }
+        if (n.secure) { $('pass').value = ''; $('pass').focus(); say($('wmsg'), t('enterPw', n.ssid), true); }
+        else { $('pass').value = ''; say($('wmsg'), t('openNet', n.ssid), true); }
       };
       $('nets').appendChild(d);
     });
-  }catch(e){ say($('wmsg'), 'Scan failed, try again.', false); }
-  btn.disabled = false; btn.textContent = '📶 Scan again';
+  }catch(e){ say($('wmsg'), t('scanFail'), false); }
+  btn.disabled = false; btn.textContent = t('scanAgain');
 }
 $('scanBtn').onclick = scan;
 $('showPw').onclick = () => {
   const p = $('pass'), show = p.type === 'password';
   p.type = show ? 'text' : 'password';
-  $('showPw').textContent = show ? 'Hide' : 'Show';
-  $('showPw').setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+  $('showPw').textContent = t(show ? 'hide' : 'show');
+  $('showPw').setAttribute('aria-label', t(show ? 'hidePw' : 'showPw'));
   p.focus();
 };
 
 async function nameFor(lat, lon){
   try{
-    const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&zoom=10&lat=${lat}&lon=${lon}`);
+    const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&zoom=10&accept-language=${LANG}&lat=${lat}&lon=${lon}`);
     const j = await r.json(); const a = j.address || {};
-    return a.city || a.town || a.village || a.municipality || a.county || 'My location';
-  }catch(e){ return 'My location'; }
+    return a.city || a.town || a.village || a.municipality || a.county || t('myLocation');
+  }catch(e){ return t('myLocation'); }
 }
 
 $('gps').onclick = () => {
-  if (!window.isSecureContext || !navigator.geolocation){ say($('msg'), 'Phone location needs the secure page (link above).', false); return; }
-  say($('msg'), 'Getting your location…', true);
+  if (!window.isSecureContext || !navigator.geolocation){ say($('msg'), t('needSecure'), false); return; }
+  say($('msg'), t('gettingLoc'), true);
   navigator.geolocation.getCurrentPosition(async p => {
     const lat = p.coords.latitude, lon = p.coords.longitude;
     setPos(lat, lon, true);
     if (map) map.setView([lat, lon], 13);
-    say($('msg'), 'Got it. Check the pin, then tap Save.', true);
-  }, err => say($('msg'), 'Location unavailable: ' + err.message, false), {enableHighAccuracy:false, timeout:15000});
+    say($('msg'), t('gotIt'), true);
+  }, err => say($('msg'), t('locUnavail', err.message), false), {enableHighAccuracy:false, timeout:15000});
 };
 
-let t;
+let searchTimer;
 $('q').oninput = () => {
-  clearTimeout(t);
+  clearTimeout(searchTimer);
   const q = $('q').value.trim();
   if (q.length < 2){ $('results').innerHTML=''; return; }
-  t = setTimeout(async () => {
+  searchTimer = setTimeout(async () => {
     try{
-      const j = await (await fetch('https://geocoding-api.open-meteo.com/v1/search?count=6&language=en&name='+encodeURIComponent(q))).json();
+      const j = await (await fetch('https://geocoding-api.open-meteo.com/v1/search?count=6&language=' + LANG + '&name='+encodeURIComponent(q))).json();
       $('results').innerHTML = '';
       (j.results||[]).forEach(r => {
         const d = document.createElement('div');
@@ -366,37 +510,36 @@ $('q').oninput = () => {
                             if (map) map.setView([r.latitude, r.longitude], 11);
                             if (!nameTouched) { $('name').value = r.name; }
                             $('results').innerHTML=''; $('q').value='';
-                            say($('msg'), r.name + ': move the pin if needed, then tap Save.', true); };
+                            say($('msg'), t('cityPicked', r.name), true); };
         $('results').appendChild(d);
       });
-    }catch(e){ say($('msg'), 'City search needs internet on this phone.', false); }
+    }catch(e){ say($('msg'), t('searchNoNet'), false); }
   }, 350);
 };
 
 async function savePlace(){
   const index = editing, isNew = index >= cfg.places.length;
-  const body = {name: $('name').value.trim() || 'My place', lat: parseFloat($('lat').value), lon: parseFloat($('lon').value), index};
+  const body = {name: $('name').value.trim() || t('myPlace'), lat: parseFloat($('lat').value), lon: parseFloat($('lon').value), index};
   if (!isFinite(body.lat) || !isFinite(body.lon) || Math.abs(body.lat) > 85 || Math.abs(body.lon) > 180){
-    say($('msg'), 'Pick a spot on the map or enter valid coordinates.', false); $('coords').open = true; return;
+    say($('msg'), t('badCoords'), false); $('coords').open = true; return;
   }
   try{
     const r = await fetch('/api/location', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
     if (!r.ok) throw 0;
     closeEditor();
-    say($('msg'), index === cfg.active ? 'Saved. The display is updating.' :
-                  (isNew ? 'Added ' : 'Saved ') + body.name + '. Drag up or down on the display to see it.', true);
+    say($('msg'), index === cfg.active ? t('savedUpdating') : t(isNew ? 'addedPlace' : 'savedPlace', body.name), true);
     load();
-  }catch(e){ say($('msg'), 'Save failed.', false); }
+  }catch(e){ say($('msg'), t('saveFailed'), false); }
 }
 $('saveLoc').onclick = savePlace;
 
 $('saveWifi').onclick = async () => {
   const body = {ssid: $('ssid').value, pass: $('pass').value};
-  if (!body.ssid){ say($('wmsg'), 'Choose a network.', false); return; }
+  if (!body.ssid){ say($('wmsg'), t('chooseNet'), false); return; }
   try{
     await fetch('/api/wifi', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
-    say($('wmsg'), 'Saved. The display is restarting.', true);
-  }catch(e){ say($('wmsg'), 'Save failed.', false); }
+    say($('wmsg'), t('wifiSaved'), true);
+  }catch(e){ say($('wmsg'), t('saveFailed'), false); }
 };
 
 // ---- Screen & presence ----
@@ -421,18 +564,18 @@ const pct = db => Math.max(0, Math.min(100, (db + 90) / 90 * 100));      // -90.
 async function pollPresence(){
   try{
     const p = await (await fetch('/api/presence')).json();
-    const names = {active:'Active', dim:'Dimmed', off:'Screen off'};
-    $('pState').textContent = p.calibrating ? 'Calibrating… ' + Math.ceil(p.calib_left_s) + ' s' : (p.mic_ok ? names[p.state] : 'No microphone');
+    const names = {active: t('stActive'), dim: t('stDim'), off: t('stOff')};
+    $('pState').textContent = p.calibrating ? t('calibrating', Math.ceil(p.calib_left_s)) : (p.mic_ok ? names[p.state] : t('noMic'));
     $('pState').className = 'st ' + (p.calibrating ? '' : p.state);
-    $('pBright').textContent = 'brightness ' + p.brightness + '%' + (p.state !== 'active' || !p.enabled ? '' : '');
+    $('pBright').textContent = t('brightNow', p.brightness);
     $('pFill').style.width = pct(p.level_db) + '%';
     $('pFill').style.background = p.level_db > p.threshold_db ? '#ffb347' : 'var(--acc)';
     $('pMark').style.left = pct(p.threshold_db) + '%';
-    $('pLevel').textContent = `Sound ${p.level_db.toFixed(0)} dB · trigger ${p.threshold_db.toFixed(0)} dB (background ${p.baseline_db.toFixed(0)} + ${p.margin_db.toFixed(0)})`;
+    $('pLevel').textContent = t('soundLine', p.level_db.toFixed(0), p.threshold_db.toFixed(0), p.baseline_db.toFixed(0), p.margin_db.toFixed(0));
     $('pWake').style.width = Math.round(p.wake_progress * 100) + '%';
-    const fmt = x => x >= 3600 ? (x / 3600).toFixed(1) + ' h' : x >= 60 ? (x / 60).toFixed(1) + ' min' : x.toFixed(0) + ' s';
-    $('pWakeTxt').textContent = p.state === 'active' ? `Quiet for ${fmt(p.quiet_s)} (dims at ${fmt(p.dim_s)})`
-                                                     : `Wake-up progress ${Math.round(p.wake_progress * 100)}% (needs ${p.wake_s} s of sound)`;
+    const fmt = x => x >= 3600 ? num(x / 3600, 1) + ' h' : x >= 60 ? num(x / 60, 1) + ' min' : num(x, 0) + ' s';
+    $('pWakeTxt').textContent = p.state === 'active' ? t('quietFor', fmt(p.quiet_s), fmt(p.dim_s))
+                                                     : t('wakeProg', Math.round(p.wake_progress * 100), num(p.wake_s, 0));
     $('pCal').disabled = p.calibrating;
     $('pMotionBox').style.display = p.imu_ok === false ? 'none' : '';      // no motion sensor: no options
     if (p.imu_ok) {                                                         // movement meter, 0..0.4 g
@@ -440,7 +583,7 @@ async function pollPresence(){
       $('pMv').style.width = mv(p.motion_g) + '%';
       $('pMv').style.background = p.motion_g > p.motion_thr ? '#ffb347' : '#6fd08c';
       $('pMvMark').style.left = mv(p.motion_thr) + '%';
-      $('pMvTxt').textContent = `Movement ${p.motion_g.toFixed(2)} g · wakes at ${p.motion_thr.toFixed(2)} g`;
+      $('pMvTxt').textContent = t('movement', num(p.motion_g, 2), num(p.motion_thr, 2));
     }
     if (!presLoaded) {
       presLoaded = true;
@@ -456,26 +599,27 @@ async function pollPresence(){
 $('pCal').onclick = async () => {
   try{
     const r = await fetch('/api/calibrate', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({seconds:5})});
-    say($('pmsg'), r.ok ? 'Calibrating: stay quiet for 5 seconds…' : 'Calibration unavailable.', r.ok);
-  }catch(e){ say($('pmsg'), 'Calibration failed.', false); }
+    say($('pmsg'), r.ok ? t('calStart') : t('calNA'), r.ok);
+  }catch(e){ say($('pmsg'), t('calFail'), false); }
 };
 $('pSave').onclick = async () => {
   const dim = getDur('pDim'), offTotal = getDur('pOffT');
-  if (!(dim > 0) || !(offTotal > dim)) { say($('pmsg'), '"Turn off after" must be longer than "Dim after".', false); return; }
+  if (!(dim > 0) || !(offTotal > dim)) { say($('pmsg'), t('offLonger'), false); return; }
   const body = {enabled: $('pEn').checked, motion_wake: $('pMotion').checked, motion_thr: +$('pMotionSens').value, margin_db: +$('pMargin').value, wake_s: +$('pWakeS').value,
                 dim_s: dim, off_s: offTotal - dim, bright_pct: +$('pBr').value, dim_pct: +$('pDimPct').value};
   try{
     const r = await fetch('/api/presence', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
     if (!r.ok) throw 0;
-    presLoaded = false; say($('pmsg'), 'Saved.', true);
-  }catch(e){ say($('pmsg'), 'Save failed.', false); }
+    presLoaded = false; say($('pmsg'), t('savedDot'), true);
+  }catch(e){ say($('pmsg'), t('saveFailed'), false); }
 };
 $('pPreset').onchange = () => {
   const p = PRESETS[$('pPreset').value];
   if (!p) return;
   setDur('pDim', p.dim); setDur('pOffT', p.off); $('pWakeS').value = p.wake;
-  say($('pmsg'), 'Preset filled in. Tap Save to apply.', true);
+  say($('pmsg'), t('presetFilled'), true);
 };
+applyLang();
 ['pDim', 'pDimU', 'pOffT', 'pOffTU', 'pWakeS'].forEach(id => $(id).addEventListener('input', () => { $('pPreset').value = 'custom'; }));
 setInterval(() => { if (!document.hidden) pollPresence(); }, 700);
 pollPresence();
@@ -490,24 +634,25 @@ if (location.hostname === '192.168.4.1') { document.body.insertBefore($('wifiCar
 // Firmware updates
 let fwPoll = null;
 function fwShow(u){
+  fwLast = u;
   $('fwVer').textContent = u.current || '–';
   $('fwChan').value = u.channel || 'stable';
   const busy = u.state === 'checking' || u.state === 'downloading' || u.state === 'done';
   const txt = {
-    idle: 'Checks for updates a minute after start-up, then every 6 hours.',
-    checking: 'Checking…',
-    up_to_date: 'Up to date' + (u.latest ? ' (latest: ' + u.latest + ')' : '') + '.',
-    available: 'Version ' + u.latest + ' is available.',
-    downloading: 'Downloading ' + u.latest + '… ' + u.progress + ' %. Keep the display plugged in.',
-    done: 'Installed. The display is restarting…',
-    failed: 'Update check failed: ' + (u.error || 'unknown error') + '.'
+    idle: t('fwIdle'),
+    checking: t('fwChecking'),
+    up_to_date: t('fwUpToDate', u.latest ? t('fwLatest', u.latest) : ''),
+    available: t('fwAvailable', u.latest),
+    downloading: t('fwDownloading', u.latest, u.progress),
+    done: t('fwDone'),
+    failed: t('fwFailed', u.error || t('unknownErr'))
   }[u.state] || u.state;
   $('fwState').textContent = txt;
   fwNotes(u.state === 'available' ? u.notes : '');
   $('fwMeter').style.display = u.state === 'downloading' || u.state === 'done' ? 'block' : 'none';
   $('fwBar').style.width = (u.state === 'done' ? 100 : u.progress) + '%';
   $('fwInstall').style.display = u.state === 'available' ? 'block' : 'none';
-  $('fwInstall').textContent = 'Install ' + (u.latest || 'update');
+  $('fwInstall').textContent = t('installX', u.latest || t('theUpdate'));
   $('fwCheck').disabled = busy;
   if (busy && !fwPoll) fwPoll = setInterval(fwLoad, 1500);
   if (!busy && fwPoll) { clearInterval(fwPoll); fwPoll = null; }
@@ -519,7 +664,7 @@ function fwNotes(t){
   if (!t || box.dataset.t === t) return;
   box.dataset.t = t;
   box.replaceChildren();
-  const h = document.createElement('div'); h.textContent = "What's new"; h.style.fontWeight = '600'; box.append(h);
+  const h = document.createElement('div'); h.textContent = t('whatsNew'); h.style.fontWeight = '600'; box.append(h);
   let ul = null;
   for (const line of t.split('\n')) {
     if (!line) { ul = null; continue; }
@@ -537,10 +682,10 @@ function fwNotes(t){
 async function fwLoad(){ try { fwShow(await (await fetch('/api/update')).json()); } catch(e) {} }
 async function fwPost(body){
   try { fwShow(await (await fetch('/api/update', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)})).json()); }
-  catch(e){ say($('fwmsg'), 'The display did not answer', false); }
+  catch(e){ say($('fwmsg'), t('noAnswer'), false); }
 }
 $('fwCheck').onclick = () => fwPost({action:'check'});
-$('fwInstall').onclick = () => { if (confirm('Install ' + $('fwInstall').textContent.slice(8) + '? The display restarts when it is done; settings are kept.')) fwPost({action:'install'}); };
+$('fwInstall').onclick = () => { if (confirm(t('installConfirm', fwLast && fwLast.latest || t('theUpdate')))) fwPost({action:'install'}); };
 $('fwChan').onchange = () => fwPost({channel: $('fwChan').value});
 fwLoad();
 load();

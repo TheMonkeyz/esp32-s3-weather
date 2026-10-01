@@ -18,6 +18,7 @@
 #include "presence.h"
 #include "display.h"
 #include "ui.h"
+#include "i18n.h"
 #include "lwip/sockets.h"
 
 static const char *TAG = "web";
@@ -101,6 +102,14 @@ static esp_err_t config_get(httpd_req_t *req)
     cJSON_AddStringToObject(un, "temp", u.fahrenheit ? "f" : "c");
     cJSON_AddStringToObject(un, "wind", u.wind == WIND_MPH ? "mph" : u.wind == WIND_MS ? "ms" : "kmh");
     cJSON_AddNumberToObject(un, "clock", u.h12 ? 12 : 24);
+    cJSON_AddStringToObject(un, "lang", i18n_code(u.lang));
+    cJSON *langs = cJSON_AddArrayToObject(j, "languages");      // [{code, name}] for the selector
+    for (int i = 0; i < LANG_COUNT; i++) {
+        cJSON *o = cJSON_CreateObject();
+        cJSON_AddStringToObject(o, "code", i18n_code(i));
+        cJSON_AddStringToObject(o, "name", i18n_name(i));
+        cJSON_AddItemToArray(langs, o);
+    }
     return send_json(req, j);
 }
 
@@ -118,7 +127,7 @@ static esp_err_t places_post(httpd_req_t *req)
     return ESP_OK;
 }
 
-// {"temp":"c"|"f", "wind":"kmh"|"mph"|"ms", "clock":24|12}; any subset. The screens redraw at once.
+// {"temp":"c"|"f", "wind":"kmh"|"mph"|"ms", "clock":24|12, "lang":"en"|"fr"}; any subset. The screens redraw at once.
 static esp_err_t units_post(httpd_req_t *req)
 {
     cJSON *j = read_json(req);
@@ -130,9 +139,12 @@ static esp_err_t units_post(httpd_req_t *req)
     if (cJSON_IsString(v = cJSON_GetObjectItem(j, "wind")))
         u.wind = !strcmp(v->valuestring, "mph") ? WIND_MPH : !strcmp(v->valuestring, "ms") ? WIND_MS : WIND_KMH;
     if (cJSON_IsNumber(v = cJSON_GetObjectItem(j, "clock"))) u.h12 = v->valueint == 12;
+    int old_lang = u.lang;
+    if (cJSON_IsString(v = cJSON_GetObjectItem(j, "lang"))) u.lang = i18n_from_code(v->valuestring);
     cJSON_Delete(j);
     if (!config_set_units(&u)) return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "not saved");
     ui_units_changed();
+    if (u.lang != old_lang) { ota_check_now(); if (loc_cb) loc_cb(); }   // notes and alerts in the new language
     httpd_resp_sendstr(req, "{\"ok\":true}");
     return ESP_OK;
 }

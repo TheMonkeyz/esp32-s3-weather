@@ -21,6 +21,7 @@
 #include "alerts.h"
 #include "ota.h"
 #include "esp_timer.h"
+#include "i18n.h"
 
 static const char *TAG = "app";
 #define BOOT_BTN        GPIO_NUM_0
@@ -99,10 +100,17 @@ static void place_select(int i)
     follow_active(false);
 }
 
-// Called by the web UI after a place is added, edited, deleted or chosen
+// Called by the web UI after a place is added, edited, deleted or chosen, or the language changed
 static void on_location_changed(void)
 {
     follow_active(true);
+}
+
+// The language changed on the display: wake the loop (alerts are re-shown, notes re-fetched in the new language)
+static void data_refresh(void)
+{
+    ota_check_now();
+    if (main_task) xTaskNotifyGive(main_task);
 }
 
 static bool fetch_place(int i)
@@ -127,12 +135,12 @@ static bool fetch_place(int i)
 static void offline_setup(const char *ssid)
 {
     char note[96];
-    snprintf(note, sizeof(note), "Can't reach %s\n(still trying)", ssid);
+    snprintf(note, sizeof(note), tr(T_CANT_REACH), ssid);
     ui_wifi_setup(note);                       // starts the setup network (page 1) or Easy Connect (page 2)
     net_wait_connected(-1);
     ESP_LOGI(TAG, "Saved network is back");
     ui_wifi_setup_end();
-    ui_message("Wi-Fi", "Connected");
+    ui_message("Wi-Fi", tr(T_CONNECTED));
     for (int i = 0; i < 120 && net_ap_clients() > 0; i++) vTaskDelay(pdMS_TO_TICKS(1000));   // let a phone finish
     net_setup_ap_stop();
 }
@@ -141,7 +149,7 @@ static void portal(void)
 {
     net_start_portal();
     web_start(on_location_changed);
-    ui_wifi_setup("First-time setup");
+    ui_wifi_setup(tr(T_FIRST_SETUP));
     while (1) vTaskDelay(portMAX_DELAY);     // restarts after credentials are saved
 }
 
@@ -163,7 +171,7 @@ void app_main(void)
     ui_init();
     ota_start(ui_ota);          // update checks start once Wi-Fi is up; marks a new firmware valid after 60 s
     diag_mark("ui");
-    ui_message("Weather", "Starting...");
+    ui_message(tr(T_WEATHER), tr(T_STARTING));
 
     if (boot_button_held()) {
         net_clear_creds();
@@ -175,8 +183,8 @@ void app_main(void)
         portal();
     }
 
-    char body[128];
-    snprintf(body, sizeof(body), "Connecting to\n%s\n\nLong-press for Wi-Fi setup", ssid);
+    char body[160];
+    snprintf(body, sizeof(body), tr(T_CONNECTING), ssid);
     ui_message("Wi-Fi", body);
     net_begin(ssid, pass);
     web_start(on_location_changed);   // up early, so a long-press can offer the setup page right away
@@ -187,9 +195,10 @@ void app_main(void)
     }
     diag_mark("wifi up");
     radar_preload_start();      // missing zoom-level maps download in the background
-    ui_message("Weather", "Fetching forecast...\n\nLong-press for Wi-Fi setup");
+    ui_message(tr(T_WEATHER), tr(T_FETCHING));
     config_get_location(&shown);
     ui_on_place_select(place_select);
+    ui_on_data_refresh(data_refresh);
     show_place(true);
     int64_t next_all = 0;                  // when every place's forecast is due again
     while (1) {

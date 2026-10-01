@@ -79,6 +79,31 @@ LVGL timer and event callbacks already run inside the lock.
 - Long-press opens the Settings screen (below). Its *More on your phone* row shows the overlay with a QR code
   (`lv_qrcode`) for `https://<ip>`.
 
+## Languages (`i18n.c`, `i18n_strings.h`)
+
+- Every display text is a `tid_t` id from `main/i18n_strings.h`: one `X(id, "English", "French")` line per string,
+  expanded into the id enum (`i18n.h`) and the text table (`i18n.c`). `tr(id)` returns the current language's text
+  (English when a language has none). Format strings keep the same conversions in every language.
+- Dates: `tr_weekday()`, `tr_date_long()` ("Wednesday, September 30" / "Mercredi 1er octobre"), `tr_date_ymd()` (the
+  release notes' headers). French: lowercase weekday and month inside a date, **1er** for the first of the month,
+  the plain number otherwise (OQLF); a standalone label starts with a capital. Weather conditions: `tr_weather()`.
+- The language is a unit (`units_t.lang`, NVS `units/lang`); `config.c` calls `i18n_set()` on load and save.
+  Changing it (Settings row *Langue*, or `POST /api/units {lang}`) calls `ui_units_changed()`, which also re-sets the
+  fixed labels registered with `tlabel()` (titles, row names, buttons) and rebuilds the notes header; the release
+  notes are fetched again (`ota_check_now()`, dates in the new language).
+- Alerts keep both languages (`alert_t.name/area/text[ALERT_LANGS]`, EC's `_en` / `_fr` fields), so switching is
+  instant; `AL` picks the one shown.
+- French is **Canadian French** (Québec usage): balayer un code QR, appuyer longuement, tamiser (dim), endroit(s)
+  (places), herbe à poux, micrologiciel; air quality Bonne / Acceptable / Mauvaise. Standard written French, no
+  slang.
+- The settings page has its own dictionary (`I18N` in `index.html`, same keys idea: `data-i18n`,
+  `data-i18n-html`, `data-i18n-ph`, `t('key', args)`); it follows `GET /api/config` → `units.lang` and lists
+  `languages`. City search and reverse geocoding ask for names in the page's language; French numbers use a decimal
+  comma (`num()`).
+- **Adding a language:** a column in `i18n_strings.h`, its row in `LANG_CODE` / `LANG_NAME` / `WD_FULL` /
+  `WD_SHORT` / `MONTH` and the date rules in `i18n.c`, `LANG_COUNT`, and a block in the page's `I18N`. EC alerts
+  only exist in English and French (others fall back to English).
+
 ## Settings screen (`ui.c`, `cfg_*`)
 
 - `scr_cfg`, opened by a long-press on the weather screen (offline: the Wi-Fi setup screen instead). Rows in a
@@ -159,6 +184,8 @@ LVGL timer and event callbacks already run inside the lock.
   overlapped the next line on the first try.
 
 ## Weather alerts (`alerts.c`, `ui.c`)
+
+- Names, areas and texts are kept in English and French (see Languages).
 
 - List: `https://api.weather.gc.ca/collections/weather-alerts/items?f=json&skipGeometry=true&bbox=<±0.005° around
   the location>`. The server intersects the box with the real region shapes, so a tiny box is a point query.

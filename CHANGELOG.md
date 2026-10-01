@@ -9,6 +9,9 @@ How to write an entry: add a `## vX.Y.Z - YYYY-MM-DD` section at the top **befor
 their own `## vX.Y.Z-rc.N` section. Those are shown only to Beta users, while the final release's section should
 list everything again.
 
+## v1.7.0 - 2026-10-01
+- The display and the settings page now speak French: choose Français in Settings on the display (Langue) or in the Units card of the settings page. Weather alerts come in French too. The "What's new" notes stay in English for now.
+
 ## v1.6.0 - 2026-10-01
 - Settings right on the display: long-press the weather screen. Turn dimming and wake on pick-up on or off, pick the timing (Short, Normal, Long), set the brightness by sliding along the bottom, change the units, open the phone settings or the Wi-Fi setup, check for updates, or restart.
 - Wake on pick-up: when the screen is dimmed or off, picking up or tilting the display wakes it. A bump on the table doesn't. On the settings page (Screen & presence) you can turn it off, choose the sensitivity, and watch a live movement meter.

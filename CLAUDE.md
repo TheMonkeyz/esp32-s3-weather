@@ -156,6 +156,12 @@ Windows build gets both from `main/idf_component.yml`. `components/dns_server` *
   being called done.
 - Screen-to-screen moves should feel like the hourly view: follow the finger, snap, bounce at the ends, no
   wrap-around. Reuse `pager.c` for that.
+- **French = Canadian French (Québec), standard written:** "endroit(s)" for places (not "lieux"), "tamiser" for dim
+  (not "atténuer"), "balayez le code QR", "appuyez longuement", **1er** for the first of the month. No joual, slang
+  or anglicisms. Check grammar agreement when a noun changes (un endroit → "Nouvel endroit", "cet endroit").
+- New display text goes in `main/i18n_strings.h` (both languages) and page text in `I18N` in `index.html`; never a
+  bare string literal on screen. Check French in snapshots: it is longer and wraps (widen the label, shorten, or
+  use the smaller font for that value).
 - Sliders follow the finger's horizontal movement within a band, even on the round screen (not drag-along-an-arc).
 - Rows that open something need an obvious label and a `>` (a bare "QR" wasn't clear); a screen opened from
   Settings closes back to Settings.

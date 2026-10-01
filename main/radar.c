@@ -19,6 +19,7 @@
 #include "net.h"
 #include "config.h"
 #include "svc.h"
+#include "i18n.h"
 #include "esp_timer.h"
 
 static const char *TAG = "radar";
@@ -36,7 +37,7 @@ static uint16_t *base565;   // cached basemap
 static uint16_t *out565;    // basemap + radar, shown on screen
 static lv_image_dsc_t dsc;
 static lv_obj_t *scr, *img, *lbl_title, *lbl_status, *ring, *ring_lbl, *bar, *lbl_rtime;
-static lv_obj_t *pnl, *pnl_body, *pnl_bar;     // "Preparing maps" panel (background preload)
+static lv_obj_t *pnl, *pnl_body, *pnl_bar, *pnl_title;     // "Preparing maps" panel (background preload)
 static TaskHandle_t task;
 static volatile bool visible;
 static bool base_ok;
@@ -101,7 +102,7 @@ static bool http_fetch(esp_http_client_handle_t *hp, const char *url, dl_t *d)
     esp_err_t err = esp_http_client_perform(*hp);
     int st = esp_http_client_get_status_code(*hp);
     svc_id_t id = strstr(url, "openstreetmap") ? SVC_TILES : SVC_RADAR;
-    if (err == ESP_OK && st == 200 && d->len == 0) svc_fail(id, "Empty reply", t0);
+    if (err == ESP_OK && st == 200 && d->len == 0) svc_fail(id, tr(T_ERR_EMPTY), t0);
     else svc_http(id, err, st, t0);
     if (err != ESP_OK) {                       // drop the connection, start fresh next time
         esp_http_client_cleanup(*hp);
@@ -242,7 +243,7 @@ static void preload_progress(int done)
     display_lock(-1);
     int levels = (pre_total + 8) / 9, level = done / 9 + 1;
     if (level > levels) level = levels;
-    lv_label_set_text_fmt(pnl_body, "Downloading radar maps\nzoom level %d of %d\n\n%d / %d tiles", level, levels, done, pre_total);
+    lv_label_set_text_fmt(pnl_body, tr(T_PREP_PROGRESS), level, levels, done, pre_total);
     lv_bar_set_range(pnl_bar, 0, pre_total > 0 ? pre_total : 1);
     lv_bar_set_value(pnl_bar, done, LV_ANIM_OFF);
     display_unlock();
@@ -263,7 +264,7 @@ static bool load_basemap(void)
                 ESP_LOGI(TAG, "Basemap (zoom %d) cancelled", zoom);
                 return false;
             }
-            snprintf(msg, sizeof(msg), "Loading map %d/%d", ++n, total);
+            snprintf(msg, sizeof(msg), tr(T_LOADING_MAP), ++n, total);
             set_status(NULL, msg);
             snprintf(url, sizeof(url), "https://tile.openstreetmap.org/%d/%d/%d.png", zoom, tx, ty);
             dl_t d;
@@ -535,11 +536,11 @@ static void show_live(void)      // caller holds the display lock
     compose(f->ok ? f : NULL);
     char when[12], now[12], sub[40], dist[12];
     fmt_local(time(NULL), now, sizeof(now));
-    lv_label_set_text(lbl_title, now[0] ? now : "Radar");
+    lv_label_set_text(lbl_title, now[0] ? now : tr(T_RADAR));
     if (config_miles()) snprintf(dist, sizeof(dist), "%d mi", (int)(radius_km / 1.609344 + 0.5));
     else snprintf(dist, sizeof(dist), "%d km", radius_km);
-    if (f->ok) { fmt_local(f->t, when, sizeof(when)); snprintf(sub, sizeof(sub), "Radar %s  ·  %s", when, dist); }
-    else snprintf(sub, sizeof(sub), "Radar  ·  %s", dist);
+    if (f->ok) { fmt_local(f->t, when, sizeof(when)); snprintf(sub, sizeof(sub), tr(T_RADAR_AT), when, dist); }
+    else snprintf(sub, sizeof(sub), tr(T_RADAR_NOTIME), dist);
     lv_label_set_text(lbl_rtime, sub);
     refresh_img();
 }
@@ -578,7 +579,7 @@ static void play_step(lv_timer_t *t)
         char when[12];
         fmt_local(f->t, when, sizeof(when));
         lv_label_set_text(lbl_title, when);
-        lv_label_set_text(lbl_rtime, "Past 3 hours  ·  tap to stop");
+        lv_label_set_text(lbl_rtime, tr(T_PAST_3H));
         lv_bar_set_value(bar, play_i + 1, LV_ANIM_OFF);
         refresh_img();
     }
@@ -611,7 +612,7 @@ static void on_tap(lv_event_t *e)
     if (frames_ready() >= NFRAMES) { start_play(); return; }
     play_pending = true;
     char msg[40];
-    snprintf(msg, sizeof(msg), "Loading past 3 h... %d/%d", frames_ready(), NFRAMES);
+    snprintf(msg, sizeof(msg), tr(T_LOADING_PAST), frames_ready(), NFRAMES);
     lv_label_set_text(lbl_status, msg);
     lv_obj_remove_flag(lbl_status, LV_OBJ_FLAG_HIDDEN);
     if (task) xTaskNotifyGive(task);
@@ -797,7 +798,7 @@ static void radar_task(void *arg)
         bool want_work = prefetch || visible || play_pending;
         prefetch = false;
         if (!want_work) continue;
-        if (!net_is_connected()) { set_status(NULL, "No Wi-Fi"); continue; }
+        if (!net_is_connected()) { set_status(NULL, tr(T_NO_WIFI)); continue; }
 
         if (!base_ok) {
             base_ok = load_basemap();
@@ -807,10 +808,10 @@ static void radar_task(void *arg)
 
         // Latest frame
         if (!last_fetch || time(NULL) - last_fetch >= REFRESH_S - 30) {
-            if (!frames[NFRAMES - 1].ok) set_status(NULL, "Loading radar...");
+            if (!frames[NFRAMES - 1].ok) set_status(NULL, tr(T_LOADING_RADAR));
             time_t latest = latest_radar_time();
             if (!latest) {
-                set_status(NULL, "Radar unavailable");
+                set_status(NULL, tr(T_RADAR_NA));
                 ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(5000));    // a zoom/relocate request wakes us early
                 if (visible) xTaskNotifyGive(task);
                 continue;
@@ -830,7 +831,7 @@ static void radar_task(void *arg)
             load_frame(i);
             if (play_pending) {
                 char msg[40];
-                snprintf(msg, sizeof(msg), "Loading past 3 h... %d/%d", frames_ready(), NFRAMES);
+                snprintf(msg, sizeof(msg), tr(T_LOADING_PAST), frames_ready(), NFRAMES);
                 set_status(NULL, msg);
             }
         }
@@ -845,6 +846,9 @@ static void radar_task(void *arg)
 void radar_units_changed(void)
 {
     ring_update();
+    display_lock(-1);
+    if (pnl_title) lv_label_set_text(pnl_title, tr(T_PREP_MAPS));
+    display_unlock();
     display_lock(-1);
     if (!play_timer) show_live();
     display_unlock();
@@ -914,7 +918,7 @@ lv_obj_t *radar_create(lv_font_t *f_title, lv_font_t *f_small, lv_font_t *f_micr
     lv_obj_set_style_radius(lbl_title, 14, 0);
     lv_obj_set_style_pad_hor(lbl_title, 12, 0);
     lv_obj_set_style_pad_ver(lbl_title, 4, 0);
-    lv_label_set_text(lbl_title, "Radar");
+    lv_label_set_text(lbl_title, tr(T_RADAR));
     lv_obj_align(lbl_title, LV_ALIGN_TOP_MID, 0, 30);
 
     lbl_rtime = lv_label_create(scr);
@@ -925,7 +929,7 @@ lv_obj_t *radar_create(lv_font_t *f_title, lv_font_t *f_small, lv_font_t *f_micr
     lv_obj_set_style_radius(lbl_rtime, 8, 0);
     lv_obj_set_style_pad_hor(lbl_rtime, 8, 0);
     lv_obj_set_style_pad_ver(lbl_rtime, 2, 0);
-    lv_label_set_text(lbl_rtime, "Radar");
+    lv_label_set_text(lbl_rtime, tr(T_RADAR));
     lv_obj_align(lbl_rtime, LV_ALIGN_TOP_MID, 0, 72);
     lv_timer_create(radar_clock, 1000, NULL);
 
@@ -970,7 +974,8 @@ lv_obj_t *radar_create(lv_font_t *f_title, lv_font_t *f_small, lv_font_t *f_micr
     lv_obj_t *pt = lv_label_create(pnl);
     lv_obj_set_style_text_font(pt, f_title, 0);
     lv_obj_set_style_text_color(pt, lv_color_hex(0x5AB0FF), 0);
-    lv_label_set_text(pt, "Preparing maps");
+    pnl_title = pt;
+    lv_label_set_text(pt, tr(T_PREP_MAPS));
     lv_obj_align(pt, LV_ALIGN_TOP_MID, 0, 150);
     pnl_body = lv_label_create(pnl);
     lv_obj_set_style_text_font(pnl_body, f_small, 0);
@@ -1009,7 +1014,7 @@ void radar_zoom(int step)
 {
     int z = zoom_target + step;
     if (preloading) {
-        lv_label_set_text(lbl_status, "Maps still downloading");
+        lv_label_set_text(lbl_status, tr(T_MAPS_LOADING));
         lv_obj_remove_flag(lbl_status, LV_OBJ_FLAG_HIDDEN);
         lv_obj_move_foreground(lbl_status);
         lv_timer_t *t = lv_timer_create(hide_status_cb, 1500, NULL);
@@ -1017,7 +1022,7 @@ void radar_zoom(int step)
         return;
     }
     if (z < ZOOM_MIN || z > ZOOM_MAX) {
-        lv_label_set_text(lbl_status, step > 0 ? "Closest zoom" : "Widest zoom");
+        lv_label_set_text(lbl_status, tr(step > 0 ? T_ZOOM_CLOSEST : T_ZOOM_WIDEST));
         lv_obj_remove_flag(lbl_status, LV_OBJ_FLAG_HIDDEN);
         lv_timer_t *t = lv_timer_create(hide_status_cb, 1500, NULL);
         lv_timer_set_repeat_count(t, 1);
@@ -1034,7 +1039,7 @@ void radar_zoom(int step)
     } else if (lv_image_get_scale(img) > LV_SCALE_NONE) {
         start_scale_anim(lv_image_get_scale(img), lv_image_get_scale(img) / 2);   // undo a pending zoom-in preview
     }
-    lv_label_set_text_fmt(lbl_status, "%s  ·  %d km", step > 0 ? "Zoom in" : "Zoom out", radius_at(z));
+    lv_label_set_text_fmt(lbl_status, "%s  ·  %d km", tr(step > 0 ? T_ZOOM_IN : T_ZOOM_OUT), radius_at(z));
     lv_obj_remove_flag(lbl_status, LV_OBJ_FLAG_HIDDEN);
     if (task) xTaskNotifyGive(task);
 }

@@ -18,6 +18,7 @@
 #include "esp_ota_ops.h"
 #include "esp_wifi.h"
 #include "pager.h"
+#include "i18n.h"
 #include "presence.h"
 #include "esp_system.h"
 #include "esp_log.h"
@@ -62,6 +63,17 @@ static void (*place_select_cb)(int i);         // the pager settled on another p
 #define C_TEXT    lv_color_hex(0xF2F4F7)
 #define C_DIM     lv_color_hex(0x8B95A1)
 #define C_ACCENT  lv_color_hex(0x5AB0FF)
+
+// Labels whose text is fixed (set once): registered so a language change can re-set them (ui_units_changed)
+#define TLABELS 48
+static lv_obj_t *tl_obj[TLABELS];
+static tid_t tl_id[TLABELS];
+static int tl_n;
+static void tlabel(lv_obj_t *l, tid_t id)
+{
+    lv_label_set_text(l, tr(id));
+    if (tl_n < TLABELS) { tl_obj[tl_n] = l; tl_id[tl_n++] = id; }
+}
 
 static lv_font_t *mkfont(int px)
 {
@@ -290,9 +302,9 @@ static void show_settings(lv_event_t *e)
     char ip[20], url[48];
     if (!net_get_ip(ip, sizeof(ip))) strcpy(ip, "192.168.4.1");
     snprintf(url, sizeof(url), "https://%s", ip);
-    lv_label_set_text(ov_title, "Settings");
+    lv_label_set_text(ov_title, tr(T_SETTINGS));
     lv_qrcode_update(ov_qr, url, strlen(url));
-    lv_label_set_text_fmt(ov_url, "%s\nScan with your phone and accept\nthe certificate warning.\n\nLong-press for Wi-Fi setup\nTap to close", url);
+    lv_label_set_text_fmt(ov_url, tr(T_OV_HELP), url);
     ov_state = 1;
     overlay_show();
 }
@@ -514,12 +526,12 @@ static void hr_draw(lv_event_t *e)
     const lv_area_t *clip = &layer->_clip_area;
     char buf[16];
     if (c.y1 + TOP_H > clip->y1) {
-        static const struct { int x, w; const char *t; } hdr[] = {   // aligned with the columns below
-            { 118, 56, "Temp" }, { 180, 54, "Rain" }, { 236, 72, "Wind" },
+        static const struct { int x, w; tid_t t; } hdr[] = {         // aligned with the columns below
+            { 118, 56, T_HDR_TEMP }, { 180, 54, T_HDR_RAIN }, { 236, 72, T_HDR_WIND },
         };
         for (int i = 0; i < 3; i++)
             draw_text_top(layer, f_micro, i == 1 ? C_ACCENT : C_DIM, c.x1 + hdr[i].x, c.y1 + GRAPH_H + 4, hdr[i].w,
-                          LV_TEXT_ALIGN_RIGHT, hdr[i].t);
+                          LV_TEXT_ALIGN_RIGHT, tr(hdr[i].t));
     }
     for (int r = 0; r < dp->count; r++) {
         int y = c.y1 + TOP_H + r * ROW_H;
@@ -536,7 +548,7 @@ static void hr_draw(lv_event_t *e)
             lv_area_t a = { c.x1, y + 2, c.x2, y + ROW_H - 3 };
             lv_draw_rect(layer, &d, &a);
         }
-        if (now) strcpy(buf, "Now"); else config_fmt_hour(i % 24, buf, sizeof(buf));
+        if (now) strlcpy(buf, tr(T_NOW), sizeof(buf)); else config_fmt_hour(i % 24, buf, sizeof(buf));
         draw_text(layer, f_tiny, now ? C_ACCENT : C_DIM, c.x1 + 10, y, 64, LV_TEXT_ALIGN_LEFT, buf);
         P_layer = layer; P_x = c.x1 + 76; P_y = y + (ROW_H - 37) / 2;
         draw_icon(NULL, weather_kind(h->code), h->is_day, 30, 0);
@@ -576,11 +588,11 @@ static void fill_page(int day)
 
     const wx_day_t *d = &wx.day[day];
     struct tm tm = {0};
-    char name[16] = "-";
+    char name[24] = "-";
     if (sscanf(d->date, "%d-%d-%d", &tm.tm_year, &tm.tm_mon, &tm.tm_mday) == 3) {
         tm.tm_year -= 1900; tm.tm_mon -= 1; tm.tm_hour = 12;
         mktime(&tm);
-        strftime(name, sizeof(name), "%A", &tm);        // weekday name, today included
+        strlcpy(name, tr_weekday(tm.tm_wday, true), sizeof(name));   // weekday name, today included
     }
     lv_label_set_text(dp->title, name);
     lv_label_set_text_fmt(dp->sum, "%s  ·  %d° / %d°", weather_text(d->code), config_temp(d->tmax), config_temp(d->tmin));
@@ -782,11 +794,11 @@ static void su_dpp_done(bool ok, const char *ssid)
 {
     display_lock(-1);
     if (ok) {
-        lv_label_set_text(su_title, "Wi-Fi received");
-        lv_label_set_text_fmt(su_body, "Got \"%s\" from your phone.\nRestarting...", ssid);
+        lv_label_set_text(su_title, tr(T_WIFI_RECEIVED));
+        lv_label_set_text_fmt(su_body, tr(T_WIFI_GOT), ssid);
         lv_obj_add_flag(su_qr, LV_OBJ_FLAG_HIDDEN);
     } else {
-        lv_label_set_text(su_body, "That didn't work. Scan again,\nor swipe right for other phones.");
+        lv_label_set_text(su_body, tr(T_WIFI_DPP_FAIL));
     }
     display_unlock();
 }
@@ -798,19 +810,17 @@ static void su_show_page(int page)
     if (page == 0) {
         net_dpp_stop();
         net_setup_ap_start();
-        lv_label_set_text(su_title, "Wi-Fi setup");
+        lv_label_set_text(su_title, tr(T_WIFI_SETUP));
         lv_qrcode_update(su_qr, su_ap_qr, strlen(su_ap_qr));
         lv_obj_remove_flag(su_qr, LV_OBJ_FLAG_HIDDEN);
-        lv_label_set_text(su_body, "Scan to join " SETUP_AP_SSID "\n(password " SETUP_AP_PASS ").\n"
-                                   "Android? Swipe left to skip\nthe password");
+        lv_label_set_text_fmt(su_body, tr(T_WIFI_JOIN), SETUP_AP_SSID, SETUP_AP_PASS);
     } else {
-        lv_label_set_text(su_title, "Android: Easy Connect");
+        lv_label_set_text(su_title, tr(T_WIFI_DPP_TITLE));
         lv_obj_add_flag(su_qr, LV_OBJ_FLAG_HIDDEN);          // until the code is generated
-        lv_label_set_text(su_body, "In Wi-Fi settings, tap the QR icon\nand scan this.\n"
-                                   "Your phone sends its network.\nSwipe right for other phones");
+        lv_label_set_text(su_body, tr(T_WIFI_DPP_HOW));
         net_setup_ap_stop_any();
         if (!net_dpp_start(su_dpp_uri, su_dpp_done))
-            lv_label_set_text(su_body, "Easy Connect isn't available.\nSwipe right for other phones.");
+            lv_label_set_text(su_body, tr(T_WIFI_DPP_NONE));
     }
     ESP_LOGI("ui", "Wi-Fi setup page %d (%s)", page, page ? "Easy Connect" : "setup network");
 }
@@ -873,7 +883,7 @@ void ui_wifi_setup(const char *note)
     if (note) strlcpy(su_note_text, note, sizeof(su_note_text));
     else su_note_text[0] = 0;
     su_can_close = net_is_connected() && !net_in_portal();
-    lv_label_set_text(su_note, su_note_text[0] ? su_note_text : su_can_close ? "Tap to cancel" : "");
+    lv_label_set_text(su_note, su_note_text[0] ? su_note_text : su_can_close ? tr(T_TAP_CANCEL) : "");
     su_show_page(0);
     if (su_timer) lv_timer_delete(su_timer);
     su_timer = lv_timer_create(su_timeout, 10 * 60 * 1000, NULL);   // closes after 10 min once online
@@ -903,10 +913,9 @@ static void fmt_until(time_t t, char *out, size_t n)
 {
     struct tm tm;
     if (t && config_local_time((long)t, &tm)) {
-        char day[8], hm[12];
-        strftime(day, sizeof(day), "%a", &tm);
+        char hm[12];
         config_fmt_time(tm.tm_hour, tm.tm_min, hm, sizeof(hm));
-        snprintf(out, n, "Until %s %s", day, hm);
+        snprintf(out, n, tr(T_UNTIL), tr_weekday(tm.tm_wday, false), hm);
     } else out[0] = 0;
 }
 
@@ -983,6 +992,8 @@ void ui_alert_map(uint16_t *buf, int w, int h)
     free(old);
 }
 
+#define AL (i18n_lang() < ALERT_LANGS ? i18n_lang() : 0)    // alert texts exist in English and French
+
 void ui_alerts(const alerts_t *al)
 {
     display_lock(-1);
@@ -999,22 +1010,22 @@ void ui_alerts(const alerts_t *al)
     lv_color_t c = alert_colour(a->colour);
     lv_obj_set_style_bg_color(al_pill, c, 0);
     lv_obj_set_style_text_color(al_pill_lbl, a->colour == 'r' ? lv_color_white() : lv_color_black(), 0);
-    if (alerts.n > 1) lv_label_set_text_fmt(al_pill_lbl, "%s +%d", a->name, alerts.n - 1);
-    else lv_label_set_text(al_pill_lbl, a->name);
+    if (alerts.n > 1) lv_label_set_text_fmt(al_pill_lbl, "%s +%d", a->name[AL], alerts.n - 1);
+    else lv_label_set_text(al_pill_lbl, a->name[AL]);
     lv_obj_remove_flag(al_pill, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(pp[cur_place].city, LV_OBJ_FLAG_HIDDEN);
 
     char until[32];
     fmt_until(a->ends, until, sizeof(until));
-    lv_label_set_text(al_title, a->name);
+    lv_label_set_text(al_title, a->name[AL]);
     lv_obj_set_style_text_color(al_title, c, 0);
-    lv_label_set_text_fmt(al_sub, "%s%s%s", until, until[0] && a->area[0] ? "\n" : "", a->area);
+    lv_label_set_text_fmt(al_sub, "%s%s%s", until, until[0] && a->area[AL][0] ? "\n" : "", a->area[AL]);
     lv_obj_scroll_to_y(lv_obj_get_parent(al_body), 0, LV_ANIM_OFF);
     static EXT_RAM_BSS_ATTR char body[ALERTS_MAX * 960];
-    int len = snprintf(body, sizeof(body), "%s", a->text);
+    int len = snprintf(body, sizeof(body), "%s", a->text[AL]);
     for (int i = 1; i < alerts.n && len < (int)sizeof(body); i++) {
         fmt_until(alerts.a[i].ends, until, sizeof(until));
-        len += snprintf(body + len, sizeof(body) - len, "\n\nAlso: %s (%s)\n\n%s", alerts.a[i].name, until, alerts.a[i].text);
+        len += snprintf(body + len, sizeof(body) - len, tr(T_ALERT_ALSO), alerts.a[i].name[AL], until, alerts.a[i].text[AL]);
     }
     lv_label_set_text(al_body, body);
     display_unlock();
@@ -1042,9 +1053,9 @@ static const char *moon_phase(time_t t, int *illum)
     moon_k = cos(2 * M_PI * age / syn);
     moon_waxing = age < syn / 2;
     *illum = (int)round((1 - cos(2 * M_PI * age / syn)) / 2 * 100);
-    static const char *names[8] = { "New moon", "Waxing crescent", "First quarter", "Waxing gibbous",
-                                    "Full moon", "Waning gibbous", "Last quarter", "Waning crescent" };
-    return names[(int)floor(age / syn * 8 + 0.5) % 8];
+    static const tid_t names[8] = { T_MOON_NEW, T_MOON_WAX_CR, T_MOON_FIRST_Q, T_MOON_WAX_GIB,
+                                    T_MOON_FULL, T_MOON_WAN_GIB, T_MOON_LAST_Q, T_MOON_WAN_CR };
+    return tr(names[(int)floor(age / syn * 8 + 0.5) % 8]);
 }
 
 // Moon drawn row by row: dark disc, then the lit part. k = cos(phase angle) puts the terminator at w*k.
@@ -1084,9 +1095,9 @@ static void extras_refresh(void)       // display lock held (LVGL task or caller
     time_t now = time(NULL);
     bool synced = config_local_time((long)now, &tm);
     char buf[64];
-    if (synced) {                                        // "Wednesday, September 30"
-        strftime(buf, sizeof(buf), "%A, %B", &tm);
-        lv_label_set_text_fmt(ex_date, "%s %d", buf, tm.tm_mday);
+    if (synced) {                                        // "Wednesday, September 30" / "Mercredi 1er octobre"
+        tr_date_long(&tm, buf, sizeof(buf));
+        lv_label_set_text(ex_date, buf);
     }
 
     // Sun
@@ -1104,51 +1115,52 @@ static void extras_refresh(void)       // display lock held (LVGL task or caller
             float th = (180 + 180 * p) * M_PI / 180;
             lv_obj_set_pos(ex_sun, ARC_CX + ARC_R * cosf(th) - 11, ARC_CY + ARC_R * sinf(th) - 11);
             lv_obj_remove_flag(ex_sun, LV_OBJ_FLAG_HIDDEN);
-            lv_label_set_text_fmt(ex_day, "Daylight\n%d h %02d", len / 60, len % 60);
+            lv_label_set_text_fmt(ex_day, tr(T_DAYLIGHT), len / 60, len % 60);
         } else {
             lv_arc_set_value(ex_arc, 0);                      // night: the whole arc dim
             lv_obj_add_flag(ex_sun, LV_OBJ_FLAG_HIDDEN);
             const char *next = cur > set && wx.ndays > 1 ? wx.day[1].sunrise : wx.day[0].sunrise;
             config_fmt_hhmm(next, buf, sizeof(buf));
-            lv_label_set_text_fmt(ex_day, "Sunrise\n%s", buf);
+            lv_label_set_text_fmt(ex_day, tr(T_SUNRISE), buf);
         }
     }
 
     // UV
     if (have_wx) {
         float uv = wx.uv;
-        const char *lvl = uv < 3 ? "Low" : uv < 6 ? "Moderate" : uv < 8 ? "High" : uv < 11 ? "Very high" : "Extreme";
+        const char *lvl = tr(uv < 3 ? T_LOW : uv < 6 ? T_MODERATE : uv < 8 ? T_HIGH : uv < 11 ? T_VERY_HIGH : T_EXTREME);
         lv_color_t c = lv_color_hex(uv < 3 ? 0x6FD08C : uv < 6 ? 0xFFC83D : uv < 8 ? 0xFF8A3D : uv < 11 ? 0xFF4D4D : 0xC77DFF);
         snprintf(buf, sizeof(buf), "%.0f  %s  (max %.0f)", uv, lvl, wx.day[0].uv_max);
-        ex_row(0, "UV index", buf, c);
+        ex_row(0, tr(T_UV_INDEX), buf, c);
     }
 
     // Moon
     int illum;
     const char *ph = moon_phase(now, &illum);
     snprintf(buf, sizeof(buf), "%s  %d%%", ph, illum);
-    ex_row(1, "Moon", buf, C_TEXT);
+    lv_obj_set_style_text_font(ex_val[1], strlen(buf) > 22 ? f_micro : f_tiny, 0);   // "Gibbeuse décroissante  78%"
+    ex_row(1, tr(T_MOON), buf, C_TEXT);
     lv_obj_invalidate(ex_moon);
 
     // Air quality (US AQI, CAMS global)
     if (have_air && ex_air.us_aqi >= 0) {
         int q = ex_air.us_aqi;
-        const char *lvl = q <= 50 ? "Good" : q <= 100 ? "Moderate" : q <= 150 ? "Sensitive groups" : q <= 200 ? "Unhealthy" :
-                          q <= 300 ? "Very unhealthy" : "Hazardous";
+        const char *lvl = tr(q <= 50 ? T_AQI_GOOD : q <= 100 ? T_AQI_MODERATE : q <= 150 ? T_AQI_SENSITIVE :
+                             q <= 200 ? T_AQI_UNHEALTHY : q <= 300 ? T_AQI_VERY_UNH : T_AQI_HAZARDOUS);
         lv_color_t c = lv_color_hex(q <= 50 ? 0x6FD08C : q <= 100 ? 0xFFC83D : q <= 150 ? 0xFF8A3D : q <= 200 ? 0xFF4D4D : 0xC77DFF);
         snprintf(buf, sizeof(buf), "%s  %d", lvl, q);
-        ex_row(2, "Air quality", buf, c);
-    } else ex_row(2, "Air quality", "-", C_DIM);
+        ex_row(2, tr(T_AIR_QUALITY), buf, c);
+    } else ex_row(2, tr(T_AIR_QUALITY), "-", C_DIM);
 
     // Pollen (Europe only): the strongest type
-    static const char *pn[4] = { "Alder", "Birch", "Grass", "Ragweed" };
+    static const tid_t pn[4] = { T_POLLEN_ALDER, T_POLLEN_BIRCH, T_POLLEN_GRASS, T_POLLEN_RAGWEED };
     int best = -1;
     for (int i = 0; i < 4; i++) if (ex_air.pollen[i] >= 0 && (best < 0 || ex_air.pollen[i] > ex_air.pollen[best])) best = i;
     if (have_air && best >= 0) {
         float v = ex_air.pollen[best];
-        const char *lvl = v < 10 ? "Low" : v < 50 ? "Moderate" : v < 200 ? "High" : "Very high";
-        snprintf(buf, sizeof(buf), "%s  %s", pn[best], lvl);
-        ex_row(3, "Pollen", buf, lv_color_hex(v < 10 ? 0x6FD08C : v < 50 ? 0xFFC83D : v < 200 ? 0xFF8A3D : 0xFF4D4D));
+        const char *lvl = tr(v < 10 ? T_LOW : v < 50 ? T_MODERATE : v < 200 ? T_HIGH : T_VERY_HIGH);
+        snprintf(buf, sizeof(buf), "%s  %s", tr(pn[best]), lvl);
+        ex_row(3, tr(T_POLLEN), buf, lv_color_hex(v < 10 ? 0x6FD08C : v < 50 ? 0xFFC83D : v < 200 ? 0xFF8A3D : 0xFF4D4D));
         lv_obj_remove_flag(ex_key[3], LV_OBJ_FLAG_HIDDEN);
         lv_obj_remove_flag(ex_val[3], LV_OBJ_FLAG_HIDDEN);
     } else {                                   // Open-Meteo's pollen data only covers Europe
@@ -1208,7 +1220,7 @@ static void extras_create(void)
     for (int i = 0; i < 4; i++) {
         int y = 260 + i * 36;
         ex_key[i] = label(scr_extras, f_tiny, C_DIM, y);
-        lv_obj_set_width(ex_key[i], 110);
+        lv_obj_set_width(ex_key[i], 160);                     // "Qualité de l'air" on one line
         lv_obj_set_style_text_align(ex_key[i], LV_TEXT_ALIGN_LEFT, 0);
         lv_obj_align(ex_key[i], LV_ALIGN_TOP_LEFT, 72, y);
         ex_val[i] = label(scr_extras, f_tiny, C_TEXT, y);
@@ -1236,10 +1248,10 @@ static lv_obj_t *st_ver, *st_net, *st_dot[SVC_COUNT], *st_age[SVC_COUNT], *st_de
 static void fmt_age(int64_t us, char *out, size_t n)
 {
     int s = (int)(us / 1000000);
-    if (s < 60) snprintf(out, n, "%d s", s);
-    else if (s < 3600) snprintf(out, n, "%d min", s / 60);
-    else if (s < 86400) snprintf(out, n, "%d h %02d", s / 3600, s / 60 % 60);
-    else snprintf(out, n, "%d d", s / 86400);
+    if (s < 60) snprintf(out, n, tr(T_AGE_S), s);
+    else if (s < 3600) snprintf(out, n, tr(T_AGE_MIN), s / 60);
+    else if (s < 86400) snprintf(out, n, tr(T_AGE_H), s / 3600, s / 60 % 60);
+    else snprintf(out, n, tr(T_AGE_D), s / 86400);
 }
 
 static void join(char *out, size_t n, const char *part)    // "a  ·  b"
@@ -1256,30 +1268,31 @@ static void status_refresh(void)       // display lock held
     ota_status_t o;
     ota_get_status(&o);
     const esp_partition_t *part = esp_ota_get_running_partition();
-    lv_label_set_text_fmt(st_ver, "%s  ·  %s  ·  %s", o.current, strcmp(o.channel, "beta") ? "Stable" : "Beta",
+    lv_label_set_text_fmt(st_ver, "%s  ·  %s  ·  %s", o.current, tr(strcmp(o.channel, "beta") ? T_STABLE : T_BETA),
                           part ? part->label : "?");
     fmt_age(now, a, sizeof(a));
     wifi_ap_record_t ap;
     char ip[20];
     if (net_is_connected() && net_get_ip(ip, sizeof(ip)) && esp_wifi_sta_get_ap_info(&ap) == ESP_OK)
-        lv_label_set_text_fmt(st_net, "Wi-Fi %d dBm  ·  %s  ·  up %s", ap.rssi, ip, a);
-    else lv_label_set_text_fmt(st_net, "Wi-Fi offline  ·  up %s", a);
+        lv_label_set_text_fmt(st_net, tr(T_WIFI_UP), ap.rssi, ip, a);
+    else lv_label_set_text_fmt(st_net, tr(T_WIFI_OFFLINE), a);
 
     for (int i = 0; i < SVC_COUNT; i++) {
         svc_info_t s;
         svc_get(i, &s);
         uint32_t c;
         d[0] = 0;
-        if (i == SVC_UPDATES && o.latest[0]) { snprintf(b, sizeof(b), "offers %s", o.latest); join(d, sizeof(d), b); }
-        else join(d, sizeof(d), s.api);
+        if (i == SVC_UPDATES && o.latest[0]) { snprintf(b, sizeof(b), tr(T_SVC_OFFERS), o.latest); join(d, sizeof(d), b); }
+        else join(d, sizeof(d), i == SVC_FORECAST ? tr(T_API_FORECAST) : i == SVC_AIR ? tr(T_API_AIR) :
+                                i == SVC_TILES ? tr(T_API_TILES) : i == SVC_UPDATES ? tr(T_API_UPDATES) : s.api);
         if (s.probing) {
             c = 0x5A636E;
             a[0] = 0;
-            join(d, sizeof(d), "checking...");
+            join(d, sizeof(d), tr(T_SVC_CHECKING));
         } else if (!s.last_try) {
             c = 0x5A636E;
             a[0] = 0;
-            join(d, sizeof(d), i == SVC_NTP ? "waiting for sync" : "not used yet");
+            join(d, sizeof(d), tr(i == SVC_NTP ? T_SVC_WAIT_SYNC : T_SVC_NOT_USED));
         } else {
             fmt_age(now - s.last_try, a, sizeof(a));
             if (s.ok) {
@@ -1289,12 +1302,12 @@ static void status_refresh(void)       // display lock held
             } else {
                 c = s.fails >= 2 || !s.last_ok ? 0xFF4D4D : 0xFFC83D;
                 join(d, sizeof(d), s.why);
-                if (s.fails > 1) { snprintf(b, sizeof(b), "%d in a row", s.fails); join(d, sizeof(d), b); }
+                if (s.fails > 1) { snprintf(b, sizeof(b), tr(T_SVC_IN_A_ROW), s.fails); join(d, sizeof(d), b); }
                 if (s.last_ok) {
                     char t[16];
                     fmt_age(now - s.last_ok, t, sizeof(t));
-                    snprintf(b, sizeof(b), "OK %s ago", t);
-                } else snprintf(b, sizeof(b), "never OK");
+                    snprintf(b, sizeof(b), tr(T_SVC_OK_AGO), t);
+                } else snprintf(b, sizeof(b), "%s", tr(T_SVC_NEVER_OK));
                 join(d, sizeof(d), b);
             }
         }
@@ -1324,7 +1337,7 @@ static lv_obj_t *st_label(lv_obj_t *parent, lv_font_t *f, lv_color_t c, int x, i
 static void status_create(void)
 {
     scr_status = base_screen();
-    lv_label_set_text(label(scr_status, f_small, C_ACCENT, 34), "Status");
+    tlabel(label(scr_status, f_small, C_ACCENT, 34), T_STATUS);
     st_ver = label(scr_status, f_tiny, C_TEXT, 62);
     st_net = label(scr_status, f_micro, C_DIM, 88);
     lv_obj_set_width(st_net, 340);
@@ -1381,7 +1394,7 @@ static void update_notes(void)        // display lock held
     if (!*txt) { lv_obj_add_flag(up_notes, LV_OBJ_FLAG_HIDDEN); free(txt); return; }
     lv_obj_remove_flag(up_notes, LV_OBJ_FLAG_HIDDEN);
     lv_obj_t *h = al_label(up_notes, f_small, C_TEXT);
-    lv_label_set_text(h, "What's new");
+    lv_label_set_text(h, tr(T_WHATS_NEW));
     lv_obj_set_style_pad_bottom(h, 2, 0);
     char *body = heap_caps_malloc(3200, MALLOC_CAP_SPIRAM);
     char *save = NULL;
@@ -1412,12 +1425,12 @@ static void update_render(void)       // display lock held
     const ota_status_t *o = &up_st;
     bool show_pill = o->state == OTA_AVAILABLE || o->state == OTA_DOWNLOADING || o->state == OTA_DONE;
     if (show_pill) {
-        if (o->state == OTA_AVAILABLE) lv_label_set_text_fmt(up_pill_lbl, "Update %s", o->latest);
-        else lv_label_set_text_fmt(up_pill_lbl, "Updating %d%%", o->progress);
+        if (o->state == OTA_AVAILABLE) lv_label_set_text_fmt(up_pill_lbl, tr(T_PILL_UPDATE), o->latest);
+        else lv_label_set_text_fmt(up_pill_lbl, tr(T_PILL_UPDATING), o->progress);
         lv_obj_remove_flag(up_pill, LV_OBJ_FLAG_HIDDEN);
     } else lv_obj_add_flag(up_pill, LV_OBJ_FLAG_HIDDEN);
 
-    lv_label_set_text_fmt(up_body, "%s  ·  you have %s", o->latest, o->current);
+    lv_label_set_text_fmt(up_body, tr(T_UP_YOU_HAVE), o->latest, o->current);
     bool busy = o->state == OTA_DOWNLOADING || o->state == OTA_DONE;
     if (o->state == OTA_AVAILABLE) lv_obj_remove_flag(up_btn, LV_OBJ_FLAG_HIDDEN);
     else lv_obj_add_flag(up_btn, LV_OBJ_FLAG_HIDDEN);
@@ -1426,11 +1439,11 @@ static void update_render(void)       // display lock held
         lv_bar_set_value(up_bar, o->state == OTA_DONE ? 100 : o->progress, LV_ANIM_OFF);
     } else lv_obj_add_flag(up_bar, LV_OBJ_FLAG_HIDDEN);
     lv_label_set_text(up_state,
-        o->state == OTA_DOWNLOADING ? "Downloading... keep it plugged in" :
-        o->state == OTA_DONE ? "Installed. Restarting..." :
+        o->state == OTA_DOWNLOADING ? tr(T_UP_DOWNLOADING) :
+        o->state == OTA_DONE ? tr(T_UP_INSTALLED) :
         o->state == OTA_FAILED ? o->error :
-        o->state == OTA_AVAILABLE ? "Your settings are kept" : "");
-    lv_label_set_text(up_title, o->state == OTA_DONE ? "Updated" : busy ? "Updating" : "Update available");
+        o->state == OTA_AVAILABLE ? tr(T_UP_KEPT) : "");
+    lv_label_set_text(up_title, tr(o->state == OTA_DONE ? T_UP_DONE : busy ? T_UP_BUSY : T_UP_AVAILABLE));
     update_notes();
 }
 
@@ -1504,7 +1517,7 @@ static void update_create(void)
     lv_obj_t *bl = lv_label_create(up_btn);
     lv_obj_set_style_text_font(bl, f_small, 0);
     lv_obj_set_style_text_color(bl, lv_color_hex(0x04121F), 0);
-    lv_label_set_text(bl, "Install");
+    tlabel(bl, T_INSTALL);
     lv_obj_center(bl);
     lv_obj_add_event_cb(up_btn, update_install, LV_EVENT_CLICKED, NULL);
     up_bar = lv_bar_create(up_box);
@@ -1559,7 +1572,7 @@ static void place_page_create(int i, lv_obj_t *pg)
     for (int k = 0; k < 3; k++) {                              // 3-day forecast: day / icon / high-low
         int dx = (k - 1) * 98;
         p->fc_day[k] = label(pg, f_tiny, C_ACCENT, 0);
-        lv_obj_set_width(p->fc_day[k], 96);
+        lv_obj_set_width(p->fc_day[k], 120);                  // "Aujourd'hui" (columns are 98 px apart)
         lv_obj_align(p->fc_day[k], LV_ALIGN_TOP_MID, dx, 306);
         p->fc_icon[k] = icon_box_create(pg, 36);
         lv_obj_align(p->fc_icon[k], LV_ALIGN_TOP_MID, dx, 334);
@@ -1598,13 +1611,14 @@ static void place_settled(int i, void *user)
  * same functions as the settings page (presence.c, config.c), so the phone and the display always agree. Places,
  * the Wi-Fi password, custom timings and sound calibration stay on the phone (typing, map, live meter). */
 
-enum { R_DIM, R_MOTION, R_TIMING, R_TEMP, R_WIND, R_CLOCK, R_PHONE, R_WIFI, R_UPDATE, R_RESTART, CFG_ROWS };
+enum { R_DIM, R_MOTION, R_TIMING, R_TEMP, R_WIND, R_CLOCK, R_LANG, R_PHONE, R_WIFI, R_UPDATE, R_RESTART, CFG_ROWS };
 static lv_obj_t *cfg_row[CFG_ROWS], *cfg_val[CFG_ROWS], *cfg_arc, *cfg_bright, *cfg_zone;
 static uint32_t check_tapped;                      // tick of "Check now" (shows the result for a few seconds)
-static const struct { int dim, off, wake; const char *name; } cfg_presets[] = {   // as the settings page's PRESETS
-    { 120, 900, 2, "Short" }, { 600, 3600, 3, "Normal" }, { 1800, 10800, 3, "Long" },   // off = total quiet time
+static const struct { int dim, off, wake; tid_t name; } cfg_presets[] = {          // as the settings page's PRESETS
+    { 120, 900, 2, T_T_SHORT }, { 600, 3600, 3, T_T_NORMAL }, { 1800, 10800, 3, T_T_LONG },   // off = total quiet
 };
 static uint32_t restart_armed;                     // tick of the first "Restart" tap (a second one restarts)
+static void (*data_refresh_cb)(void);              // main.c: fetch again (alerts, notes) after a language change
 
 static int cfg_preset(const presence_cfg_t *c)     // index into cfg_presets, -1 = custom
 {
@@ -1635,24 +1649,25 @@ static void cfg_refresh(void)                      // display lock held
     if (st.imu_ok) lv_obj_remove_flag(cfg_row[R_MOTION], LV_OBJ_FLAG_HIDDEN);
     else lv_obj_add_flag(cfg_row[R_MOTION], LV_OBJ_FLAG_HIDDEN);
     int p = cfg_preset(&c);
-    lv_label_set_text(cfg_val[R_TIMING], p < 0 ? "Custom" : cfg_presets[p].name);
+    lv_label_set_text(cfg_val[R_TIMING], tr(p < 0 ? T_T_CUSTOM : cfg_presets[p].name));
     lv_label_set_text(cfg_val[R_TEMP], u.fahrenheit ? "°F" : "°C");
     lv_label_set_text(cfg_val[R_WIND], u.wind == WIND_MPH ? "mph" : u.wind == WIND_MS ? "m/s" : "km/h");
     lv_label_set_text(cfg_val[R_CLOCK], u.h12 ? "12 h" : "24 h");
+    lv_label_set_text(cfg_val[R_LANG], i18n_name(i18n_lang()));
     char b[48];
     bool just_checked = check_tapped && lv_tick_elaps(check_tapped) < 6000;
     if (o.state == OTA_AVAILABLE) snprintf(b, sizeof(b), "%s >", o.latest);             // tap: update screen
-    else if (o.state == OTA_CHECKING) snprintf(b, sizeof(b), "Checking...");
+    else if (o.state == OTA_CHECKING) snprintf(b, sizeof(b), "%s", tr(T_CHECKING));
     else if (o.state == OTA_DOWNLOADING) snprintf(b, sizeof(b), "%d%%", o.progress);
-    else if (just_checked && o.state == OTA_UP_TO_DATE) snprintf(b, sizeof(b), "Up to date");
-    else if (just_checked && o.state == OTA_FAILED) snprintf(b, sizeof(b), "Failed");
-    else snprintf(b, sizeof(b), "Check now >");
+    else if (just_checked && o.state == OTA_UP_TO_DATE) snprintf(b, sizeof(b), "%s", tr(T_UP_TO_DATE));
+    else if (just_checked && o.state == OTA_FAILED) snprintf(b, sizeof(b), "%s", tr(T_FAILED));
+    else snprintf(b, sizeof(b), "%s", tr(T_CHECK_NOW));
     lv_label_set_text(cfg_val[R_UPDATE], b);
     bool armed = restart_armed && lv_tick_elaps(restart_armed) < 4000;
-    lv_label_set_text(cfg_val[R_RESTART], armed ? "Tap again" : "");
+    lv_label_set_text(cfg_val[R_RESTART], armed ? tr(T_TAP_AGAIN) : "");
     if (!lv_obj_has_state(cfg_zone, LV_STATE_PRESSED)) {
         lv_arc_set_value(cfg_arc, c.bright_pct);
-        lv_label_set_text_fmt(cfg_bright, "Brightness %d%%", c.bright_pct);
+        lv_label_set_text_fmt(cfg_bright, tr(T_BRIGHTNESS), c.bright_pct);
     }
 }
 
@@ -1687,6 +1702,12 @@ static void cfg_tap(lv_event_t *e)
     case R_TEMP: u.fahrenheit = !u.fahrenheit; config_set_units(&u); ui_units_changed(); break;
     case R_WIND: u.wind = (u.wind + 1) % 3; config_set_units(&u); ui_units_changed(); break;
     case R_CLOCK: u.h12 = !u.h12; config_set_units(&u); ui_units_changed(); break;
+    case R_LANG:
+        u.lang = (u.lang + 1) % LANG_COUNT;
+        config_set_units(&u);
+        ui_units_changed();                                     // every screen, in the new language
+        if (data_refresh_cb) data_refresh_cb();                 // alerts and release notes in the new language
+        break;
     case R_PHONE: back_to_cfg = true; lv_screen_load(scr_main); show_settings(NULL); return;
     case R_WIFI: back_to_cfg = true; ui_wifi_setup(NULL); return;
     case R_UPDATE: {
@@ -1699,7 +1720,7 @@ static void cfg_tap(lv_event_t *e)
     case R_RESTART:
         if (restart_armed && lv_tick_elaps(restart_armed) < 4000) {
             ESP_LOGI("ui", "restart from the settings screen");
-            lv_label_set_text(cfg_val[R_RESTART], "Restarting...");
+            lv_label_set_text(cfg_val[R_RESTART], tr(T_RESTARTING));
             lv_timer_create(do_restart, 400, NULL);
             return;
         }
@@ -1722,7 +1743,7 @@ static void cfg_bright_changed(lv_event_t *e)
     int v = 5 + (pt.x - BR_X0) * 95 / (BR_X1 - BR_X0);
     v = v < 5 ? 5 : v > 100 ? 100 : v;
     lv_arc_set_value(cfg_arc, v);
-    lv_label_set_text_fmt(cfg_bright, "Brightness %d%%", v);
+    lv_label_set_text_fmt(cfg_bright, tr(T_BRIGHTNESS), v);
     presence_preview_brightness(v);                           // the screen follows the finger
     lv_event_code_t code = lv_event_get_code(e);
     if (code == LV_EVENT_RELEASED || code == LV_EVENT_PRESS_LOST) {   // save when the finger lifts (NVS write)
@@ -1765,7 +1786,7 @@ static void open_cfg(lv_event_t *e)                // long-press on the weather 
     if (in) lv_indev_wait_release(in);               // the long-press's release isn't a tap on a row
 }
 
-static lv_obj_t *cfg_add_row(lv_obj_t *box, int r, const char *name, bool is_switch)
+static lv_obj_t *cfg_add_row(lv_obj_t *box, int r, tid_t name, bool is_switch)
 {
     lv_obj_t *row = cfg_row[r] = lv_obj_create(box);
     lv_obj_remove_style_all(row);
@@ -1779,7 +1800,7 @@ static lv_obj_t *cfg_add_row(lv_obj_t *box, int r, const char *name, bool is_swi
     lv_obj_t *l = lv_label_create(row);
     lv_obj_set_style_text_font(l, f_small, 0);
     lv_obj_set_style_text_color(l, C_TEXT, 0);
-    lv_label_set_text(l, name);
+    tlabel(l, name);
     lv_obj_align(l, LV_ALIGN_LEFT_MID, 14, 0);
     if (is_switch) {
         lv_obj_t *sw = cfg_val[r] = lv_switch_create(row);
@@ -1798,14 +1819,14 @@ static lv_obj_t *cfg_add_row(lv_obj_t *box, int r, const char *name, bool is_swi
     return row;
 }
 
-static void cfg_section(lv_obj_t *box, const char *name)
+static void cfg_section(lv_obj_t *box, tid_t name)
 {
     lv_obj_t *l = lv_label_create(box);
     lv_obj_set_style_text_font(l, f_micro, 0);
     lv_obj_set_style_text_color(l, C_DIM, 0);
     lv_obj_set_style_pad_top(l, 6, 0);
     lv_obj_set_width(l, 290);
-    lv_label_set_text(l, name);
+    tlabel(l, name);
     lv_obj_add_flag(l, LV_OBJ_FLAG_GESTURE_BUBBLE);
 }
 
@@ -1820,7 +1841,7 @@ static void cfg_create(void)
     lv_obj_align(done, LV_ALIGN_TOP_MID, 0, 22);
     lv_obj_t *dl = lv_label_create(done);
     lv_obj_set_style_text_font(dl, f_small, 0);
-    lv_label_set_text(dl, "Done");
+    tlabel(dl, T_DONE);
     lv_obj_center(dl);
     lv_obj_add_event_cb(done, cfg_close, LV_EVENT_CLICKED, NULL);
 
@@ -1834,19 +1855,20 @@ static void cfg_create(void)
     lv_obj_set_scroll_dir(box, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(box, LV_SCROLLBAR_MODE_OFF);
     lv_obj_add_flag(box, LV_OBJ_FLAG_GESTURE_BUBBLE);
-    cfg_section(box, "SCREEN");
-    cfg_add_row(box, R_DIM, "Dim when quiet", true);
-    cfg_add_row(box, R_MOTION, "Wake on pick-up", true);
-    cfg_add_row(box, R_TIMING, "Timing", false);
-    cfg_section(box, "UNITS");
-    cfg_add_row(box, R_TEMP, "Temperature", false);
-    cfg_add_row(box, R_WIND, "Wind", false);
-    cfg_add_row(box, R_CLOCK, "Clock", false);
-    cfg_section(box, "MORE");
-    cfg_add_row(box, R_PHONE, "More on your phone", false);
-    cfg_add_row(box, R_WIFI, "Wi-Fi network", false);
-    cfg_add_row(box, R_UPDATE, "Updates", false);
-    cfg_add_row(box, R_RESTART, "Restart", false);
+    cfg_section(box, T_SEC_SCREEN);
+    cfg_add_row(box, R_DIM, T_DIM_QUIET, true);
+    cfg_add_row(box, R_MOTION, T_WAKE_PICKUP, true);
+    cfg_add_row(box, R_TIMING, T_TIMING, false);
+    cfg_section(box, T_SEC_UNITS);
+    cfg_add_row(box, R_TEMP, T_TEMPERATURE, false);
+    cfg_add_row(box, R_WIND, T_WIND, false);
+    cfg_add_row(box, R_CLOCK, T_CLOCK, false);
+    cfg_add_row(box, R_LANG, T_LANGUAGE, false);
+    cfg_section(box, T_SEC_MORE);
+    cfg_add_row(box, R_PHONE, T_PHONE, false);
+    cfg_add_row(box, R_WIFI, T_WIFI_NETWORK, false);
+    cfg_add_row(box, R_UPDATE, T_UPDATES, false);
+    cfg_add_row(box, R_RESTART, T_RESTART, false);
     lv_label_set_text(cfg_val[R_PHONE], ">");
     lv_label_set_text(cfg_val[R_WIFI], ">");
 
@@ -1935,7 +1957,7 @@ void ui_init(void)
     lv_obj_add_flag(overlay, LV_OBJ_FLAG_HIDDEN | LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(overlay, overlay_close, LV_EVENT_CLICKED, NULL);
     ov_title = label(overlay, f_small, C_ACCENT, 48);
-    lv_label_set_text(ov_title, "Settings");
+    lv_label_set_text(ov_title, tr(T_SETTINGS));
     lv_obj_add_event_cb(overlay, show_wifi_setup, LV_EVENT_LONG_PRESSED, NULL);
     ov_qr = make_qr(overlay, 170);
     lv_obj_align(ov_qr, LV_ALIGN_TOP_MID, 0, 84);
@@ -1980,12 +2002,12 @@ void ui_message_qr(const char *title, const char *body, const char *qr)
 
 static void day_name(const char *date, int idx, char *out, size_t n)
 {
-    if (idx == 0) { snprintf(out, n, "Today"); return; }
+    if (idx == 0) { snprintf(out, n, "%s", tr(T_TODAY)); return; }
     struct tm tm = {0};
     if (sscanf(date, "%d-%d-%d", &tm.tm_year, &tm.tm_mon, &tm.tm_mday) == 3) {
         tm.tm_year -= 1900; tm.tm_mon -= 1; tm.tm_hour = 12;
         mktime(&tm);
-        strftime(out, n, "%a", &tm);
+        snprintf(out, n, "%s", tr_weekday(tm.tm_wday, false));
     } else snprintf(out, n, "-");
 }
 
@@ -2023,7 +2045,7 @@ void ui_place(int i, const char *name, const weather_t *w)
     if (!w) {                                                  // no forecast yet for this place
         p->has_wx = false;
         lv_label_set_text(p->temp, "-");
-        lv_label_set_text(p->cond, "Loading...");
+        lv_label_set_text(p->cond, tr(T_LOADING));
         lv_label_set_text(p->detail, "");
         lv_obj_add_flag(p->nowcast, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(p->icon, LV_OBJ_FLAG_HIDDEN);
@@ -2048,7 +2070,7 @@ void ui_place(int i, const char *name, const weather_t *w)
     lv_label_set_text(p->cond, weather_text(w->code));
     char wind[16];
     config_fmt_wind(w->wind, wind, sizeof(wind));
-    snprintf(buf, sizeof(buf), "Feels %d°  ·  %d%%  ·  %s", config_temp(w->feels), w->humidity, wind);
+    snprintf(buf, sizeof(buf), tr(T_FEELS), config_temp(w->feels), w->humidity, wind);
     lv_label_set_text(p->detail, buf);
     draw_icon(p->icon, weather_kind(w->code), w->is_day, 80, i * 4);
     lv_obj_remove_flag(p->icon, LV_OBJ_FLAG_HIDDEN);
@@ -2056,8 +2078,8 @@ void ui_place(int i, const char *name, const weather_t *w)
     else {
         char hm[12];
         config_fmt_hhmm(w->nc_time, hm, sizeof(hm));
-        lv_label_set_text_fmt(p->nowcast, w->nc_kind == NC_STARTS ? "%s around %s" : "%s until about %s",
-                              w->nc_snow ? "Snow" : "Rain", hm);
+        lv_label_set_text_fmt(p->nowcast, tr(w->nc_snow ? (w->nc_kind == NC_STARTS ? T_SNOW_AROUND : T_SNOW_UNTIL)
+                                                        : (w->nc_kind == NC_STARTS ? T_RAIN_AROUND : T_RAIN_UNTIL)), hm);
         lv_obj_remove_flag(p->nowcast, LV_OBJ_FLAG_HIDDEN);
     }
     for (int k = 0; k < 3; k++) {
@@ -2116,10 +2138,17 @@ int ui_bench_screens(lv_obj_t **scr, const char **name, int max)
 
 lv_obj_t *ui_main_screen(void) { return scr_main; }
 
+void ui_on_data_refresh(void (*cb)(void)) { data_refresh_cb = cb; }
+
 void ui_units_changed(void)
 {
     display_lock(-1);
     clock_shown[0] = 0;
+    for (int i = 0; i < tl_n; i++) lv_label_set_text(tl_obj[i], tr(tl_id[i]));   // fixed labels (language)
+    up_notes_id = -1;                      // "What's new" header
+    update_render();
+    if (lv_screen_active() == scr_status) status_refresh();
+    if (lv_screen_active() == scr_cfg) cfg_refresh();
     for (int i = 0; i < n_places; i++)     // every place page; the one shown also redraws hourly, graphs, extras
         if (pp[i].has_wx) ui_place(i, pp[i].name, &pw[i]);
     clock_tick(NULL);

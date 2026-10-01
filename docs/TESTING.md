@@ -115,6 +115,9 @@ npm test
   from `node_modules/leaflet` (same version and integrity hashes as the page), a grey tile for OpenStreetMap, fixed
   answers for the city search and reverse geocoding. The `noInternet` option makes every outside request fail (a
   phone on the setup network). Any page error or console error fails the test.
+- `language.spec.js` checks the French page (texts, the display's language, decimal comma) and saves French review
+  shots. For the display: `POST /api/units {"lang":"fr"}` (put the user's language back after), then snapshot every
+  screen; French text is longer and is where layouts break.
 - Every test saves a full-page screenshot in `tools/webtest/shots/`; the `review:` test saves the Places card (list
   and editor) for design review. Look at them before flashing a page change.
 - Node.js is installed on the PC (`C:\Program Files\nodejs`); in PowerShell put it first in `PATH` if a shell

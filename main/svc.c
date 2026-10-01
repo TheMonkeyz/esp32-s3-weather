@@ -11,6 +11,7 @@
 #include "config.h"
 #include "net.h"
 #include "ota.h"
+#include "i18n.h"
 
 static const char *TAG = "svc";
 #define PROBE_AFTER_US (5 * 60 * 1000000LL)    // the status page re-checks services idle for 5 min
@@ -54,9 +55,9 @@ void svc_http(svc_id_t id, esp_err_t err, int status, int64_t t0)
     if (err == ESP_OK && status == 200) { record(id, true, "", t0); return; }
     char why[40];
     if (err == ESP_OK) snprintf(why, sizeof(why), "HTTP %d", status);
-    else if (err == ESP_ERR_HTTP_CONNECT) snprintf(why, sizeof(why), "Can't connect");
-    else if (err == ESP_ERR_HTTP_EAGAIN || err == ESP_ERR_TIMEOUT) snprintf(why, sizeof(why), "Timed out");
-    else if (err == ESP_ERR_HTTP_FETCH_HEADER) snprintf(why, sizeof(why), "No reply");
+    else if (err == ESP_ERR_HTTP_CONNECT) snprintf(why, sizeof(why), "%s", tr(T_ERR_CONNECT));
+    else if (err == ESP_ERR_HTTP_EAGAIN || err == ESP_ERR_TIMEOUT) snprintf(why, sizeof(why), "%s", tr(T_ERR_TIMEOUT));
+    else if (err == ESP_ERR_HTTP_FETCH_HEADER) snprintf(why, sizeof(why), "%s", tr(T_ERR_NO_REPLY));
     else snprintf(why, sizeof(why), "%s", esp_err_to_name(err));
     record(id, false, why, t0);
 }

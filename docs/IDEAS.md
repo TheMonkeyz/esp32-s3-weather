@@ -17,7 +17,6 @@ charging (AXP2101).
 
 ## Everyday use
 
-- [ ] ⭐ **French interface** — the font already handles accents.
 - [ ] **Home Assistant (MQTT)** — publish room presence from the microphones; show an indoor temperature.
 
 ## Done
@@ -36,6 +35,8 @@ charging (AXP2101).
   settings page (v1.5.0).
 - [x] **Several places** — up to 4, one weather page each, drag up/down to switch; everything follows the place
   shown (v1.5.0).
+- [x] **French interface** — English / Canadian French for the display and the settings page, one setting;
+  built so more languages are a column in `i18n_strings.h` (v1.7.0).
 - [x] **Settings on the display** — long-press: screen (dimming, pick-up, timing, brightness), units, phone QR,
   Wi-Fi, updates, restart (v1.6.0).
 - [x] **Wake on pick-up** — the motion sensor wakes the screen when it's lifted or tilted (a table bump doesn't, at

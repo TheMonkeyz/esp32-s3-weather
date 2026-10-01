@@ -14,7 +14,7 @@ function fresh() {
   return {
     places: [{ name: 'Québec', lat: 46.8139, lon: -71.208 }],
     active: 0,
-    units: { temp: 'c', wind: 'kmh', clock: 24 },
+    units: { temp: 'c', wind: 'kmh', clock: 24, lang: 'en' },
     ssid: 'HomeNet',
     version: 'v1.5.0-test',
     update: { current: 'v1.5.0-test', latest: '', channel: 'stable', state: 'up_to_date', progress: 0, error: '' },
@@ -45,6 +45,7 @@ const cur = () => st.places[st.active];
 const config = () => ({
   name: cur().name, lat: cur().lat, lon: cur().lon, ssid: st.ssid, version: st.version,
   places: st.places, active: st.active, max_places: MAX_PLACES, units: st.units,
+  languages: [{ code: 'en', name: 'English' }, { code: 'fr', name: 'Français' }],
 });
 
 const routes = {
