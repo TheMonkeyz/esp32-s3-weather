@@ -14,6 +14,7 @@ $sp.DtrEnable = $false; $sp.RtsEnable = $false; $sp.ReadTimeout = 500
 $out = @()
 for ($i = 0; $i -lt 5 -and -not $sp.IsOpen; $i++) { try { $sp.Open() } catch { Start-Sleep -Seconds 1 } }
 if (-not $sp.IsOpen) { "Could not open $Port" | Tee-Object serial_log.txt; exit 1 }
+try { while ([Console]::KeyAvailable) { [void][Console]::ReadKey($true) } } catch {}   # ignore keys pressed before the log started
 $end = (Get-Date).AddSeconds($Seconds)
 $stopped = $false; $nextCheck = Get-Date
 while ((Get-Date) -lt $end) {
