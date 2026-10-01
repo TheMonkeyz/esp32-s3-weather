@@ -11,6 +11,7 @@ list everything again.
 
 ## v1.7.0 - 2026-10-01
 - The display and the settings page now speak French: choose Français in Settings on the display (Langue) or in the Units card of the settings page. Weather alerts come in French too. The "What's new" notes stay in English for now.
+- On the weather screen, a blue drop marks the humidity and a wind symbol marks the wind speed.
 
 ## v1.6.0 - 2026-10-01
 - Settings right on the display: long-press the weather screen. Turn dimming and wake on pick-up on or off, pick the timing (Short, Normal, Long), set the brightness by sliding along the bottom, change the units, open the phone settings or the Wi-Fi setup, check for updates, or restart.
