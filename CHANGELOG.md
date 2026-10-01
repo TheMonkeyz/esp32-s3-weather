@@ -13,6 +13,10 @@ list everything again.
 - The display and the settings page now speak French: choose Français in Settings on the display (Langue) or in the Units card of the settings page. Weather alerts come in French too. The "What's new" notes stay in English for now.
 - On the weather screen, a blue drop marks the humidity and a wind symbol marks the wind speed.
 
+## v1.7.0-rc.1 - 2026-10-01
+- Test version of the French interface: choose Français in Settings on the display (Langue) or in the Units card of the settings page. The display, the settings page and the weather alerts switch to French.
+- Test version of the humidity and wind icons on the weather screen.
+
 ## v1.6.0 - 2026-10-01
 - Settings right on the display: long-press the weather screen. Turn dimming and wake on pick-up on or off, pick the timing (Short, Normal, Long), set the brightness by sliding along the bottom, change the units, open the phone settings or the Wi-Fi setup, check for updates, or restart.
 - Wake on pick-up: when the screen is dimmed or off, picking up or tilting the display wakes it. A bump on the table doesn't. On the settings page (Screen & presence) you can turn it off, choose the sensitivity, and watch a live movement meter.
