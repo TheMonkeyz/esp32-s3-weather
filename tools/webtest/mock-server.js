@@ -46,7 +46,7 @@ const cur = () => st.places[st.active];
 const config = () => ({
   name: cur().name, lat: cur().lat, lon: cur().lon, ssid: st.ssid, version: st.version,
   places: st.places, active: st.active, max_places: MAX_PLACES, units: st.units,
-  languages: [{ code: 'en', name: 'English' }, { code: 'fr', name: 'Français' }],
+  languages: [{ code: 'en', name: 'English' }, { code: 'fr', name: 'Français' }, { code: 'iu', name: 'ᐃᓄᒃᑎᑐᑦ' }],
 });
 
 const routes = {

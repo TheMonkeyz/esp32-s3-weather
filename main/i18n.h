@@ -6,7 +6,7 @@
 // per-language rules here (French: "Mercredi 1er octobre", lowercase names inside a phrase, "1er" for the 1st).
 // The language is saved with the units (config.c) and also used by the settings page.
 
-typedef enum { LANG_EN, LANG_FR, LANG_COUNT } lang_t;
+typedef enum { LANG_EN, LANG_FR, LANG_IU, LANG_COUNT } lang_t;   // IU: Inuktitut (syllabics), draft for review
 
 typedef enum {
 #define X(id, ...) id,
@@ -18,7 +18,7 @@ typedef enum {
 const char *tr(tid_t id);                 // the text in the current language (English if missing)
 lang_t i18n_lang(void);
 void i18n_set(lang_t l);                  // called by config.c (load / save)
-const char *i18n_code(lang_t l);          // "en", "fr"
+const char *i18n_code(lang_t l);          // "en", "fr", "iu"
 const char *i18n_name(lang_t l);          // "English", "Français" (in its own language)
 lang_t i18n_from_code(const char *code);  // unknown -> LANG_EN
 

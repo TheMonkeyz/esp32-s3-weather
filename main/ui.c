@@ -28,6 +28,8 @@
 
 extern const uint8_t ttf_start[] asm("_binary_montserrat_ttf_start");
 extern const uint8_t ttf_end[]   asm("_binary_montserrat_ttf_end");
+extern const uint8_t syl_start[] asm("_binary_syllabics_ttf_start");   // Inuktitut syllabics (Noto subset)
+extern const uint8_t syl_end[]   asm("_binary_syllabics_ttf_end");
 
 static lv_font_t *f_time, *f_city, *f_big, *f_cond, *f_small, *f_tiny, *f_micro;
 static lv_obj_t *scr_radar, *scr_extras, *scr_status, *scr_update, *up_pill, *up_pill_lbl;
@@ -79,7 +81,12 @@ static void tlabel(lv_obj_t *l, tid_t id)
 
 static lv_font_t *mkfont(int px)
 {
-    return lv_tiny_ttf_create_data_ex(ttf_start, ttf_end - ttf_start, px, LV_FONT_KERNING_NONE, 96);
+    lv_font_t *f = lv_tiny_ttf_create_data_ex(ttf_start, ttf_end - ttf_start, px, LV_FONT_KERNING_NONE, 96);
+    // Montserrat has no syllabics: LVGL looks a missing glyph up in the fallback font
+    // a quarter larger: Noto's syllabics are drawn about x-height, they looked small next to Montserrat's capitals
+    lv_font_t *s = lv_tiny_ttf_create_data_ex(syl_start, syl_end - syl_start, px * 5 / 4, LV_FONT_KERNING_NONE, 48);
+    if (f && s) f->fallback = s;
+    return f;
 }
 
 static lv_obj_t *label(lv_obj_t *parent, lv_font_t *f, lv_color_t c, int y)
@@ -1132,7 +1139,9 @@ static void extras_refresh(void)       // display lock held (LVGL task or caller
         float uv = wx.uv;
         const char *lvl = tr(uv < 3 ? T_LOW : uv < 6 ? T_MODERATE : uv < 8 ? T_HIGH : uv < 11 ? T_VERY_HIGH : T_EXTREME);
         lv_color_t c = lv_color_hex(uv < 3 ? 0x6FD08C : uv < 6 ? 0xFFC83D : uv < 8 ? 0xFF8A3D : uv < 11 ? 0xFF4D4D : 0xC77DFF);
-        snprintf(buf, sizeof(buf), "%.0f  %s  (max %.0f)", uv, lvl, wx.day[0].uv_max);
+        char mx[48];
+        snprintf(mx, sizeof(mx), tr(T_UV_MAX), (int)lroundf(wx.day[0].uv_max));
+        snprintf(buf, sizeof(buf), "%.0f  %s  %s", uv, lvl, mx);
         ex_row(0, tr(T_UV_INDEX), buf, c);
     }
 
@@ -2271,9 +2280,36 @@ lv_draw_buf_t *ui_snapshot(const char *screen)
             set_dots(day);
         }
     }
+    // Text-fit checks of screens a test can't open safely: "settings1".."settings3" (the list scrolled down by
+    // one screen each), "phone" (the settings-page QR), "setup0" / "setup1" (Wi-Fi setup pages, texts only:
+    // no access point or Easy Connect is started).
+    int cfg_down = !strncmp(screen, "settings", 8) && screen[8] ? atoi(screen + 8) : 0;
+    bool phone = !strcmp(screen, "phone"), setup = !strncmp(screen, "setup", 5);
+    bool ov_hidden = lv_obj_has_flag(overlay, LV_OBJ_FLAG_HIDDEN);
+    if (cfg_down) s = scr_cfg;
+    if (phone) {
+        s = overlay;
+        lv_label_set_text(ov_title, tr(T_SETTINGS));
+        lv_label_set_text_fmt(ov_url, tr(T_OV_HELP), "https://192.168.1.10");
+        lv_obj_remove_flag(overlay, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (setup && lv_screen_active() != scr_setup) {
+        s = scr_setup;
+        bool p1 = screen[5] == '1';
+        su_page = p1;
+        su_dots();                                   // sizes the page dots
+        lv_label_set_text(su_title, tr(p1 ? T_WIFI_DPP_TITLE : T_WIFI_SETUP));
+        if (p1) lv_label_set_text(su_body, tr(T_WIFI_DPP_HOW));
+        else lv_label_set_text_fmt(su_body, tr(T_WIFI_JOIN), SETUP_AP_SSID, SETUP_AP_PASS);
+    }
     if (s == scr_status) status_refresh();
     if (s == scr_cfg) cfg_refresh();
     if (s == scr_extras) extras_refresh();
+    lv_obj_t *list = lv_obj_get_parent(cfg_row[0]);
+    if (cfg_down && lv_screen_active() != scr_cfg) lv_obj_scroll_to_y(list, cfg_down * 300, LV_ANIM_OFF);
     lv_obj_update_layout(s);
-    return lv_snapshot_take(s, LV_COLOR_FORMAT_RGB565);
+    lv_draw_buf_t *db = lv_snapshot_take(s, LV_COLOR_FORMAT_RGB565);
+    if (cfg_down && lv_screen_active() != scr_cfg) lv_obj_scroll_to_y(list, 0, LV_ANIM_OFF);
+    if (phone && ov_hidden) lv_obj_add_flag(overlay, LV_OBJ_FLAG_HIDDEN);
+    return db;
 }

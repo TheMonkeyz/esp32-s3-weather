@@ -108,6 +108,12 @@ LVGL timer and event callbacks already run inside the lock.
 - **Adding a language:** a column in `i18n_strings.h`, its row in `LANG_CODE` / `LANG_NAME` / `WD_FULL` /
   `WD_SHORT` / `MONTH` and the date rules in `i18n.c`, `LANG_COUNT`, and a block in the page's `I18N`. EC alerts
   only exist in English and French (others fall back to English).
+- **Inuktitut (`LANG_IU`, "iu") is a draft awaiting a fluent reviewer** (docs/translations/README.md). Its column in
+  `i18n_strings.h` and its `I18N.iu` block are **generated** by `tools/i18n_iu.py build` from
+  `docs/translations/iu.tsv`: edit the TSV, never the generated syllabics. Glyphs come from `main/syllabics.ttf`, the
+  `fallback` font of every TinyTTF font (`mkfont()`), drawn 5/4 larger. Dates use English order with the
+  Inuktitut names. Syllabic words run 1.2 to 2.8 times wider than English: check every screen with snapshots
+  after any change.
 
 ## Settings screen (`ui.c`, `cfg_*`)
 

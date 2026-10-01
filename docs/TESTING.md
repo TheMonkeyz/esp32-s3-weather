@@ -72,7 +72,10 @@ python tools/snapshot.py 192.168.1.156 weather out.png
 ```
 
 - Screens: `weather`, `extras`, `status`, `radar`, `update`, `alert`, `settings`, `hourly0`…`hourly6` (the hourly view of that
-  day, list scrolled to the top; unchanged if the view is open), `current` (the one shown).
+  day, list scrolled to the top; unchanged if the view is open), `current` (the one shown). For text-fit checks of
+  screens a test can't safely open: `settings1`…`settings3` (the Settings list scrolled down by one screen each),
+  `phone` (the settings-page QR overlay), `setup0` / `setup1` (the Wi-Fi setup pages, texts only: no access point or
+  Easy Connect is started; the QR is blank).
 - Outside the round panel is tinted red, so anything the circle cuts off stands out (`--square` to skip).
 - The IP is in the log: `web: Settings page: https://<ip>/`. Each capture logs `web: snapshot <name> 466x466 sent`.
 - It shows the screen's state, not what a person would see after interacting. For example, the status page's checks
@@ -120,7 +123,9 @@ npm test
   phone on the setup network). Any page error or console error fails the test.
 - `language.spec.js` checks the French page (texts, the display's language, decimal comma) and saves French review
   shots. For the display: `POST /api/units {"lang":"fr"}` (put the user's language back after), then snapshot every
-  screen; French text is longer and is where layouts break.
+  screen; French text is longer and is where layouts break. *the page in Inuktitut fits* checks the draft
+  Inuktitut page at phone width (no English left, no overflow). For the display, see docs/translations/README.md
+  (`{"lang":"iu"}`, then snapshot every screen including `settings1..3`, `phone`, `setup0/1`).
 - Every test saves a full-page screenshot in `tools/webtest/shots/`; the `review:` test saves the Places card (list
   and editor) for design review. Look at them before flashing a page change.
 - Node.js is installed on the PC (`C:\Program Files\nodejs`); in PowerShell put it first in `PATH` if a shell
