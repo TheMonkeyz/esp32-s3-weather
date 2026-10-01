@@ -88,6 +88,8 @@ python tools/snapshot.py 192.168.1.156 weather out.png
 - **Service health:** the status page (two swipes right of the weather screen) shows every external service. In
   the log, `svc:` lines record failures and recoveries, and `svc: probe <name>` lines record the checks made when
   the page opens.
+- **Alert sounds:** `POST /api/sound {"test":1}` (2, 3) plays the yellow / orange / red sound; the log shows
+  `sound: alert sound, level N`. Check the microphones still measure afterwards (`presence: level` lines).
 - **Presence (dim / off / wake):** shorten the delays through the API for the test
   (`POST /api/presence {"dim_s":10,"off_s":20}`), have the user stay quiet and still, then restore the values read
   from `GET /api/presence` beforehand. Look for `presence: ACTIVE -> DIM`, `DIM -> OFF`, `picked up / moved`.

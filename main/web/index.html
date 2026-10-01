@@ -135,6 +135,26 @@ details.coords{margin-top:10px;font-size:14px;color:var(--dim)}details.coords su
   <div id="pmsg"></div>
 </div>
 
+<div class="card" id="soundCard">
+  <h2 data-i18n="soundTitle"></h2>
+  <label for="sLevel" data-i18n="chimeFor"></label>
+  <select id="sLevel">
+    <option value="0" data-i18n="lvOff"></option>
+    <option value="1" data-i18n="lvRed"></option>
+    <option value="2" data-i18n="lvOrange"></option>
+    <option value="3" data-i18n="lvAll"></option>
+  </select>
+  <label for="sVol"><span data-i18n="volume"></span> <span id="sVolTxt"></span></label>
+  <input type="range" id="sVol" min="0" max="100" step="10" style="padding:0">
+  <div class="row">
+    <div><label for="sFrom" data-i18n="quietFrom"></label><input type="time" id="sFrom"></div>
+    <div><label for="sTo" data-i18n="quietTo"></label><input type="time" id="sTo"></div>
+  </div>
+  <div class="muted" style="margin-top:8px" data-i18n="quietNote"></div>
+  <button class="sec" id="sTest" data-i18n="testChime"></button>
+  <div id="smsg"></div>
+</div>
+
 <div class="card" id="wifiCard">
   <h2>Wi-Fi</h2>
   <div class="muted"><span data-i18n="connectedTo"></span><span id="curSsid">–</span></div>
@@ -229,6 +249,11 @@ const I18N = {
   fwFailed: 'Update check failed: {0}.', unknownErr: 'unknown error', installX: 'Install {0}', theUpdate: 'update',
   installConfirm: 'Install {0}? The display restarts when it is done; settings are kept.',
   noAnswer: 'The display did not answer', whatsNew: "What's new", pageError: 'Page error: {0} (line {1})',
+  soundTitle: 'Sound', chimeFor: 'Chime for new weather alerts', lvOff: 'Off', lvRed: 'Red alerts only',
+  lvOrange: 'Orange and red alerts', lvAll: 'All alerts (yellow and statements too)', volume: 'Volume',
+  quietFrom: 'Quiet from', quietTo: 'Until', testChime: '🔔 Test the chime',
+  quietNote: 'No chime during quiet hours, except for red alerts. Each alert chimes once.',
+  noSpeaker: 'No speaker found on this display.',
  },
  fr: {
   title: 'Afficheur météo', places: 'Endroits',
@@ -289,6 +314,11 @@ const I18N = {
   fwFailed: 'La vérification a échoué : {0}.', unknownErr: 'erreur inconnue', installX: 'Installer {0}',
   theUpdate: 'la mise à jour', installConfirm: "Installer {0}? L'afficheur redémarre ensuite; les réglages sont conservés.",
   noAnswer: "L'afficheur n'a pas répondu", whatsNew: 'Nouveautés', pageError: 'Erreur dans la page : {0} (ligne {1})',
+  soundTitle: 'Son', chimeFor: 'Alerte sonore pour les nouvelles alertes météo', lvOff: 'Non',
+  lvRed: 'Alertes rouges seulement', lvOrange: 'Alertes orange et rouges', lvAll: 'Toutes les alertes (jaunes et bulletins aussi)',
+  volume: 'Volume', quietFrom: 'Silence de', quietTo: 'Jusqu\'à', testChime: '🔔 Essayer le son',
+  quietNote: 'Aucun son pendant les heures de silence, sauf pour les alertes rouges. Chaque alerte sonne une seule fois.',
+  noSpeaker: "Aucun haut-parleur trouvé sur cet afficheur.",
  },
 };
 let LANG = 'en';
@@ -684,6 +714,28 @@ async function fwPost(body){
   try { fwShow(await (await fetch('/api/update', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)})).json()); }
   catch(e){ say($('fwmsg'), t('noAnswer'), false); }
 }
+// Sound
+async function soundPost(body){
+  try{
+    const r = await fetch('/api/sound', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    if (!r.ok) throw 0;
+    soundShow(await r.json());
+    if (!body.test) say($('smsg'), t('saved'), true);
+  }catch(e){ say($('smsg'), t('noReach'), false); }
+}
+function soundShow(s){
+  $('sLevel').value = String(s.level); $('sVol').value = s.volume; $('sVolTxt').textContent = s.volume + ' %';
+  $('sFrom').value = s.quiet_from; $('sTo').value = s.quiet_to;
+  if (s.ok === false) say($('smsg'), t('noSpeaker'), false);
+}
+async function soundLoad(){ try { soundShow(await (await fetch('/api/sound')).json()); } catch(e) {} }
+$('sLevel').onchange = () => soundPost({level: +$('sLevel').value});
+$('sVol').oninput = () => { $('sVolTxt').textContent = $('sVol').value + ' %'; };
+$('sVol').onchange = async () => { await soundPost({volume: +$('sVol').value}); soundPost({test: true}); };
+['sFrom', 'sTo'].forEach(id => $(id).addEventListener('change', () => soundPost({quiet_from: $('sFrom').value, quiet_to: $('sTo').value})));
+$('sTest').onclick = () => soundPost({test: true});
+soundLoad();
+
 $('fwCheck').onclick = () => fwPost({action:'check'});
 $('fwInstall').onclick = () => { if (confirm(t('installConfirm', fwLast && fwLast.latest || t('theUpdate')))) fwPost({action:'install'}); };
 $('fwChan').onchange = () => fwPost({channel: $('fwChan').value});

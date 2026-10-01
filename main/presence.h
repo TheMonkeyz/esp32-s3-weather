@@ -32,6 +32,8 @@ bool presence_calibrate(int seconds);               // measure background noise;
 void presence_wake(void);
 bool presence_touch(void);                          // returns true if the screen was off (swallow the touch)
 bool presence_screen_off(void);
+const void *presence_audio_data_if(void);           // the I2S data interface (audio_codec_data_if_t), NULL until
+                                                    // the microphones are up; the speaker (sound.c) shares it
 void presence_preview_brightness(int pct);         // while dragging a slider: applied at once, not saved
 bool presence_motion_wake(void);                    // wake on pick-up / movement (saved)
 void presence_set_motion(bool on, float threshold_g);   // threshold 0.02..0.5 g (saved)

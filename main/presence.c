@@ -28,6 +28,7 @@ static const char *TAG = "presence";
 #define PIN_BCLK      9
 #define PIN_WS        45
 #define PIN_DIN       10                         // ES7210 -> ESP32 (the BSP calls it DSIN)
+#define PIN_DOUT      8                          // ESP32 -> ES8311 (speaker, sound.c)
 #define ES7210_ADDR   0x80                       // 8-bit address as esp_codec_dev expects
 #define CALIB_MAX     600                        // up to 60 s of 100 ms samples
 #define MOTION_G      0.10f                      // default pick-up threshold: change from the resting position (g)
@@ -38,6 +39,7 @@ static presence_cfg_t cfg = {
 };
 static portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
 static esp_codec_dev_handle_t mic;
+static const audio_codec_data_if_t *i2s_data;     // shared with the speaker (sound.c)
 static bool mic_ok;
 
 static volatile presence_state_t state = PRESENCE_ACTIVE;
@@ -184,24 +186,28 @@ bool presence_touch(void)
 }
 
 bool presence_screen_off(void) { return state == PRESENCE_OFF; }
+const void *presence_audio_data_if(void) { return i2s_data; }
 
 /* ---------------- audio ---------------- */
 
 static bool mic_init(void)
 {
-    i2s_chan_handle_t rx = NULL;
+    // Both directions on one I2S port (same clocks): microphones in (ES7210), speaker out (ES8311, sound.c)
+    i2s_chan_handle_t rx = NULL, tx = NULL;
     i2s_chan_config_t cc = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
     cc.dma_desc_num = 4;
     cc.dma_frame_num = 320;
-    if (i2s_new_channel(&cc, NULL, &rx) != ESP_OK) return false;
+    cc.auto_clear = true;                                     // silence on the speaker between chimes
+    if (i2s_new_channel(&cc, &tx, &rx) != ESP_OK) return false;
     i2s_std_config_t sc = {
         .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(SAMPLE_RATE),
         .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_STEREO),
-        .gpio_cfg = { .mclk = PIN_MCLK, .bclk = PIN_BCLK, .ws = PIN_WS, .dout = I2S_GPIO_UNUSED, .din = PIN_DIN },
+        .gpio_cfg = { .mclk = PIN_MCLK, .bclk = PIN_BCLK, .ws = PIN_WS, .dout = PIN_DOUT, .din = PIN_DIN },
     };
-    if (i2s_channel_init_std_mode(rx, &sc) != ESP_OK || i2s_channel_enable(rx) != ESP_OK) return false;
+    if (i2s_channel_init_std_mode(tx, &sc) != ESP_OK || i2s_channel_init_std_mode(rx, &sc) != ESP_OK) return false;
+    if (i2s_channel_enable(tx) != ESP_OK || i2s_channel_enable(rx) != ESP_OK) return false;
 
-    audio_codec_i2s_cfg_t icfg = { .port = I2S_NUM_0, .rx_handle = rx };
+    audio_codec_i2s_cfg_t icfg = { .port = I2S_NUM_0, .rx_handle = rx, .tx_handle = tx };
     const audio_codec_data_if_t *data_if = audio_codec_new_i2s_data(&icfg);
     audio_codec_i2c_cfg_t ccfg = { .port = 0, .addr = ES7210_ADDR, .bus_handle = touch_i2c_bus() };
     const audio_codec_ctrl_if_t *ctrl_if = audio_codec_new_i2c_ctrl(&ccfg);
@@ -214,7 +220,9 @@ static bool mic_init(void)
     if (!mic) return false;
     esp_codec_dev_set_in_gain(mic, 30.0);
     esp_codec_dev_sample_info_t fs = { .sample_rate = SAMPLE_RATE, .channel = 2, .bits_per_sample = 16 };
-    return esp_codec_dev_open(mic, &fs) == ESP_CODEC_DEV_OK;
+    if (esp_codec_dev_open(mic, &fs) != ESP_CODEC_DEV_OK) return false;
+    i2s_data = data_if;
+    return true;
 }
 
 static void apply_brightness(int target)

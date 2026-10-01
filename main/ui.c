@@ -19,6 +19,7 @@
 #include "esp_wifi.h"
 #include "pager.h"
 #include "i18n.h"
+#include "sound.h"
 #include "presence.h"
 #include "esp_system.h"
 #include "esp_log.h"
@@ -1685,7 +1686,8 @@ static void place_settled(int i, void *user)
  * same functions as the settings page (presence.c, config.c), so the phone and the display always agree. Places,
  * the Wi-Fi password, custom timings and sound calibration stay on the phone (typing, map, live meter). */
 
-enum { R_DIM, R_MOTION, R_TIMING, R_TEMP, R_WIND, R_CLOCK, R_LANG, R_PHONE, R_WIFI, R_UPDATE, R_RESTART, CFG_ROWS };
+enum { R_DIM, R_MOTION, R_TIMING, R_TEMP, R_WIND, R_CLOCK, R_LANG, R_CHIME, R_VOLUME, R_TEST, R_PHONE, R_WIFI, R_UPDATE,
+       R_RESTART, CFG_ROWS };
 static lv_obj_t *cfg_row[CFG_ROWS], *cfg_val[CFG_ROWS], *cfg_arc, *cfg_bright, *cfg_zone;
 static uint32_t check_tapped;                      // tick of "Check now" (shows the result for a few seconds)
 static const struct { int dim, off, wake; tid_t name; } cfg_presets[] = {          // as the settings page's PRESETS
@@ -1728,6 +1730,11 @@ static void cfg_refresh(void)                      // display lock held
     lv_label_set_text(cfg_val[R_WIND], u.wind == WIND_MPH ? "mph" : u.wind == WIND_MS ? "m/s" : "km/h");
     lv_label_set_text(cfg_val[R_CLOCK], u.h12 ? "12 h" : "24 h");
     lv_label_set_text(cfg_val[R_LANG], i18n_name(i18n_lang()));
+    sound_cfg_t sc;
+    sound_get_config(&sc);
+    static const tid_t lvl[4] = { T_CHIME_OFF, T_CHIME_RED, T_CHIME_ORANGE, T_CHIME_ALL };
+    lv_label_set_text(cfg_val[R_CHIME], tr(lvl[sc.level & 3]));
+    lv_label_set_text_fmt(cfg_val[R_VOLUME], "%d%%", sc.volume);
     char b[48];
     bool just_checked = check_tapped && lv_tick_elaps(check_tapped) < 6000;
     if (o.state == OTA_AVAILABLE) snprintf(b, sizeof(b), "%s >", o.latest);             // tap: update screen
@@ -1782,6 +1789,16 @@ static void cfg_tap(lv_event_t *e)
         ui_units_changed();                                     // every screen, in the new language
         if (data_refresh_cb) data_refresh_cb();                 // alerts and release notes in the new language
         break;
+    case R_CHIME: case R_VOLUME: {
+        sound_cfg_t sc;
+        sound_get_config(&sc);
+        if (r == R_CHIME) sc.level = (sc.level + 1) % 4;          // Off, Red, Orange+, All
+        else sc.volume = sc.volume >= 100 ? 20 : (sc.volume / 20 + 1) * 20;   // 20, 40 ... 100
+        sound_set_config(&sc);
+        if (r == R_VOLUME) sound_test(2);                         // hear the new volume
+        break;
+    }
+    case R_TEST: sound_test(2); break;
     case R_PHONE: back_to_cfg = true; lv_screen_load(scr_main); show_settings(NULL); return;
     case R_WIFI: back_to_cfg = true; ui_wifi_setup(NULL); return;
     case R_UPDATE: {
@@ -1938,6 +1955,10 @@ static void cfg_create(void)
     cfg_add_row(box, R_WIND, T_WIND, false);
     cfg_add_row(box, R_CLOCK, T_CLOCK, false);
     cfg_add_row(box, R_LANG, T_LANGUAGE, false);
+    cfg_section(box, T_SEC_SOUND);
+    cfg_add_row(box, R_CHIME, T_CHIME, false);
+    cfg_add_row(box, R_VOLUME, T_VOLUME, false);
+    cfg_add_row(box, R_TEST, T_TEST_SOUND, false);
     cfg_section(box, T_SEC_MORE);
     cfg_add_row(box, R_PHONE, T_PHONE, false);
     cfg_add_row(box, R_WIFI, T_WIFI_NETWORK, false);
@@ -1945,6 +1966,7 @@ static void cfg_create(void)
     cfg_add_row(box, R_RESTART, T_RESTART, false);
     lv_label_set_text(cfg_val[R_PHONE], ">");
     lv_label_set_text(cfg_val[R_WIFI], ">");
+    lv_label_set_text(cfg_val[R_TEST], ">");
 
     cfg_bright = label(scr_cfg, f_tiny, C_DIM, 372);           // brightness: an arc along the bottom edge
     cfg_arc = lv_arc_create(scr_cfg);
