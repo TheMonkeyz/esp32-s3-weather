@@ -1,5 +1,6 @@
 // Wi-Fi station with credentials in NVS, plus a SoftAP setup page to enter them
 #include "net.h"
+#include "svc.h"
 #include <string.h>
 #include <time.h>
 #include <stdlib.h>
@@ -44,6 +45,8 @@ static void retry_cb(void *arg)
     esp_wifi_connect();
 }
 
+static void ntp_synced(struct timeval *tv) { svc_ok(SVC_NTP, 0); }
+
 static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data)
 {
     if (base == WIFI_EVENT && id == WIFI_EVENT_STA_START) {
@@ -67,6 +70,7 @@ static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data)
         if (!sntp) {                                             // clock via SNTP, once
             sntp = true;
             esp_sntp_config_t sc = ESP_NETIF_SNTP_DEFAULT_CONFIG("pool.ntp.org");
+            sc.sync_cb = ntp_synced;
             esp_netif_sntp_init(&sc);
         }
     }

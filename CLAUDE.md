@@ -14,6 +14,8 @@ session (Sept 2026): what worked, what cost time, and how to avoid repeating it.
      USB access**, and it can't type into Windows terminals. Flashing then goes through the **flash helper**: the user
      starts `start_flash_helper.bat` once, Claude writes `flash.request` (containing the log seconds) and polls for
      `flash.done`, then reads `serial_log.txt`.
+- **Claude Code on this PC (September 30):** ESP-IDF **v5.5.4** is installed at `C:\Espressif\esp-idf` (CI uses
+  v5.4.2). Test builds go to `build\v55` with their own sdkconfig; see docs/TESTING.md.
 - **Talk to the user:** post a one-line progress note before anything that takes more than a minute (build, flash,
   log window). Long silences read as "stuck". Don't take control of the user's screen; ask first, and prefer the flash
   helper. Ask the user to interact with the board (swipe, tap, open the page) *during* the log window, and say when.
@@ -47,9 +49,12 @@ Windows build gets both from `main/idf_component.yml`. `components/dns_server` *
 - **Host LVGL simulator:** compile LVGL plus `ui.c`/`radar.c` pieces with gcc against a small `lv_conf.h`, render
   into a framebuffer, write PNGs. It caught layout clipping on the round screen and proved the clock timer logic.
   Stub the ESP headers (`esp_log.h`, `net.h`, `config` functions). Use `-Wl,--wrap=time` to fake the clock.
-- **On-device framebuffer dump:** print a 1/3-scale RGB565 snapshot as base64 between `IMGDUMP name w h` and
-  `IMGEND` in the serial log, then decode it to PNG. This found the PNG decoding bug and the CARTO "API KEY REQUIRED"
-  tiles. The code was removed after use; re-add it when a screen looks wrong.
+- **Screenshots: `python tools/snapshot.py <ip> <screen>`.** The firmware renders the screen off-display
+  (`GET /api/snapshot`) and the tool saves a PNG with the area outside the round panel tinted red. Claude Code on the
+  PC can reach the board over HTTPS (the Cowork cloud and Linux shell can't). Use it to check every layout change
+  before asking the user for a photo. The full routine is in **docs/TESTING.md**. (The first session dumped a
+  1/3-scale framebuffer as base64 between `IMGDUMP` and `IMGEND` in the serial log; it found the PNG decoding bug and
+  the CARTO "API KEY REQUIRED" tiles. That code is gone; the endpoint replaces it.)
 - **Headless browser test of the settings page:** Playwright + a tiny Python mock server (mock `/api/*`, mock
   geolocation, route the geocoding APIs). It proved the page's JS was fine, which pointed at the device.
 - **Always check file transfers:** `md5sum` the firmware on the PC against the build output. **Twice**, pushing a

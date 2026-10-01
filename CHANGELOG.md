@@ -9,6 +9,13 @@ How to write an entry: add a `## vX.Y.Z - YYYY-MM-DD` section at the top **befor
 their own `## vX.Y.Z-rc.N` section. Those are shown only to Beta users, while the final release's section should
 list everything again.
 
+## v1.4.0 - 2026-09-30
+- New status page: swipe right twice from the weather screen. It shows the firmware version, the Wi-Fi signal, and whether each online service the display uses is working, when it was last reached and why it failed.
+- Opening the status page checks any service that hasn't been contacted in the last 5 minutes.
+
+## v1.4.0-rc.1 - 2026-09-30
+- Test version of the new status page (swipe right twice from the weather screen): firmware version, Wi-Fi signal, and the state of each online service the display uses.
+
 ## v1.3.1 - 2026-09-30
 - The update screen and the settings page now show what's new before you install.
 

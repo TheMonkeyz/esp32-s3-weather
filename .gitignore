@@ -23,6 +23,8 @@ flash.running
 flash.done
 flash.status
 flash_helper.log
+stop.request
+snapshot_*.png
 
 # Web flasher / CI outputs
 _site/

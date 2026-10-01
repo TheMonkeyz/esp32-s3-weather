@@ -21,9 +21,10 @@
 #include "nvs.h"
 #include "cJSON.h"
 #include "net.h"
+#include "svc.h"
+#include "esp_timer.h"
 
 static const char *TAG = "ota";
-#define OTA_SITE      "https://themonkeyz.github.io/esp32-s3-weather/"
 #define CHECK_EVERY_S (6 * 3600)
 #define VALID_AFTER_S 60
 
@@ -111,10 +112,13 @@ static cJSON *get_json(const char *url, int cap)
         .crt_bundle_attach = esp_crt_bundle_attach, .timeout_ms = 15000,
     };
     esp_http_client_handle_t c = esp_http_client_init(&cfg);
+    int64_t t0 = esp_timer_get_time();
     esp_err_t err = esp_http_client_perform(c);
     int status = esp_http_client_get_status_code(c);
     esp_http_client_cleanup(c);
     cJSON *j = err == ESP_OK && status == 200 ? cJSON_Parse(rx.buf) : NULL;
+    if (err == ESP_OK && status == 200 && !j) svc_fail(SVC_UPDATES, "Bad response", t0);
+    else svc_http(SVC_UPDATES, err, status, t0);
     if (!j) ESP_LOGW(TAG, "GET %s: %s, status %d", url, esp_err_to_name(err), status);
     free(rx.buf);
     return j;
@@ -362,6 +366,7 @@ void ota_set_channel(const char *channel)
 
 void ota_get_status(ota_status_t *out)
 {
+    if (!mux) { memset(out, 0, sizeof(*out)); return; }   // before ota_start()
     xSemaphoreTake(mux, portMAX_DELAY);
     *out = st;
     xSemaphoreGive(mux);
