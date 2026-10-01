@@ -15,6 +15,7 @@
 #include "ota.h"
 #include "esp_log.h"
 #include "esp_attr.h"
+#include "esp_heap_caps.h"
 
 extern const uint8_t ttf_start[] asm("_binary_montserrat_ttf_start");
 extern const uint8_t ttf_end[]   asm("_binary_montserrat_ttf_end");
@@ -1059,8 +1060,47 @@ static void extras_create(void)
 
 /* ---------- Firmware update: pill on the weather screen + update screen ---------- */
 
-static lv_obj_t *up_title, *up_body, *up_btn, *up_bar, *up_state;
+static lv_obj_t *up_title, *up_body, *up_btn, *up_bar, *up_state, *up_box, *up_notes;
 static ota_status_t up_st;
+static int up_notes_id = -1;
+
+// "What's new": one accent header ("v1.4.0 · September 30, 2026") and one bulleted label per release.
+static void update_notes(void)        // display lock held
+{
+    if (up_st.notes_id == up_notes_id) return;
+    up_notes_id = up_st.notes_id;
+    char *txt = heap_caps_malloc(3072, MALLOC_CAP_SPIRAM);
+    if (!txt) return;
+    ota_get_notes(txt, 3072);
+    lv_obj_clean(up_notes);
+    if (!*txt) { lv_obj_add_flag(up_notes, LV_OBJ_FLAG_HIDDEN); free(txt); return; }
+    lv_obj_remove_flag(up_notes, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_t *h = al_label(up_notes, f_small, C_TEXT);
+    lv_label_set_text(h, "What's new");
+    lv_obj_set_style_pad_bottom(h, 2, 0);
+    char *body = heap_caps_malloc(3200, MALLOC_CAP_SPIRAM);
+    char *save = NULL;
+    int bn = 0;
+    for (char *line = strtok_r(txt, "\n", &save); line; line = strtok_r(NULL, "\n", &save)) {
+        char *bar = strchr(line, '|');
+        bool header = line[0] == 'v' && bar;
+        if (header || !body) {
+            if (body && bn) { lv_label_set_text(al_label(up_notes, f_tiny, C_TEXT), body); bn = 0; }
+            if (!header) continue;
+            *bar = 0;
+            lv_obj_t *l = al_label(up_notes, f_micro, C_ACCENT);
+            if (bar[1]) lv_label_set_text_fmt(l, "%s  ·  %s", line, bar + 1);
+            else lv_label_set_text(l, line);
+            lv_obj_set_style_pad_top(l, 10, 0);
+            continue;
+        }
+        bn += snprintf(body + bn, 3200 - bn, "%s%s %s", bn ? "\n" : "", strcmp(line, "...") ? "•" : "", line);
+        if (bn >= 3200) bn = 3199;
+    }
+    if (body && bn) lv_label_set_text(al_label(up_notes, f_tiny, C_TEXT), body);
+    free(body);
+    free(txt);
+}
 
 static void update_render(void)       // display lock held
 {
@@ -1072,8 +1112,7 @@ static void update_render(void)       // display lock held
         lv_obj_remove_flag(up_pill, LV_OBJ_FLAG_HIDDEN);
     } else lv_obj_add_flag(up_pill, LV_OBJ_FLAG_HIDDEN);
 
-    lv_label_set_text_fmt(up_body, "Version %s\nYou have %s\n\nSettings are kept.\nIt restarts when it's done.",
-                          o->latest, o->current);
+    lv_label_set_text_fmt(up_body, "%s  ·  you have %s", o->latest, o->current);
     bool busy = o->state == OTA_DOWNLOADING || o->state == OTA_DONE;
     if (o->state == OTA_AVAILABLE) lv_obj_remove_flag(up_btn, LV_OBJ_FLAG_HIDDEN);
     else lv_obj_add_flag(up_btn, LV_OBJ_FLAG_HIDDEN);
@@ -1085,8 +1124,9 @@ static void update_render(void)       // display lock held
         o->state == OTA_DOWNLOADING ? "Downloading... keep it plugged in" :
         o->state == OTA_DONE ? "Installed. Restarting..." :
         o->state == OTA_FAILED ? o->error :
-        o->state == OTA_AVAILABLE ? "Tap outside to go back" : "");
+        o->state == OTA_AVAILABLE ? "Your settings are kept" : "");
     lv_label_set_text(up_title, o->state == OTA_DONE ? "Updated" : busy ? "Updating" : "Update available");
+    update_notes();
 }
 
 void ui_ota(const ota_status_t *o)      // OTA task
@@ -1101,6 +1141,7 @@ void ui_ota(const ota_status_t *o)      // OTA task
 static void update_show(void)
 {
     update_render();
+    lv_obj_scroll_to_y(up_box, 0, LV_ANIM_OFF);
     lv_screen_load_anim(scr_update, LV_SCR_LOAD_ANIM_MOVE_TOP, 260, 0, false);
 }
 
@@ -1109,6 +1150,7 @@ static void update_install(lv_event_t *e)
     ESP_LOGI("ui", "install update tapped");
     ota_install();
     lv_obj_add_flag(up_btn, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_scroll_to_y(up_box, 0, LV_ANIM_ON);          // the progress bar is at the top
 }
 
 static void update_tap(lv_event_t *e)
@@ -1117,6 +1159,7 @@ static void update_tap(lv_event_t *e)
     lv_screen_load_anim(scr_main, LV_SCR_LOAD_ANIM_MOVE_BOTTOM, 260, 0, false);
 }
 
+// Title fixed at the top; versions, Install, progress and the release notes scroll in one column.
 static void update_create(void)
 {
     up_pill = lv_obj_create(scr_main);
@@ -1134,12 +1177,23 @@ static void update_create(void)
     lv_obj_add_flag(up_pill, LV_OBJ_FLAG_HIDDEN);
 
     scr_update = base_screen();
-    up_title = label(scr_update, f_city, C_ACCENT, 70);
-    up_body = label(scr_update, f_tiny, C_TEXT, 120);
-    lv_obj_set_width(up_body, 320);
-    up_btn = lv_button_create(scr_update);
+    up_title = label(scr_update, f_city, C_ACCENT, 40);
+    lv_obj_set_width(up_title, 300);
+    up_box = lv_obj_create(scr_update);
+    lv_obj_remove_style_all(up_box);
+    lv_obj_set_size(up_box, 310, 386);
+    lv_obj_align(up_box, LV_ALIGN_TOP_MID, 0, 80);
+    lv_obj_set_flex_flow(up_box, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(up_box, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_row(up_box, 10, 0);
+    lv_obj_set_style_pad_bottom(up_box, 90, 0);         // the last lines can scroll above the round edge
+    lv_obj_set_scroll_dir(up_box, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(up_box, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_add_flag(up_box, LV_OBJ_FLAG_EVENT_BUBBLE | LV_OBJ_FLAG_GESTURE_BUBBLE);
+    up_body = al_label(up_box, f_tiny, C_DIM);
+    lv_obj_set_style_text_align(up_body, LV_TEXT_ALIGN_CENTER, 0);
+    up_btn = lv_button_create(up_box);
     lv_obj_set_size(up_btn, 200, 56);
-    lv_obj_align(up_btn, LV_ALIGN_TOP_MID, 0, 270);
     lv_obj_set_style_radius(up_btn, 28, 0);
     lv_obj_set_style_bg_color(up_btn, C_ACCENT, 0);
     lv_obj_t *bl = lv_label_create(up_btn);
@@ -1148,16 +1202,25 @@ static void update_create(void)
     lv_label_set_text(bl, "Install");
     lv_obj_center(bl);
     lv_obj_add_event_cb(up_btn, update_install, LV_EVENT_CLICKED, NULL);
-    up_bar = lv_bar_create(scr_update);
+    up_bar = lv_bar_create(up_box);
     lv_obj_set_size(up_bar, 240, 12);
-    lv_obj_align(up_bar, LV_ALIGN_TOP_MID, 0, 292);
+    lv_obj_set_style_margin_ver(up_bar, 22, 0);
     lv_bar_set_range(up_bar, 0, 100);
     lv_obj_set_style_bg_color(up_bar, lv_color_hex(0x2A3138), LV_PART_MAIN);
     lv_obj_set_style_bg_color(up_bar, C_ACCENT, LV_PART_INDICATOR);
-    lv_obj_add_flag(up_bar, LV_OBJ_FLAG_HIDDEN);
-    up_state = label(scr_update, f_micro, C_DIM, 344);
-    lv_obj_set_width(up_state, 300);
+    lv_obj_add_flag(up_bar, LV_OBJ_FLAG_HIDDEN | LV_OBJ_FLAG_EVENT_BUBBLE | LV_OBJ_FLAG_GESTURE_BUBBLE);
+    up_state = al_label(up_box, f_micro, C_DIM);
+    lv_obj_set_style_text_align(up_state, LV_TEXT_ALIGN_CENTER, 0);
+    up_notes = lv_obj_create(up_box);
+    lv_obj_remove_style_all(up_notes);
+    lv_obj_set_size(up_notes, lv_pct(100), LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(up_notes, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_row(up_notes, 4, 0);
+    lv_obj_set_style_pad_top(up_notes, 8, 0);
+    lv_obj_add_flag(up_notes, LV_OBJ_FLAG_HIDDEN | LV_OBJ_FLAG_EVENT_BUBBLE | LV_OBJ_FLAG_GESTURE_BUBBLE);
+    lv_obj_remove_flag(up_notes, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_event_cb(scr_update, update_tap, LV_EVENT_SHORT_CLICKED, NULL);
+    lv_obj_add_event_cb(scr_update, alert_gesture, LV_EVENT_GESTURE, NULL);
 }
 
 void ui_init(void)

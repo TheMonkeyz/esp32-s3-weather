@@ -200,7 +200,8 @@ static const char *ota_state_name(ota_state_t s)
     return s <= OTA_FAILED ? n[s] : "?";
 }
 
-// {"current","latest","channel","state","progress","error"}
+// {"current","latest","channel","state","progress","error","notes"}; notes (see ota_get_notes) only when an
+// update is offered
 static esp_err_t update_get(httpd_req_t *req)
 {
     ota_status_t o;
@@ -212,6 +213,14 @@ static esp_err_t update_get(httpd_req_t *req)
     cJSON_AddStringToObject(j, "state", ota_state_name(o.state));
     cJSON_AddNumberToObject(j, "progress", o.progress);
     cJSON_AddStringToObject(j, "error", o.error);
+    if (o.state == OTA_AVAILABLE) {
+        char *notes = heap_caps_malloc(3072, MALLOC_CAP_SPIRAM);
+        if (notes) {
+            ota_get_notes(notes, 3072);
+            cJSON_AddStringToObject(j, "notes", notes);
+            free(notes);
+        }
+    }
     return send_json(req, j);
 }
 

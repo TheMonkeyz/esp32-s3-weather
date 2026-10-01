@@ -11,7 +11,8 @@ Two steps, used by CI (.github/workflows/firmware.yml) and for local previews:
   2. site: assemble the web flasher from one or two release folders
        python3 tools/make_flasher_site.py site --stable dist [--beta dist-beta] [--out _site]
      -> web/flash/* + stable/ (and beta/) each with its images and an ESP Web Tools manifest.json,
-        and channels.json, which the page reads to show the Stable / Beta picker.
+        channels.json, which the page reads to show the Stable / Beta picker, and notes.json, the
+        release notes from CHANGELOG.md, which the display shows before installing an update.
 
 The images stay separate parts on purpose: a single merged image would also overwrite the NVS
 partition (Wi-Fi credentials, location, settings, the TLS certificate) with 0xFF on every update.
@@ -24,6 +25,7 @@ import argparse
 import datetime
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -111,6 +113,28 @@ def add_channel(out, name, src):
     return {"version": info["version"], "built": info["built"], "manifest": f"{name}/manifest.json"}
 
 
+def read_changelog(path, keep=15):
+    """CHANGELOG.md -> [{"version", "date", "notes": [str]}], newest first.
+
+    Sections start with "## vX.Y.Z" (optionally followed by " - YYYY-MM-DD" or " — YYYY-MM-DD"), items with
+    "- ". Markdown emphasis and code marks are dropped: the display shows plain text."""
+    out = []
+    if not os.path.exists(path):
+        return out
+    for line in open(path, encoding="utf-8"):
+        line = line.rstrip()
+        m = re.match(r"^##\s+(v\d+\.\d+\.\d+\S*)(?:\s+[-\u2014\u2013]\s+(\d{4}-\d{2}-\d{2}))?", line)
+        if m:
+            out.append({"version": m.group(1), "date": m.group(2) or "", "notes": []})
+        elif out and re.match(r"^\s*[-*]\s+", line):
+            out[-1]["notes"].append(re.sub(r"^\s*[-*]\s+", "", line))
+        elif out and out[-1]["notes"] and line.startswith("  ") and line.strip():
+            out[-1]["notes"][-1] += " " + line.strip()          # continuation of the previous item
+    for r in out:
+        r["notes"] = [re.sub(r"[*_`#]", "", n).strip() for n in r["notes"]]
+    return out[:keep]
+
+
 def cmd_site(a):
     if os.path.exists(a.out):
         shutil.rmtree(a.out)
@@ -122,6 +146,11 @@ def cmd_site(a):
     with open(os.path.join(a.out, "channels.json"), "w") as f:
         json.dump(channels, f, indent=2)
         f.write("\n")
+    notes = read_changelog(a.changelog)
+    with open(os.path.join(a.out, "notes.json"), "w", encoding="utf-8") as f:
+        json.dump({"releases": notes}, f, indent=1, ensure_ascii=False)
+        f.write("\n")
+    print(f"  notes.json: {len(notes)} releases from {os.path.relpath(a.changelog, ROOT)}")
 
 
 ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -134,5 +163,6 @@ s = sub.add_parser("site", help="web flasher from release folders")
 s.add_argument("--stable", required=True, help="folder with flash-parts.json (a dist folder or a downloaded release)")
 s.add_argument("--beta", default=None, help="same, for the beta channel (optional)")
 s.add_argument("--out", default=os.path.join(ROOT, "_site"))
+s.add_argument("--changelog", default=os.path.join(ROOT, "CHANGELOG.md"), help="release notes source")
 a = ap.parse_args()
 {"dist": cmd_dist, "site": cmd_site}[a.cmd](a)

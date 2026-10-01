@@ -32,6 +32,8 @@ static ota_listener_t listener;
 static SemaphoreHandle_t mux;
 static TaskHandle_t task;
 static char app_url[256];
+#define NOTES_MAX 3072
+static char *notes;                 // PSRAM, NOTES_MAX, under mux
 static volatile bool want_check, want_install;
 
 static void publish(void)
@@ -99,9 +101,9 @@ static esp_err_t http_evt(esp_http_client_event_t *e)
     return ESP_OK;
 }
 
-static cJSON *get_json(const char *url)
+static cJSON *get_json(const char *url, int cap)
 {
-    rx_t rx = { .cap = 8192 };
+    rx_t rx = { .cap = cap };
     rx.buf = heap_caps_calloc(1, rx.cap, MALLOC_CAP_SPIRAM);
     if (!rx.buf) return NULL;
     esp_http_client_config_t cfg = {
@@ -118,12 +120,72 @@ static cJSON *get_json(const char *url)
     return j;
 }
 
+/* ---------- release notes ---------- */
+
+static const char *MONTHS[] = { "January", "February", "March", "April", "May", "June", "July", "August",
+                                "September", "October", "November", "December" };
+
+// Keeps the releases newer than the running version, up to the offered one. When a release is offered,
+// release-candidate sections are skipped: the release's own section lists everything.
+static void fetch_notes(const ver_t *cur, bool cur_ok, const ver_t *lat)
+{
+    char *buf = heap_caps_calloc(1, NOTES_MAX, MALLOC_CAP_SPIRAM);
+    if (!buf) return;
+    int n = 0, kept = 0;
+    cJSON *j = get_json(OTA_SITE "notes.json", 24576);
+    cJSON *r;
+    cJSON_ArrayForEach(r, cJSON_GetObjectItem(j, "releases")) {
+        const char *v = cJSON_GetStringValue(cJSON_GetObjectItem(r, "version"));
+        const char *d = cJSON_GetStringValue(cJSON_GetObjectItem(r, "date"));
+        ver_t rv;
+        if (!v || !parse_ver(v, &rv)) continue;
+        if (cmp_ver(&rv, lat) > 0 || (cur_ok && cmp_ver(&rv, cur) <= 0)) continue;
+        if (lat->kind == 1 && rv.kind == 0) continue;
+        char date[32] = "";
+        int y, mo, dd;
+        if (d && sscanf(d, "%d-%d-%d", &y, &mo, &dd) == 3 && mo >= 1 && mo <= 12)
+            snprintf(date, sizeof(date), "%s %d, %d", MONTHS[mo - 1], dd, y);
+        int need = snprintf(NULL, 0, "%s%s|%s\n", kept ? "\n" : "", v, date);
+        if (n + need >= NOTES_MAX - 32) break;
+        n += snprintf(buf + n, NOTES_MAX - n, "%s%s|%s\n", kept ? "\n" : "", v, date);
+        kept++;
+        cJSON *it;
+        cJSON_ArrayForEach(it, cJSON_GetObjectItem(r, "notes")) {
+            const char *t = cJSON_GetStringValue(it);
+            if (!t) continue;
+            if (n + (int)strlen(t) + 2 >= NOTES_MAX - 32) { n += snprintf(buf + n, NOTES_MAX - n, "...\n"); goto full; }
+            n += snprintf(buf + n, NOTES_MAX - n, "%s\n", t);
+        }
+    }
+full:
+    cJSON_Delete(j);
+    if (!j) ESP_LOGW(TAG, "No release notes");
+    else ESP_LOGI(TAG, "Release notes: %d release(s), %d bytes", kept, n);
+    xSemaphoreTake(mux, portMAX_DELAY);
+    if (!notes || strcmp(notes, buf)) {
+        free(notes);
+        notes = buf;
+        buf = NULL;
+        st.notes_id++;
+    }
+    xSemaphoreGive(mux);
+    free(buf);
+}
+
+void ota_get_notes(char *out, size_t size)
+{
+    if (!size) return;
+    xSemaphoreTake(mux, portMAX_DELAY);
+    strlcpy(out, notes ? notes : "", size);
+    xSemaphoreGive(mux);
+}
+
 /* ---------- check ---------- */
 
 static void check(void)
 {
     set_state(OTA_CHECKING, "");
-    cJSON *ch = get_json(OTA_SITE "channels.json");
+    cJSON *ch = get_json(OTA_SITE "channels.json", 8192);
     if (!ch) { set_state(OTA_FAILED, "Can't reach the update site"); return; }
     char chan[8];
     xSemaphoreTake(mux, portMAX_DELAY);
@@ -148,7 +210,7 @@ static void check(void)
     char url[256];
     snprintf(url, sizeof(url), OTA_SITE "%s", man);
     cJSON_Delete(ch);
-    cJSON *m = get_json(url);
+    cJSON *m = get_json(url, 8192);
     cJSON *parts = cJSON_GetObjectItem(cJSON_GetArrayItem(cJSON_GetObjectItem(m, "builds"), 0), "parts");
     const char *path = NULL;
     cJSON *p;
@@ -163,6 +225,7 @@ static void check(void)
     snprintf(app_url, sizeof(app_url), "%s%s", url, path);
     xSemaphoreGive(mux);
     cJSON_Delete(m);
+    fetch_notes(&cur, cur_ok, &lat);                                   // optional: an update installs without them
     set_state(OTA_AVAILABLE, "");
 }
 
