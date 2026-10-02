@@ -46,6 +46,22 @@ class Ctx:
         open(os.path.join(ROOT, 'harness.ask'), 'w', encoding='utf-8').write(text)
 
 
+def crash_summary(lines):
+    """The panic reason and the backtrace decoded with the test build's ELF (build/v55; wrong for other builds)."""
+    import glob, re, subprocess
+    why = next((l.strip() for l in lines if re.search(r'assert failed|Guru Meditation|abort\(\) was called|panic', l)), '')
+    bt = next((l for l in lines if l.startswith('Backtrace:')), '')
+    elf = os.path.join(ROOT, 'build', 'v55', 'weather_amoled.elf')
+    a2l = glob.glob(os.path.expanduser('~/.espressif/tools/xtensa-esp-elf/*/xtensa-esp-elf/bin/xtensa-esp32s3-elf-addr2line*'))
+    frames = []
+    if bt and a2l and os.path.exists(elf):
+        addrs = [x.split(':')[0] for x in bt.split()[1:] if x.startswith('0x')]
+        out = subprocess.run([a2l[0], '-pfC', '-e', elf] + addrs, capture_output=True, text=True).stdout
+        frames = [l.split(' at ')[0] + ' (' + os.path.basename(l.split(' at ')[-1]) + ')' for l in out.splitlines()
+                  if ' at ' in l and 'panic' not in l and 'abort' not in l and 'assert' not in l]
+    return (why[:90] + ' | ' if why else '') + ' < '.join(frames[:5])
+
+
 def compare(metrics, update):
     """[(metric, value, limit, ok)] against baseline.json {"metric": {"max"|"min": n, "ref": n}}."""
     base = json.load(open(BASELINE)) if os.path.exists(BASELINE) else {}
@@ -119,8 +135,8 @@ def main():
                 fn(ctx)
                 status, detail = 'pass', ''
                 resets = [l for l in log.since_mark() if 'rst:0x' in l]
-                if resets and not ctx.reset_ok:          # a crash (its panic text goes to the UART, not USB)
-                    status, detail = 'FAIL', f'unexpected restart: {resets[0][:60]}'
+                if resets and not ctx.reset_ok:          # a crash: the panic text and backtrace are in the log
+                    status, detail = 'FAIL', f'unexpected restart: {resets[0][:60]}; {crash_summary(log.since_mark())}'
             except Fail as e:
                 status, detail = 'FAIL', str(e)
             except Exception as e:                      # a bug in the harness itself, or the board vanished

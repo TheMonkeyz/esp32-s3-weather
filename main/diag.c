@@ -21,7 +21,8 @@ static const char *TAG = "diag";
 bool diag_bench(void);
 static volatile bool bench_done;
 #define MAX_TASKS 32
-#define BENCH_AT_S 45     // render benchmark this long after boot (0 = never)
+#define BENCH_AT_S 0      // render benchmark this long after boot (0 = never). Was 45: it blocks LVGL ~1.5 s, which
+                          // swallowed swipes a minute after boot; the harness runs it on demand ("bench").
 #define KB(x) ((unsigned)((x) / 1024))
 
 typedef struct { TaskHandle_t h; uint32_t rt; } prev_t;

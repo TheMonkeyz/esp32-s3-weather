@@ -66,8 +66,13 @@ def every_screen(ctx):
     b = ctx.board
     b.cmd('wake')
     go_weather(ctx)
-    route = [('swipe right', 'extras'), ('swipe right', 'status'), ('swipe left', 'extras'),
-             ('swipe left', 'weather'), ('swipe left', 'radar'), ('swipe right', 'weather'),
+    route = [('swipe right', 'extras'), ('swipe right', 'status'),
+             ('swipe right', 'status'),                  # the left end: bounces back
+             ('swipe left', 'extras'),
+             ('drag 233 233 300 233 600', 'extras'),     # short and slow: snaps back
+             ('swipe left', 'weather'), ('swipe left', 'radar'),
+             ('swipe left', 'radar'),                    # the right end: bounces back
+             ('swipe right', 'weather'),
              ('press 233 233', 'settings'), ('tap 233 45', 'weather'),
              ('tap 125 350', 'hourly'), ('swipe left', 'hourly'), ('tap 233 233', 'weather')]
     for cmd, want in route:
@@ -77,6 +82,33 @@ def every_screen(ctx):
             ms = b.snap({'hourly': 'current'}.get(want, want), ctx.out(f'screen_{want}.png'))
             ctx.snapped.add(want)
             ctx.metric(f'snapshot_ms.{want}', round(ms))
+    # Places (drag up / down on the weather screen) and days (sideways in the hourly view): pictures that follow the
+    # finger (slide.c); the first page bounces
+    pages = lambda: dict(kv.split('=') for kv in b.cmd('page', r'test: page (.*)').group(1).split())
+    pg = pages()
+    if int(pg['places']) > 1:
+        b.cmd('drag 233 380 233 100 300')
+        time.sleep(1.2)
+        check(pages()['place'] == '1', f'drag up: place {pages()["place"]}, expected 1')
+        b.cmd('drag 233 100 233 380 300')
+        time.sleep(1.2)
+        check(pages()['place'] == '0', f'drag down: place {pages()["place"]}, expected 0')
+    b.cmd('drag 233 100 233 380 300')                      # above the first place: bounces
+    time.sleep(1.2)
+    check(pages()['place'] == '0', 'drag down on the first place did not bounce back')
+    b.wait_screen('weather', 3)
+    b.cmd('tap 125 350')
+    b.wait_screen('hourly', 6)
+    time.sleep(1)
+    d0 = int(pages()['day'])
+    b.cmd('swipe left')
+    time.sleep(1.2)
+    check(int(pages()['day']) == d0 + 1, f'hourly: swipe left went to day {pages()["day"]}, expected {d0 + 1}')
+    b.cmd('swipe right')
+    time.sleep(1.2)
+    check(int(pages()['day']) == d0, f'hourly: swipe right went to day {pages()["day"]}, expected {d0}')
+    b.cmd('tap 233 233')
+    b.wait_screen('weather', 6)
     for extra in ('settings1', 'settings2', 'settings3', 'phone', 'setup0', 'setup1', 'update'):
         b.snap(extra, ctx.out(f'screen_{extra}.png'))
     ctx.note('screens: ' + ', '.join(sorted(ctx.snapped)) + ' (+ settings1..3, phone, setup0/1, update)')
@@ -149,15 +181,28 @@ def boot_and_memory(ctx):
 
 @test('perf')
 def render_bench(ctx):
+    """Full-screen render times, best of 3: background work (the radar loading frames after a visit, ~1.5x slower
+    once) is noise, a slower renderer shows in every run."""
     b = ctx.board
     go_weather(ctx)
-    b.cmd('bench', r'test: ok bench')
-    m = ctx.log.wait(r'diag: bench (render-only full screen:.*|postponed.*)', 20)
-    check(m.group(1).startswith('render'), 'bench postponed: the weather screen was not idle')
-    for name, v in re.findall(r'(\w+) ([\d.]+) ms', m.group(1)):
-        ctx.metric(f'render_ms.{name}', float(v))
-    m = ctx.log.wait(r'diag: bench weather incl. panel transfer: ([\d.]+) ms', 5)
-    ctx.metric('render_ms.weather_with_panel', float(m.group(1)))
+    best = {}
+    runs = 0
+    for _ in range(8):                               # 3 runs; "postponed" (a redraw going on) doesn't count
+        if runs == 3:
+            break
+        time.sleep(2)
+        b.cmd('bench', r'test: ok bench')
+        m = ctx.log.wait(r'diag: bench (render-only full screen:.*|postponed.*)', 20)
+        if not m.group(1).startswith('render'):
+            continue
+        runs += 1
+        for name, v in re.findall(r'(\w+) ([\d.]+) ms', m.group(1)):
+            best[name] = min(best.get(name, 1e9), float(v))
+        m = ctx.log.wait(r'diag: bench weather incl. panel transfer: ([\d.]+) ms', 5)
+        best['weather_with_panel'] = min(best.get('weather_with_panel', 1e9), float(m.group(1)))
+    check(runs, 'bench always postponed: the weather screen was never idle')
+    for name, v in best.items():
+        ctx.metric(f'render_ms.{name}', v)
 
 
 @test('perf')
@@ -172,21 +217,100 @@ def radar_timing(ctx):
     try:
         ctx.log.wait(r'radar: Frame ', 30, 'a radar frame after opening the radar')
         ctx.metric('radar_first_frame_s', round(time.time() - t0, 1))
+        ctx.log.wait(r'radar: Lightning ', 30, 'lightning fetched with the frames')
     except Fail:
-        ctx.note('no new radar frame within 30 s (frames may all be cached)')
-    ctx.log.wait(r'radar: Lightning ', 30, 'lightning fetched with the frames')
+        ctx.note('no new radar frame within 30 s (all frames already loaded on an earlier visit)')
     time.sleep(8)                                    # history frames load while the radar is visible
-    b.cmd('tap 233 233')                             # play the last 3 h
+    b.cmd('tap 233 233')                             # play the last 3 h (3 fps by design: no fps metric)
     ctx.log.mark()
-    m = ctx.log.wait(r'diag: display: .*animation ([\d.]+) fps \((\d+) frames, worst gap (\d+) ms\)', 75,
-                     'the next diag period')
-    ctx.metric('radar_anim_fps', float(m.group(1)))
-    ctx.metric('radar_anim_worst_gap_ms', int(m.group(3)))
+    time.sleep(10)
     frames = ctx.log.count(r'radar: Frame ')
     lt = [int(x) for x in re.findall(r'radar: Lightning \S+: \d+ px, (\d+) marks', '\n'.join(ctx.log.since_mark()))]
     ctx.note(f'{frames} radar frames loaded during playback; lightning marks per frame: {lt[:15]}')
     b.cmd('tap 233 233')                             # stop
     b.cmd('swipe right')
+
+
+def measure(ctx, name, action, settle=1.0):
+    """Frame rate during `action` (a list of console commands): fps reset, act, wait for the animation to end."""
+    b = ctx.board
+    b.cmd('fps reset')
+    for c in action:
+        b.cmd(c)
+    time.sleep(settle)
+    line = b.cmd('fps', r'test: fps (.*)').group(1)
+    v = {k: float(x) for k, x in (kv.split('=') for kv in line.split())}
+    ctx.metric(f'swipe_fps.{name}', round(v['anim_fps'], 1))
+    ctx.metric(f'swipe_gap_max_ms.{name}', round(v['gap_max_ms']))
+    ctx.metric(f'swipe_render_avg_ms.{name}', round(v['render_avg_ms'], 1))
+    ctx.note(f'{name}: {v["anim_fps"]:.1f} fps, {int(v["anim_frames"])} frames, render avg {v["render_avg_ms"]:.1f} ms '
+             f'max {v["render_max_ms"]:.1f} ms, worst gap {v["gap_max_ms"]:.0f} ms')
+
+
+def radar_settled(ctx, since, quiet=5, timeout=45):
+    """Wait until the radar has logged nothing for `quiet` s and no map preload is running (log lines from `since`).
+    After a place change it downloads the place's maps and saves them to flash (radar.c cache_save, the background
+    preload): flash writes pause both cores in bursts for seconds, and a move measured then shows the flash, not the
+    drawing (a day drag at 3 fps on October 2, its first frame after 2 s)."""
+    end = time.time() + timeout
+    seen, calm = -1, time.time()
+    while time.time() < end:
+        lines = [l for l in ctx.log.lines()[since:] if 'radar: ' in l]
+        preloading = False
+        for l in lines:
+            if 'radar: Preloading' in l:
+                preloading = True
+            elif 'radar: Preload finished' in l or 'radar: Preload stopped' in l:
+                preloading = False
+        if len(lines) != seen:
+            seen, calm = len(lines), time.time()
+        elif not preloading and time.time() - calm >= quiet:
+            return
+        time.sleep(0.5)
+    ctx.note(f'the radar was still busy {timeout} s after the place change (moves measured anyway)')
+
+
+@test('perf')
+def swipes(ctx):
+    """Frame rate of the moves people make: screen to screen, the hourly view's days, places, Settings scroll."""
+    b = ctx.board
+    b.cmd('wake')
+    go_weather(ctx)
+    time.sleep(1)
+    measure(ctx, 'screen_weather_to_extras', ['swipe right'])
+    measure(ctx, 'screen_extras_to_weather', ['swipe left'])
+    measure(ctx, 'screen_weather_to_radar', ['swipe left'])
+    b.cmd('swipe right')
+    b.wait_screen('weather', 6)
+    places = len(b.api('/api/config').get('places', []))
+    since = len(ctx.log.lines())
+    if places > 1:                                   # places: drawn by slide.c, vertical
+        measure(ctx, 'drag_place', ['drag 233 380 233 120 400'], settle=1.5)
+        b.cmd('drag 233 120 233 380 400')
+        time.sleep(1.5)
+        # Back on the first place, the radar fetches its maps and saves them to flash (both cores pause in bursts):
+        # a tap then can go unseen and a move crawls. Wait for it, and tap twice if needed.
+        radar_settled(ctx, since)
+    for attempt in range(2):
+        b.cmd('tap 125 350')                         # a day: the hourly view
+        try:
+            b.wait_screen('hourly', 6)
+            break
+        except Fail:
+            if attempt:
+                raise
+            ctx.note('tap on the forecast not seen the first time (radar saving the new map?), tried again')
+    time.sleep(1)
+    measure(ctx, 'drag_hourly_day', ['drag 380 233 100 233 400'], settle=1.5)
+    measure(ctx, 'scroll_hourly_list', ['drag 233 400 233 250 300'], settle=2.0)
+    b.cmd('tap 233 233')
+    b.wait_screen('weather', 6)
+    b.cmd('press 233 233')
+    b.wait_screen('settings', 6)
+    time.sleep(1)
+    measure(ctx, 'scroll_settings', ['drag 233 330 233 130 300'], settle=2.0)
+    b.cmd('tap 233 45')
+    b.wait_screen('weather', 6)
 
 
 # ---------------------------------------------------------------- Wi-Fi: lost at run time

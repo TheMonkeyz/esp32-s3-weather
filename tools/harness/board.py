@@ -156,8 +156,21 @@ class Board:
             f.write(line + '\n')
         os.replace(p('serial.send.tmp'), p('serial.send'))
         self.log.wait(re.escape('> ' + line), 5, 'helper passed the command on', start=at)
-        m = self.log.wait(r'test: error .*|' + expect, timeout, line, start=at)
+        try:
+            m = self.log.wait(r'test: error .*|' + expect, timeout, line, start=at)
+        except Fail as e:
+            if line == 'where':
+                raise
+            # no answer: the console task is blocked (usually on the display lock). "where" takes no lock.
+            try:
+                w = self.cmd('where', r'test: where (.*)', timeout=5).group(1)
+            except Fail:
+                w = 'no answer either'
+            raise Fail(f'{e}; where: {w}')
         if m.group(0).startswith('test: error'):
+            if 'busy' in m.group(0) and line != 'where':
+                w = self.cmd('where', r'test: where (.*)', timeout=5).group(1)
+                raise Fail(f'{line}: {m.group(0)}; where: {w}')
             raise Fail(f'{line}: {m.group(0)}')
         return re.search(expect, m.string)            # the groups of the expected answer
 

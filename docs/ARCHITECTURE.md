@@ -25,8 +25,8 @@ The panel's init sequence and pin map come from Waveshare's BSP
 | `lvgl` | 1 / 4 | `lv_timer_handler()` loop under a recursive mutex (`display_lock()`) |
 | `radar` | 0 / 3, 10 KB stack | Basemap, latest radar frame, history frames; sleeps unless the radar screen is visible |
 | `presence` | 0 / 2 | Reads 100 ms of audio, computes the level, runs the dim/off state machine, fades brightness |
-| `diag` | 0 / 1 | Every 60 s logs heap, frame timing, CPU and stack per task; starts `bench` once at 45 s |
-| `bench` | 1 / 4, one-shot, 10 KB stack (6 KB overflowed) | Times full-screen renders of each screen without showing them (UI blocked ~1.5 s); only while the weather screen is idle |
+| `diag` | 0 / 1 | Every 60 s logs heap, frame timing, CPU and stack per task |
+| `bench` | 1 / 4, one-shot, 10 KB stack (6 KB overflowed) | Times full-screen renders of each screen without showing them (UI blocked ~1.5 s); only on request (test console `bench`, the harness's `perf`). Until v1.10.1 it also ran by itself 45 s after boot and swallowed the swipes made meanwhile (`BENCH_AT_S` in `diag.c`, now 0) |
 | `svc_probe` | any / 2, one-shot, 8 KB stack | Status page opened: one small request to each service idle for 5 min, then exits |
 | httpd (HTTPS :443, HTTP :80) | – | Settings page + JSON API. Stacks 7 KB (TLS handshake peaks ~3.3 KB) / 4 KB |
 
@@ -44,6 +44,16 @@ LVGL timer and event callbacks already run inside the lock.
 - `flush_cb` byte-swaps RGB565, sets the window (`0x2A` with +6 column offset, then `0x2B`) and sends pixels with
   QSPI command `0x32 / 0x2C`.
 - A rounder callback makes every area start on an even pixel and end on an odd one (a CO5300 requirement).
+- QSPI at **80 MHz** since v1.10.1 (40 MHz before): a full frame takes ~11 ms on the bus instead of 22.
+- The transfer-done interrupt runs on **core 1** (`isr_cpu_id`), the LVGL task's core. esp_lcd isn't thread-safe:
+  with the interrupt on core 0, a raw frame (below) hung for good every few slides.
+- **Raw frames** (`display_raw_frame(fill, user)`, for `slide.c`): with LVGL paused (display lock held), `fill`
+  writes each 32-line band into LVGL's own two buffers and the band goes straight to the panel; band k is filled
+  while band k−1 is on the bus (~15 ms a frame). Rules that came from hangs: first wait until LVGL's last band is
+  out (`lvgl_inflight`: it outlives the refresh), and never call esp_lcd (the window commands) while a band is still
+  in flight; every wait gives up after 200 ms. If it ever sticks, the test console's `where` prints the breadcrumbs
+  (`slide_phase`, `raw_phase`, `raw_band`, `lvgl_inflight`). After a raw frame, LVGL must redraw before it flushes
+  again (the slide invalidates the screen).
 - Fonts: Montserrat TTF embedded and rendered by TinyTTF at 15–96 px, so accents and "°" render correctly.
 
 ## Weather screen (`ui.c`)
@@ -56,7 +66,11 @@ LVGL timer and event callbacks already run inside the lock.
   `0xC9D1DA`) before the speed. The TinyTTF Montserrat has no symbol glyphs, so small icons are drawn
   (`LV_EVENT_DRAW_MAIN`), not typed.
   Decorative objects are made non-clickable so presses bubble up to the screen.
-- Gestures: `LV_EVENT_GESTURE` on both screens → `lv_screen_load_anim` (move left/right).
+- Moves between screens (status | extras | weather | radar), between places and between days follow the finger:
+  they are drawn as pictures by `slide.c` ("Moves" below), started by `drag_watch_cb` in `ui.c`. `LV_EVENT_GESTURE`
+  (`gesture_cb`) still handles the radar's zoom swipes, and screen swipes while a slide is running. Every other
+  screen change (hourly view, Settings, alerts, update) calls `slide_screen()`, which takes the same arguments as
+  `lv_screen_load_anim()`.
 - **Places:** the weather widgets live on one page per place (`place_page_t pp[MAX_PLACES]`) in a vertical pager
   (`pager.c`) on `scr_main`; the alert pill, update pill, page dots, place dots and settings overlay are siblings
   above it. `passthrough(scr_main)` makes everything non-clickable, then the pager gets `CLICKABLE` back (a
@@ -81,6 +95,58 @@ LVGL timer and event callbacks already run inside the lock.
   (places, vertical).
 - Its scroll handler must ignore bubbled events (`target != current_target`): the hourly lists scroll vertically
   inside the pages and their `LV_EVENT_SCROLL` bubbles up; reading pager state from the list crashed the board.
+- **Both pagers are frozen since v1.10.1** (`pager_freeze`: scroll direction `LV_DIR_NONE`). LVGL's elastic scroll
+  redrew every widget for every frame (10–15 fps). The drag is drawn by `slide.c` from pictures instead:
+  `pager_peek(i)` moves the pager to page i and back within one LVGL cycle to take its picture (no callbacks, the
+  `quiet` flag), and `pager_switch(i)` ends the drag (calls `on_change` and `on_settle`, like a scroll that settled
+  there). The hourly lists inside the pages still scroll with LVGL.
+
+## Moves: slides and drags (`slide.c`)
+
+Why: LVGL 9.2 redraws every widget for every frame of a move. A full screen costs 65–85 ms (each of the 15 bands
+walks the object tree, and TinyTTF draws the glyphs), so swipes ran at 10–15 fps. The profiler (docs/TESTING.md §7)
+found no single hot spot to fix. Copying finished pictures is cheap: ~8 ms per screen from PSRAM into panel byte
+order, and ~11 ms on the bus.
+
+- **Pictures:** a screen is rendered off-display into a 466×466 RGB565 draw buffer (434 KB, PSRAM through LVGL's
+  heap). `slide_picture_rows()` renders only rows y0..y1, so a picture can be made one strip at a time. Painting saves
+  and restores the display's redraw list (`inv_p`) and ignores the invalidations it causes.
+- **Slides** (`slide_screen(to, MOVE_*, ms)`, run on the next LVGL cycle via `lv_async_call`): pictures of both
+  screens, then frames sent with `display_raw_frame()`. `fill()` composes each row from the two pictures with a byte
+  swap; the motion is a cubic ease-out with as many frames as fit (64–70 fps). Then the real screen is loaded and
+  LVGL redraws it. Not enough PSRAM, or a picture failed: plain `lv_screen_load_anim()`.
+- **Drags** (`slide_drag()`): LVGL 9.2 sends PRESSED and RELEASED to input device handlers but not PRESSING, so
+  `ui.c` starts a 10 ms timer at PRESSED (`drag_watch_cb`). After 16 px the larger axis decides, as LVGL picks a
+  scroll direction; a 2:1 rule missed curved swipes on the round screen. From then on slide.c reads the finger
+  itself (`touch_get()`, LVGL paused) and draws the current picture with the neighbour coming in under the finger.
+  At an end (no neighbour) the screen resists (a third of the movement, at most a fifth of the screen) and bounces
+  back. On release it goes on to the neighbour past a third of the screen, or after a flick (more than 24 px and
+  0.35 px/ms that way), else back. `commit(side)` loads the screen or `pager_switch`es the page.
+  - Five touch read errors in a row count as a release: the CST9217 often stops answering (NACK) when nothing
+    touches it instead of reporting "up", and the drag never ended.
+  - The neighbour in the detected direction is rendered before the first frame, and a finger lifted before that
+    frame counts as a flick that way: a quick flick could be over before anything was drawn.
+- **After a drag** (`touch_resync()`): `touch_forget()`, LVGL's `wait_until_release` cleared and `lv_indev_reset()`.
+  Without this, LVGL took the next touch for the old one still going (the next swipe was ignored), or `touch.c`'s
+  NACK guard replayed the last point LVGL had seen as a press: a stray tap where the drag had started, which opened
+  the hourly view after place drags.
+- **Cache** (`slide_cache_*`): 5 pictures keyed by screen, or by page for the two pagers (`key_of()` in `ui.c`).
+  `pictures_tick` (every 30 ms) keeps the shown screen and its neighbours (screens, places, days), and
+  `slide_cache_idle_work(800)` renders the first missing or out-of-date one, one 64-row strip per tick (~15–25 ms):
+  once nothing has changed on screen for 0.8 s and no finger is down, or when a picture has been out of date for 2 s.
+  A whole picture at once blocked LVGL for 60–180 ms, and a quick flick could start and end unseen.
+  - Out of date: any LVGL redraw of the shown screen marks its picture (`LV_EVENT_INVALIDATE_AREA` on the display;
+    ignored right after a slide loaded it, until its first render). For the screens not shown, every `ui_*` function
+    that changes content calls `slide_cache_dirty(NULL)` (forecast, alerts, air quality, places, units, update, the
+    minute tick), and the radar marks its own screen in `show_live()`. New code that changes a screen while it isn't
+    shown must do the same, or a drag will show stale content for a moment.
+  - A drag whose picture isn't ready renders it first (0.1–0.2 s). That happens mostly right after a place switch,
+    because the new place's data arrives in several updates.
+- **Memory:** `room_for(n)`: free PSRAM above 1 MB + 440 KB per picture, and a 900 KB block. 5 pictures = 2.2 MB.
+  A slide may reuse cache slots (`force`) rather than fall back to the slow animation.
+- **Measured (v1.10.1, harness `perf`):** screen to screen 64–70 fps (was 10–15; one run measured 32 fps to the radar, the next 67), places 46 fps (66 with the
+  pictures ready; was 10), days 58 fps (was 11), drag start ~15 ms. The lists inside a screen (hourly hours,
+  Settings) still scroll with LVGL: 17–22 fps.
 - Long-press opens the Settings screen (below). Its *More on your phone* row shows the overlay with a QR code
   (`lv_qrcode`) for `https://<ip>`.
 
@@ -236,8 +302,8 @@ LVGL timer and event callbacks already run inside the lock.
   today). Response is about 7 KB (receive buffer 48 KB in PSRAM). The weather screen shows `day[0..2]`.
 - `SHORT_CLICKED` on the weather screen with y ≥ 296 → forecast column by x → `scr_hour` (move-top animation).
   `ui_weather()` keeps a copy of the forecast (`wx`) for this screen.
-- `scr_hour` holds a horizontal pager (`pager.c`) with one full-screen page per forecast day (`WX_DAYS`), so pages
-  follow the finger, snap, and bounce at the ends.
+- `scr_hour` holds a horizontal pager (`pager.c`) with one full-screen page per forecast day (`WX_DAYS`). Moving
+  between days follows the finger, snaps, and bounces at the ends (drawn by `slide.c`, the pager is frozen).
   Each page has its own vertically scrollable hour list; LVGL picks the scroll direction from the drag.
   Page dots update on `LV_EVENT_SCROLL`. A tap closes the view.
 - **Rows are drawn, not created:** each list has one tall object with an `LV_EVENT_DRAW_MAIN` callback that draws
@@ -268,7 +334,7 @@ LVGL timer and event callbacks already run inside the lock.
   before swapping images. Requests interrupt waits (`ulTaskNotifyTake`), and a basemap download for a zoom level the
   user has already left is cancelled.
 - **Basemap:** 3×3 OSM tiles (`tile.openstreetmap.org/<z>/x/y.png`, one keep-alive connection, 3 retries each),
-  decoded with LVGL's bundled lodepng, dimmed and desaturated (`dim_map`, 55%), then saved to that zoom level's
+  decoded with `png_rows.c` (below), dimmed and desaturated (`dim_map`, 55%), then saved to that zoom level's
   512 KB slot in the 4 MB `mapcache` partition (7 slots). The header (magic `MAP7`, zoom, view origin) makes a location change
   download fresh tiles. Bump the magic to force a full re-download (useful for testing the preload).
 - **Background preload:** `radar_preload_start()` (called by `main` after Wi-Fi connects) and every location change
@@ -279,6 +345,12 @@ LVGL timer and event callbacks already run inside the lock.
   Afterwards the current level is loaded from flash and the latest frame is fetched.
 - **Radar frames:** GeoMet WMS `GetMap` in EPSG:3857 with the exact view bbox at 466×466, `transparent=true`,
   `time=<ISO>`. The latest time comes from `GetCapabilities` (`<Dimension name="time">start/end/PT6M`).
+- **PNG decoding** (`png_rows.c`, since v1.10.1): one row at a time with the ESP32-S3 ROM's inflate (`tinfl`,
+  `#include "miniz.h"`, 32 KB window), ~50 KB of working memory whatever the image size. Tiles, radar frames and
+  lightning images each pass a row callback (`tile_row`, `frame_row`, `lightning_row`). LVGL's lodepng decoded whole
+  images (~2–3 MB for a radar frame, in two big blocks), and those allocations failed once the drag pictures had
+  fragmented PSRAM. Handles 8-bit grey, RGB, palette (+tRNS), grey+alpha and RGBA, not interlaced: what GeoMet and
+  OSM send. Checked against lodepng on the same frame (same pixel and colour counts).
 - **Frame storage:** each frame is palette-indexed (1 byte/px, index 0 = no echo, up to 255 RGBA colours), about 217 KB
   in PSRAM. `compose()` blends the frame over the basemap at alpha×0.86 into `out565`, which an `lv_image` displays,
   then draws the frame's lightning bolts on top.
@@ -493,7 +565,10 @@ by `GET /api/config` as `version`.
   priority 3 (a PSRAM stack crashed when a command read NVS, and heavy work such as the render bench must run in its
   own task: `diag_bench_request()`).
 - Simulated finger: `touch_inject()` / `touch_inject_end()` in `touch.c` replace the controller's report, upstream
-  of the wake-swallow and gesture logic.
+  of the wake-swallow and gesture logic. Drags drawn by `slide.c` read the same injected finger (`touch_get()`).
+- `screen` and `page` take the display lock for at most 2 s and answer `error … display busy`; `where` takes no lock
+  and prints the display breadcrumbs, so it answers even when the display is stuck. `fps` uses its own counters
+  (`display_get_test_stats()`), so a `diag` report in the middle of a measurement doesn't reset it.
 - Wi-Fi test switches (`net_test_*` in `net.c`): a fake network name in the station config, never the saved
   credentials; `offline-boot` uses an `RTC_NOINIT` flag (one boot). `web_test_windows_quiet()` answers
   `/connecttest.txt` on the setup AP until restart.
@@ -509,7 +584,8 @@ by `GET /api/config` as `version`.
 | Basemap + composed screen | PSRAM | 2 × 434 KB |
 | Hourly temperature graphs (7 canvases) | PSRAM (LVGL heap) | 7 × 76 KB |
 | 15 radar frames | PSRAM | 3.3 MB |
-| PNG decode (466×466 ARGB) | PSRAM (transient) | ~0.9 MB + zlib |
+| Drag and slide pictures (`slide.c` cache) | PSRAM (LVGL heap) | up to 5 × 434 KB |
+| PNG decode (`png_rows.c`) | PSRAM (transient) | ~50 KB |
 | TLS (client and server) | PSRAM (`MBEDTLS_EXTERNAL_MEM_ALLOC`) | ~40–60 KB per session |
 
 Build: `CONFIG_COMPILER_OPTIMIZATION_PERF=y` (debug `-Og` made LVGL rendering noticeably slow) and
@@ -533,6 +609,13 @@ allocates internal DMA bounce buffers, and that failed mid-response, which trunc
 - The frame count is fixed at 15 and the radar layer is rain rate only (`RADAR_1KM_RRAI`). `Radar_1km_SfcPrecipType`
   would colour snow and rain separately.
 - One TLS key is shared by all builds (see README, Security notes).
+- When the radar saves a map to flash (`cache_save()`: back on the first place, or the background preload), flash
+  writes pause both cores in bursts for ~3 s per zoom level: a tap then can go unseen, and a drag can wait ~2 s for
+  its first frame and crawl at a few fps (seen in the harness on October 2). Older than v1.10.1 (LVGL's drags
+  stalled the same way). Candidate fix: `cache_save()` pauses between sectors while a finger is down or a move runs.
+- Taps can also be missed while LVGL redraws a whole screen (65–110 ms, e.g. when new data arrives).
+- The lists inside screens (hourly hours, Settings) still scroll with LVGL at 17–22 fps; only moves between screens,
+  places and days are drawn as pictures.
 - Internal RAM is tight: about 6.5 KB free while serving the page with the AP running. Watch
   `web: GET / (page), free internal …` in the log after adding features.
 - Phones hammer the portal with parallel connections (including HTTPS probes that fail the handshake, which is

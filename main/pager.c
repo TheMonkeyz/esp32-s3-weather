@@ -3,7 +3,7 @@
 #include "display.h"
 
 typedef struct {
-    bool vertical;
+    bool vertical, quiet;              // quiet: moved by pager_peek / pager_switch, no callbacks from the scroll events
     int pages, cur;
     pager_cb_t on_change, on_settle;
     void *user;
@@ -23,6 +23,7 @@ static void scrolled(lv_event_t *e)
     lv_obj_t *o = lv_event_get_current_target(e);
     if (lv_event_get_target(e) != o) return;   // a page's own list scrolling (bubbled up), not the pager
     pager_t *p = lv_obj_get_user_data(o);
+    if (p->quiet) return;
     int i = page_at(o, p);
     if (i != p->cur) {
         p->cur = i;
@@ -84,3 +85,34 @@ int pager_current(lv_obj_t *o)
 {
     return page_at(o, lv_obj_get_user_data(o));
 }
+
+int pager_count(lv_obj_t *o) { return ((pager_t *)lv_obj_get_user_data(o))->pages; }
+
+int pager_index(lv_obj_t *o, const lv_obj_t *page)
+{
+    pager_t *p = lv_obj_get_user_data(o);
+    for (int i = 0; i < p->pages; i++) if (p->page[i] == page) return i;
+    return -1;
+}
+
+static void move(lv_obj_t *o, pager_t *p, int i)
+{
+    p->quiet = true;
+    lv_obj_update_layout(o);
+    if (p->vertical) lv_obj_scroll_to_y(o, i * DISP_H, LV_ANIM_OFF);
+    else lv_obj_scroll_to_x(o, i * DISP_W, LV_ANIM_OFF);
+    p->quiet = false;
+}
+
+void pager_peek(lv_obj_t *o, int i) { move(o, lv_obj_get_user_data(o), i); }
+
+void pager_switch(lv_obj_t *o, int i)
+{
+    pager_t *p = lv_obj_get_user_data(o);
+    move(o, p, i);
+    p->cur = i;
+    if (p->on_change) p->on_change(i, p->user);
+    if (p->on_settle) p->on_settle(i, p->user);
+}
+
+void pager_freeze(lv_obj_t *o) { lv_obj_set_scroll_dir(o, LV_DIR_NONE); }

@@ -18,6 +18,7 @@
 #include "esp_ota_ops.h"
 #include "esp_wifi.h"
 #include "pager.h"
+#include "slide.h"
 #include "i18n.h"
 #include "sound.h"
 #include "presence.h"
@@ -266,6 +267,7 @@ static void clock_tick(lv_timer_t *t)
             lv_label_set_text(pp[i].time, b);
         }
         ESP_LOGI("ui", "clock %s", buf);
+        slide_cache_dirty(NULL);                            // clocks, ages, the sun: every picture is a minute old
         if (lv_screen_active() == scr_hour && tm.tm_min == 0) hour_fill(0);   // new hour
         if (lv_screen_active() == scr_extras) extras_refresh();
     }
@@ -617,7 +619,7 @@ static void hour_fill(int day)       // refresh one day's page (new data / new h
 
 static void hour_close(void)
 {
-    lv_screen_load_anim(scr_main, LV_SCR_LOAD_ANIM_MOVE_BOTTOM, 260, 0, false);
+    slide_screen(scr_main, LV_SCR_LOAD_ANIM_MOVE_BOTTOM, 260);
 }
 
 // Tap on a forecast column of the weather screen
@@ -633,7 +635,7 @@ static void main_tap(lv_event_t *e)
     }
     if (p.y < 200 && alerts.n) {                        // top half with an alert: its details
         printf("ui: tap alert\n");
-        lv_screen_load_anim(scr_alert, LV_SCR_LOAD_ANIM_MOVE_TOP, 260, 0, false);
+        slide_screen(scr_alert, LV_SCR_LOAD_ANIM_MOVE_TOP, 260);
         return;
     }
     if (p.y < 296) return;                              // only the forecast row
@@ -646,7 +648,7 @@ static void main_tap(lv_event_t *e)
     }
     pager_go(hr_pager, col, false);
     set_dots(col);
-    lv_screen_load_anim(scr_hour, LV_SCR_LOAD_ANIM_MOVE_TOP, 260, 0, false);
+    slide_screen(scr_hour, LV_SCR_LOAD_ANIM_MOVE_TOP, 260);
 }
 
 static void hour_tap(lv_event_t *e)
@@ -673,6 +675,7 @@ static void hour_create(void)
 {
     scr_hour = base_screen();
     hr_pager = pager_create(scr_hour, false, WX_DAYS, hr_changed, hr_settled, NULL);
+    pager_freeze(hr_pager);                              // days are dragged as pictures (slide.c, drag_watch_cb)
 
     for (int d = 0; d < WX_DAYS; d++) {
         day_page_t *dp = &pg[d];
@@ -725,6 +728,177 @@ static void hour_create(void)
     lv_obj_add_event_cb(scr_hour, hour_gesture, LV_EVENT_GESTURE, NULL);
 }
 
+/* ---------- drags that follow the finger (slide.c) ----------
+ * Screens, left to right: status | extras | weather | radar. Places: the weather screen's vertical pager. Days: the
+ * hourly view's horizontal pager. A drag (16 px, along the larger axis) is handed to slide_drag(): the neighbour comes
+ * in under the finger, the ends resist and bounce back. The pagers are frozen (LVGL no longer scrolls them); the
+ * hourly list's vertical scroll and the radar's zoom swipes stay with LVGL. Pictures come from slide.c's cache,
+ * keyed by screen, or by page for the two pagers (key_of). gesture_cb() is the fallback while a slide runs. */
+static void place_dots(int active);
+
+static lv_obj_t **drag_screens(int *n)
+{
+    static lv_obj_t *s[4];
+    s[0] = scr_status; s[1] = scr_extras; s[2] = scr_main; s[3] = scr_radar;
+    *n = 4;
+    return s;
+}
+
+static int drag_index(lv_obj_t *scr)
+{
+    int n;
+    lv_obj_t **s = drag_screens(&n);
+    for (int i = 0; i < n; i++) if (s[i] == scr) return i;
+    return -1;
+}
+
+// What a screen shows now, as a cache key: the weather screen and the hourly view by their current page
+static const void *key_of(lv_obj_t *scr)
+{
+    if (scr == scr_main) return pager_page(place_pager, pager_current(place_pager));
+    if (scr == scr_hour) return pager_page(hr_pager, pager_current(hr_pager));
+    return scr;
+}
+
+static const void *screen_neighbour(int side, void *user)
+{
+    int n, i = drag_index(lv_screen_active()) + side;
+    lv_obj_t **s = drag_screens(&n);
+    return i < 0 || i >= n ? NULL : key_of(s[i]);        // the ends: no neighbour, the screen bounces
+}
+
+static void screen_commit(int side, void *user)
+{
+    int n, cur = drag_index(lv_screen_active()), i = cur + side;
+    lv_obj_t **s = drag_screens(&n);
+    if (!side || cur < 0 || i < 0 || i >= n) return;
+    if (s[cur] == scr_radar) radar_set_visible(false);
+    if (s[i] == scr_radar) radar_set_visible(true);
+    if (s[i] == scr_status) svc_probe_stale();           // the status page checks stale services when shown
+    lv_screen_load(s[i]);
+}
+
+static const void *place_neighbour(int side, void *user)
+{
+    int i = pager_current(place_pager) + side;
+    return i < 0 || i >= n_places ? NULL : pager_page(place_pager, i);
+}
+
+static void place_commit(int side, void *user)
+{
+    int i = pager_current(place_pager) + side;
+    if (side && i >= 0 && i < n_places) pager_switch(place_pager, i);   // dots, then the place (place_settled)
+}
+
+static const void *day_neighbour(int side, void *user)
+{
+    int i = pager_current(hr_pager) + side;
+    return i < 0 || i >= wx.ndays ? NULL : pager_page(hr_pager, i);
+}
+
+static void day_commit(int side, void *user)
+{
+    int i = pager_current(hr_pager) + side;
+    if (side && i >= 0 && i < wx.ndays) pager_switch(hr_pager, i);      // dots, the "day" log
+}
+
+// Picture for slide.c's cache. A screen not shown: its content is brought up to date first, as when shown. A page:
+// its pager is moved there (with its dots) and back, within this LVGL cycle (slide.c undoes the redraws it causes).
+static bool drag_paint(const void *key, lv_draw_buf_t *dst, int y0, int y1)
+{
+    int ip = pager_index(place_pager, key), ih = ip < 0 ? pager_index(hr_pager, key) : -1;
+    if (ip >= 0 || ih >= 0) {
+        bool places = ip >= 0;
+        lv_obj_t *pager = places ? place_pager : hr_pager;
+        int i = places ? ip : ih, cur = pager_current(pager);
+        if (i != cur) { pager_peek(pager, i); if (places) place_dots(i); else set_dots(i); }
+        bool ok = slide_picture_rows(places ? scr_main : scr_hour, dst, y0, y1);
+        if (i != cur) { pager_peek(pager, cur); if (places) place_dots(cur); else set_dots(cur); }
+        return ok;
+    }
+    lv_obj_t *scr = (lv_obj_t *)key;
+    if (scr != lv_screen_active() && y0 == 0) {          // brought up to date once, before the first strip
+        if (scr == scr_status) status_refresh();
+        if (scr == scr_extras) extras_refresh();
+    }
+    return slide_picture_rows(scr, dst, y0, y1);
+}
+
+// Every 30 ms: keep the pictures of what's shown and its neighbours ready (slide.c's cache), a 64-row strip at a time
+// (~15-25 ms), once nothing has changed on screen for 0.8 s and no finger is down (or a picture has been out of date
+// for 2 s). LVGL reads the touch between strips, so a quick swipe isn't lost behind a picture being rendered.
+static void pictures_tick(lv_timer_t *t)
+{
+    lv_obj_t *cur = lv_screen_active();
+    const void *keys[5];
+    int k = 0, n, i = drag_index(cur);
+    lv_obj_t **s = drag_screens(&n);
+    if (i >= 0) {
+        keys[k++] = key_of(cur);
+        if (i > 0) keys[k++] = key_of(s[i - 1]);
+        if (i < n - 1) keys[k++] = key_of(s[i + 1]);
+        if (cur == scr_main) {
+            for (int d = -1; d <= 1; d += 2) if (place_neighbour(d, NULL)) keys[k++] = place_neighbour(d, NULL);
+        }
+    } else if (cur == scr_hour) {
+        keys[k++] = key_of(cur);
+        for (int d = -1; d <= 1; d += 2) if (day_neighbour(d, NULL)) keys[k++] = day_neighbour(d, NULL);
+    } else {
+        return;
+    }
+    slide_cache_keep(keys, k);
+    lv_indev_t *in = lv_indev_get_next(NULL);
+    if (ov_state || (in && lv_indev_get_state(in) == LV_INDEV_STATE_PRESSED) || lv_anim_count_running()) return;
+    slide_cache_idle_work(800);
+}
+
+// LVGL 9.2 sends PRESSED and RELEASED to the input device's handlers but not PRESSING: while a press could still
+// become a drag, a 10 ms timer watches the finger (indev point, updated at every touch read).
+static lv_point_t drag_p0;
+static lv_timer_t *drag_watch;
+
+static lv_point_t drag_p1;                // where the finger was when the move became a drag
+
+static bool drag_start(bool vertical, slide_neighbour_cb_t neighbour, slide_commit_cb_t commit)
+{
+    return slide_drag(vertical, drag_p0.x, drag_p0.y, drag_p1.x, drag_p1.y, neighbour, commit, NULL);
+}
+
+static void drag_watch_cb(lv_timer_t *t)
+{
+    lv_indev_t *in = lv_indev_get_next(NULL);
+    lv_obj_t *cur = lv_screen_active();
+    lv_point_t p;
+    lv_indev_get_point(in, &p);
+    int dx = p.x - drag_p0.x, dy = p.y - drag_p0.y;
+    if (lv_indev_get_state(in) != LV_INDEV_STATE_PRESSED || ov_state) { lv_timer_pause(t); return; }
+    // Decided after 16 px, by the larger axis (as LVGL picks a scroll direction). Requiring a 2:1 ratio missed curved
+    // swipes on the round screen, and the hours list took those that started slightly vertical.
+    if (abs(dx) < 16 && abs(dy) < 16) return;
+    bool horiz = abs(dx) > abs(dy), vert = !horiz;
+    lv_timer_pause(t);
+    drag_p1 = p;
+    bool took = false;
+    if (horiz && drag_index(cur) >= 0) took = drag_start(false, screen_neighbour, screen_commit);
+    else if (vert && cur == scr_main) took = drag_start(true, place_neighbour, place_commit);
+    else if (horiz && cur == scr_hour) took = drag_start(false, day_neighbour, day_commit);
+    if (took) lv_indev_wait_release(in);                               // the drag owns this touch now
+}
+
+static void drag_detect(lv_event_t *e)
+{
+    lv_indev_t *in = lv_indev_active();
+    if (!in || !drag_watch) return;
+    lv_obj_t *cur = lv_screen_active();
+    if (lv_event_get_code(e) == LV_EVENT_PRESSED && !ov_state && (drag_index(cur) >= 0 || cur == scr_hour)) {
+        lv_indev_get_point(in, &drag_p0);
+        lv_timer_reset(drag_watch);
+        lv_timer_resume(drag_watch);
+    } else if (lv_event_get_code(e) == LV_EVENT_RELEASED) {
+        lv_timer_pause(drag_watch);
+    }
+}
+
 static void gesture_cb(lv_event_t *e)
 {
     lv_indev_t *in = lv_indev_active();
@@ -738,29 +912,29 @@ static void gesture_cb(lv_event_t *e)
     if (cur == scr_extras && dir == LV_DIR_RIGHT) {
         svc_probe_stale();
         status_refresh();
-        lv_screen_load_anim(scr_status, LV_SCR_LOAD_ANIM_MOVE_RIGHT, 280, 0, false);
+        slide_screen(scr_status, LV_SCR_LOAD_ANIM_MOVE_RIGHT, 280);
         lv_indev_wait_release(in);
     } else if (cur == scr_status && dir == LV_DIR_LEFT) {
         extras_refresh();
-        lv_screen_load_anim(scr_extras, LV_SCR_LOAD_ANIM_MOVE_LEFT, 280, 0, false);
+        slide_screen(scr_extras, LV_SCR_LOAD_ANIM_MOVE_LEFT, 280);
         lv_indev_wait_release(in);
     } else if (cur == scr_main && dir == LV_DIR_RIGHT) {
         extras_refresh();
-        lv_screen_load_anim(scr_extras, LV_SCR_LOAD_ANIM_MOVE_RIGHT, 280, 0, false);
+        slide_screen(scr_extras, LV_SCR_LOAD_ANIM_MOVE_RIGHT, 280);
         lv_indev_wait_release(in);
     } else if (cur == scr_extras && dir == LV_DIR_LEFT) {
-        lv_screen_load_anim(scr_main, LV_SCR_LOAD_ANIM_MOVE_LEFT, 280, 0, false);
+        slide_screen(scr_main, LV_SCR_LOAD_ANIM_MOVE_LEFT, 280);
         lv_indev_wait_release(in);
     } else if (cur == scr_main && dir == LV_DIR_LEFT) {
         radar_set_visible(true);
-        lv_screen_load_anim(scr_radar, LV_SCR_LOAD_ANIM_MOVE_LEFT, 280, 0, false);
+        slide_screen(scr_radar, LV_SCR_LOAD_ANIM_MOVE_LEFT, 280);
         lv_indev_wait_release(in);
     } else if (cur == scr_radar && (dir == LV_DIR_TOP || dir == LV_DIR_BOTTOM)) {
         radar_zoom(dir == LV_DIR_BOTTOM ? +1 : -1);  // swipe down = zoom in, up = zoom out
         lv_indev_wait_release(in);
     } else if (cur == scr_radar && dir == LV_DIR_RIGHT) {
         radar_set_visible(false);
-        lv_screen_load_anim(scr_main, LV_SCR_LOAD_ANIM_MOVE_RIGHT, 280, 0, false);
+        slide_screen(scr_main, LV_SCR_LOAD_ANIM_MOVE_RIGHT, 280);
         lv_indev_wait_release(in);
     } else {
         lv_indev_wait_release(in);      // unused swipe: don't let its release open the hourly view
@@ -938,7 +1112,7 @@ static void fmt_until(time_t t, char *out, size_t n)
     } else out[0] = 0;
 }
 
-static void alert_close(lv_event_t *e) { lv_screen_load_anim(scr_main, LV_SCR_LOAD_ANIM_MOVE_BOTTOM, 260, 0, false); }
+static void alert_close(lv_event_t *e) { slide_screen(scr_main, LV_SCR_LOAD_ANIM_MOVE_BOTTOM, 260); }
 
 static void alert_gesture(lv_event_t *e)
 {
@@ -1016,6 +1190,7 @@ void ui_alert_map(uint16_t *buf, int w, int h)
 void ui_alerts(const alerts_t *al)
 {
     display_lock(-1);
+    slide_cache_dirty(NULL);                        // new content: the cached pictures are out of date
     if (al != &alerts) alerts = *al;
     if (!alerts.n) {
         lv_obj_add_flag(al_map, LV_OBJ_FLAG_HIDDEN);
@@ -1193,6 +1368,7 @@ static void extras_refresh(void)       // display lock held (LVGL task or caller
 void ui_air(const air_t *a)
 {
     display_lock(-1);
+    slide_cache_dirty(NULL);                        // new content: the cached pictures are out of date
     ex_air = *a;
     have_air = true;
     if (lv_screen_active() == scr_extras) extras_refresh();
@@ -1471,6 +1647,7 @@ static void update_render(void)       // display lock held
 void ui_ota(const ota_status_t *o)      // OTA task
 {
     display_lock(-1);
+    slide_cache_dirty(NULL);                        // new content: the cached pictures are out of date
     up_st = *o;
     update_render();
     if (o->state == OTA_UP_TO_DATE && lv_screen_active() == scr_update) lv_screen_load(scr_main);
@@ -1481,7 +1658,7 @@ static void update_show(void)
 {
     update_render();
     lv_obj_scroll_to_y(up_box, 0, LV_ANIM_OFF);
-    lv_screen_load_anim(scr_update, LV_SCR_LOAD_ANIM_MOVE_TOP, 260, 0, false);
+    slide_screen(scr_update, LV_SCR_LOAD_ANIM_MOVE_TOP, 260);
 }
 
 static void update_install(lv_event_t *e)
@@ -1495,7 +1672,7 @@ static void update_install(lv_event_t *e)
 static void update_tap(lv_event_t *e)
 {
     if (up_st.state == OTA_DOWNLOADING || up_st.state == OTA_DONE) return;    // stay while installing
-    lv_screen_load_anim(scr_main, LV_SCR_LOAD_ANIM_MOVE_BOTTOM, 260, 0, false);
+    slide_screen(scr_main, LV_SCR_LOAD_ANIM_MOVE_BOTTOM, 260);
 }
 
 // Title fixed at the top; versions, Install, progress and the release notes scroll in one column.
@@ -1867,7 +2044,7 @@ static void cfg_bright_changed(lv_event_t *e)
 
 static void cfg_close(lv_event_t *e)
 {
-    lv_screen_load_anim(scr_main, LV_SCR_LOAD_ANIM_MOVE_BOTTOM, 260, 0, false);
+    slide_screen(scr_main, LV_SCR_LOAD_ANIM_MOVE_BOTTOM, 260);
 }
 
 static void cfg_gesture(lv_event_t *e)
@@ -1891,7 +2068,7 @@ static void open_cfg(lv_event_t *e)                // long-press on the weather 
     back_to_cfg = false;
     cfg_refresh();
     lv_obj_scroll_to_y(lv_obj_get_parent(cfg_row[0]), 0, LV_ANIM_OFF);
-    lv_screen_load_anim(scr_cfg, LV_SCR_LOAD_ANIM_MOVE_TOP, 260, 0, false);
+    slide_screen(scr_cfg, LV_SCR_LOAD_ANIM_MOVE_TOP, 260);
     lv_indev_t *in = lv_indev_active();
     if (in) lv_indev_wait_release(in);               // the long-press's release isn't a tap on a row
 }
@@ -2027,6 +2204,7 @@ void ui_init(void)
 
     scr_main = base_screen();
     place_pager = pager_create(scr_main, true, MAX_PLACES, place_scrolled, place_settled, NULL);
+    pager_freeze(place_pager);                           // places are dragged as pictures (slide.c, drag_watch_cb)
     for (int i = 0; i < MAX_PLACES; i++) place_page_create(i, pager_page(place_pager, i));
     // Weather alert pill, in place of the city name while an alert is active (tap for details)
     al_pill = lv_obj_create(scr_main);
@@ -2091,6 +2269,11 @@ void ui_init(void)
     status_create();
     cfg_create();
     touch_register_lvgl();
+    lv_indev_add_event_cb(lv_indev_get_next(NULL), drag_detect, LV_EVENT_ALL, NULL);   // screen-to-screen drags
+    drag_watch = lv_timer_create(drag_watch_cb, 10, NULL);
+    lv_timer_pause(drag_watch);
+    slide_cache_init(drag_paint, key_of);
+    lv_timer_create(pictures_tick, 30, NULL);
 
     lv_timer_create(clock_tick, 1000, NULL);
     display_unlock();
@@ -2129,6 +2312,7 @@ static void day_name(const char *date, int idx, char *out, size_t n)
 void ui_places(int n, int active)
 {
     display_lock(-1);
+    slide_cache_dirty(NULL);                        // new content: the cached pictures are out of date
     bool moved = active != cur_place;
     for (int i = 0; i < MAX_PLACES; i++) {
         lv_obj_t *pg = pager_page(place_pager, i);
@@ -2154,6 +2338,7 @@ void ui_place(int i, const char *name, const weather_t *w)
 {
     if (i < 0 || i >= MAX_PLACES) return;
     display_lock(-1);
+    slide_cache_dirty(NULL);                        // new content: the cached pictures are out of date
     place_page_t *p = &pp[i];
     strlcpy(p->name, name, sizeof(p->name));
     lv_label_set_text(p->city, name);
@@ -2260,6 +2445,7 @@ void ui_on_data_refresh(void (*cb)(void)) { data_refresh_cb = cb; }
 void ui_units_changed(void)
 {
     display_lock(-1);
+    slide_cache_dirty(NULL);                        // new content: the cached pictures are out of date
     clock_shown[0] = 0;
     for (int i = 0; i < tl_n; i++) lv_label_set_text(tl_obj[i], tr(tl_id[i]));   // fixed labels (language)
     up_notes_id = -1;                      // "What's new" header
@@ -2272,6 +2458,15 @@ void ui_units_changed(void)
     ui_alerts(&alerts);                    // "Until …"
     radar_units_changed();                 // clock, frame time, ring and radius
     display_unlock();
+}
+
+// Pages shown by the two pagers (test console "page"): the place on the weather screen, the day in the hourly view
+void ui_pages(int *place, int *day, int *places, int *days)
+{
+    *place = pager_current(place_pager);
+    *day = pager_current(hr_pager);
+    *places = n_places;
+    *days = wx.ndays;
 }
 
 // Name of what is on screen, for the test console (same names as ui_snapshot() where they exist)

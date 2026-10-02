@@ -12,13 +12,15 @@ behaviour, so they stay on in normal builds.
 3. Summarise: `python3 tools/diag_summary.py serial_log.txt` (any Python 3; no packages needed).
 4. For numbers about real use, do the **scenario** while it records, about 30 s per step so each step gets its own
    60 s window or half of one:
-   1. idle for the first minute (boot, background map download, render bench at 45 s);
+   1. idle for the first minute (boot, background map download);
    2. radar: tap to animate, zoom in and out a few times;
    3. hourly view: drag between days, scroll the hours;
    4. settings page open on the phone (live sound meter polls every 700 ms);
    5. idle until the end.
 
-Change `diag_start(60)` in `main.c` for another report period, or `BENCH_AT_S` in `diag.c` (0 disables the bench).
+Change `diag_start(60)` in `main.c` for another report period. The render bench runs only on request (test console
+`bench`, or the harness's `perf` suite): since v1.10.1 `BENCH_AT_S` in `diag.c` is 0, because the automatic run 45 s
+after boot blocked the screen for 1.5 s and swallowed swipes.
 
 ## What the lines mean
 
@@ -26,7 +28,7 @@ Change `diag_start(60)` in `main.c` for another report period, or `BENCH_AT_S` i
 |---|---|
 | `diag: reset reason …, flash …, PSRAM …` | once at boot; also app partition size and NVS entries used/free |
 | `diag: mark <stage> internal N KB free (largest N), DMA N KB, PSRAM N KB` | heap after each boot stage (`diag_mark()` calls in `main.c`) |
-| `diag: bench render-only full screen: blank … weather … hourly … radar …` | once, from 45 s after boot, when the weather screen is idle (otherwise retried every 20 s; its last step repaints the weather screen, which flashed over the hourly view once): time to render each whole screen, not sent to the panel (invisible to the user; blocks the UI ~1.5 s) |
+| `diag: bench render-only full screen: blank … weather … hourly … radar …` | on request (`bench`), when the weather screen is idle (otherwise retried every 20 s; its last step repaints the weather screen, which flashed over the hourly view once): time to render each whole screen, not sent to the panel (invisible to the user; blocks the UI ~1.5 s) |
 | `diag: bench weather incl. panel transfer` | same for the weather screen repainted *with* the SPI transfer; minus the render-only time = cost of the panel |
 | `diag: heap: internal … (min ever …, largest block now … / worst …) \| DMA … \| PSRAM …` | every period. *min ever* is since boot. *worst* largest block is sampled every second |
 | `diag: display: N frames, render avg/max, Mpx sent \| animation fps (frames, worst gap) \| LVGL lock wait max, longest hold by <task>` | per period. *Animation* counts frames rendered less than 250 ms apart. *Lock wait* is how long the LVGL task waited for `display_lock()`; *hold* is the longest time another task kept it |
@@ -81,7 +83,7 @@ Full-screen render time on the device (ms, render only / with panel):
 | radar | 68 / 78 | 55 / 65 | 54–55 / 64 |
 
 Panel transfer of a full frame ≈ 22 ms (QSPI 40 MHz, 434 KB) and mostly overlaps with rendering (two 32-line
-buffers).
+buffers). Since v1.10.1 the bus runs at 80 MHz: ≈ 11 ms.
 
 ### 3. Tried and reverted: two LVGL draw threads
 
@@ -108,6 +110,10 @@ RAM for the two 8 KB draw stacks. Reverted.
   15.4 / 14.8 fps (avg 55–59 ms, worst gap 175 ms), back to the reference.
 
   Radar zoom is the heaviest case: the scale animation transforms a full-screen image every frame.
+
+  v1.10.1, harness `perf` (`fps`, frames less than 250 ms apart): screen to screen 64–70 fps,
+  places 46 fps, hourly days 58 fps (moves drawn as pictures, `slide.c`); the hourly list 17.5 fps and Settings
+  21.9 fps still scroll with LVGL. PSRAM low point 452–517 KB with the 5-picture cache (2.2 MB; 1042 KB in v1.10.0).
 - The radar task holds `display_lock()` for up to ~75 ms while it swaps in a composed frame, so the UI can miss
   a frame or two during radar loading. Candidate fix if it's ever visible: compose outside the lock, swap under it.
 - `mbedtls_ssl_handshake returned -0x7780` on the HTTPS server = the phone's browser closed extra speculative
@@ -120,6 +126,7 @@ RAM for the two 8 KB draw stacks. Reverted.
 | Symptom | Candidate | Expected gain |
 |---|---|---|
 | Radar zoom feels choppy (10 fps) | render the zoom animation from a half-resolution copy, or fewer steps | fewer pixels transformed per frame |
-| Swipes/animations feel choppy | profile rendering on the device per object type; raise SPI clock to 80 MHz if the CO5300 accepts it | panel 22→11 ms (only matters when it doesn't overlap) |
+| ~~Swipes/animations feel choppy~~ (done, v1.10.1) | profiled (docs/TESTING.md §7); 80 MHz SPI; moves drawn as pictures (`slide.c`, ARCHITECTURE "Moves") | screens 10–15 → 64–70 fps, places 10 → 46, days 11 → 58 |
+| Lists scroll at 17–22 fps (hourly hours, Settings) | the same picture approach for a list's content (a tall picture, scrolled by copying rows) | ~60 fps, if it's ever wanted |
 | UI hiccup while the radar loads | compose radar frames outside `display_lock()` | removes 75 ms stalls |
 | Internal RAM low again | check `diag: mark` lines to find the stage; stacks from the task table | — |

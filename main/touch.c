@@ -79,12 +79,20 @@ static int touch_read(int *x, int *y)
     return 1;
 }
 
+static volatile bool forget;            // touch_forget(): the touch LVGL last saw was handled elsewhere
+
+// A drag drawn outside LVGL (slide.c) consumed the touch. Without this, a bus error right after it made read_cb
+// "hold" the last point LVGL had seen (the NACK guard below): a fake press there, then a release, so a tap where the
+// drag had started (it opened the hourly view after place drags).
+void touch_forget(void) { forget = true; }
+
 static void read_cb(lv_indev_t *indev, lv_indev_data_t *data)
 {
     static int lx, ly;
     static bool was;
     static int errs;
     static uint32_t last_log;
+    if (forget) { forget = false; was = false; errs = 0; }
     uint32_t now = lv_tick_get();
     if (now - last_log > 15000) {
         ESP_LOGI(TAG, "reads ok=%d err=%d", n_ok, n_err);
@@ -120,6 +128,10 @@ static void read_cb(lv_indev_t *indev, lv_indev_data_t *data)
     data->point.x = lx;
     data->point.y = ly;
 }
+
+// The finger now, read directly (for drags drawn outside LVGL, slide.c): 1 = pressed at x,y, 0 = up, -1 = bus error
+// (keep the last point). LVGL isn't reading meanwhile (display lock held by the caller).
+int touch_get(int *x, int *y) { return touch_read(x, y); }
 
 void touch_register_lvgl(void)
 {

@@ -232,9 +232,12 @@ files used by `flash.bat`, copy `build\bootloader\bootloader.bin`, `build\partit
 ```
 main/
   main.c        boot flow, weather refresh loop, reacts to location changes
-  display.c     CO5300 QSPI panel driver + LVGL display port (flush, rounder, LVGL task + mutex)
+  display.c     CO5300 QSPI panel driver + LVGL display port (flush, rounder, LVGL task + mutex, raw frames)
   touch.c       CST9217 I2C touch -> LVGL pointer
   ui.c          weather screen, hourly view, message/QR screens, settings overlay, swipe handling
+  slide.c       moves between screens, places and days drawn as sliding pictures (follow the finger, ~60 fps)
+  pager.c       full-screen pages (places, days)
+  png_rows.c    row-by-row PNG decoding with the ROM's inflate (radar frames, lightning, map tiles)
   radar.c       radar screen: basemap tiles + flash cache, GeoMet frames, animation
   weather.c     Open-Meteo fetch/parse, WMO code -> text/icon
   net.c         Wi-Fi station, setup access point + captive portal (DNS, DHCP option 114), credentials in NVS
@@ -258,6 +261,7 @@ docs/IDEAS.md         feature ideas / backlog
 tools/diag_summary.py summarises the diag: lines of serial_log.txt
 tools/snapshot.py     saves a screen as PNG, rendered by the device (GET /api/snapshot); see docs/TESTING.md
 tools/webtest/        Playwright tests of the settings page against a mock display (npm test); see docs/TESTING.md
+tools/harness/        the whole display tested without a person (screens, page, speed, Wi-Fi setup); see docs/TESTING.md
 tools/make_flasher_site.py  release files (dist) and the web-flasher site with Stable/Beta channels (site)
 web/flash/            web flasher page (ESP Web Tools) + screenshots
 .github/workflows/firmware.yml  CI: build, GitHub Pages flasher, releases

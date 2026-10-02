@@ -14,8 +14,9 @@
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_partition.h"
-#include "libs/lodepng/lodepng.h"
 #include "display.h"
+#include "slide.h"
+#include "png_rows.h"
 #include "net.h"
 #include "config.h"
 #include "svc.h"
@@ -216,20 +217,26 @@ static inline uint16_t rgb565(uint8_t r, uint8_t g, uint8_t b)
     return ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3);
 }
 
-// LVGL's bundled lodepng returns an lv_draw_buf_t* (not raw pixels). Pixel bytes are R,G,B,A.
-static lv_draw_buf_t *decode_png(const uint8_t *png, size_t len, unsigned *w, unsigned *h)
+// OSM's standard style is bright; desaturate half-way and dim it for a dark AMOLED-friendly map
+static uint16_t dim_map(uint8_t r, uint8_t g, uint8_t b);
+
+// Images are decoded a row at a time (png_rows.c, ~50 KB): lodepng decoded whole images (~2-3 MB for a radar frame,
+// in two big blocks) and failed once the drag pictures (slide.c) had fragmented PSRAM.
+typedef struct { uint16_t *dst; int dw, dh, ox, oy; } tile_t;     // a 256 px map tile into a w x h window at ox, oy
+
+static bool tile_row(unsigned y, const uint8_t *rgba, unsigned w, void *user)
 {
-    unsigned char *out = NULL;
-    unsigned e = lodepng_decode32(&out, w, h, png, len);
-    if (e || !out) {
-        ESP_LOGW(TAG, "PNG decode error %u: %s", e, lodepng_error_text(e));
-        if (out) lv_draw_buf_destroy((lv_draw_buf_t *)out);
-        return NULL;
+    const tile_t *t = user;
+    if ((y & 63) == 63) vTaskDelay(1);
+    int sy = t->oy + (int)y;
+    if (sy < 0 || sy >= t->dh) return sy < t->dh;                  // below the window: done
+    for (unsigned x = 0; x < w; x++) {
+        int sx = t->ox + (int)x;
+        if (sx >= 0 && sx < t->dw) t->dst[sy * t->dw + sx] = dim_map(rgba[x * 4], rgba[x * 4 + 1], rgba[x * 4 + 2]);
     }
-    return (lv_draw_buf_t *)out;
+    return true;
 }
 
-// OSM's standard style is bright; desaturate half-way and dim it for a dark AMOLED-friendly map
 static uint16_t dim_map(uint8_t r, uint8_t g, uint8_t b)
 {
     int l = (77 * r + 150 * g + 29 * b) >> 8;
@@ -271,25 +278,10 @@ static bool load_basemap(void)
             bool got = false;
             for (int attempt = 0; attempt < 3 && !got; attempt++) got = http_fetch(&h, url, &d);
             if (!got) { if (preloading) preload_progress(++pre_done); continue; }
-            unsigned tw, th;
-            lv_draw_buf_t *db = decode_png(d.buf, d.len, &tw, &th);
+            tile_t t = { base565, W, H, tx * 256 - (int)view_x, ty * 256 - (int)view_y };
+            bool decoded = png_rows(d.buf, d.len, tile_row, &t, NULL, NULL);
             free(d.buf);
-            if (!db) continue;
-            const uint8_t *px = db->data;
-            uint32_t stride = db->header.stride;
-            int ox = tx * 256 - (int)view_x, oy = ty * 256 - (int)view_y;
-            for (int y = 0; y < (int)th; y++) {
-                if ((y & 63) == 63) vTaskDelay(1);
-                int sy = oy + y;
-                if (sy < 0 || sy >= H) continue;
-                for (int x = 0; x < (int)tw; x++) {
-                    int sx = ox + x;
-                    if (sx < 0 || sx >= W) continue;
-                    const uint8_t *p = px + y * stride + x * 4;
-                    base565[sy * W + sx] = dim_map(p[0], p[1], p[2]);
-                }
-            }
-            lv_draw_buf_destroy(db);
+            if (!decoded) continue;
             ok++;
             if (preloading) preload_progress(++pre_done);
         }
@@ -318,22 +310,10 @@ bool radar_osm_render(int z, double ox, double oy, uint16_t *dst, int w, int h)
             bool got = false;
             for (int attempt = 0; attempt < 2 && !got; attempt++) got = http_fetch(&hc, url, &d);
             if (!got) continue;
-            unsigned tw, th;
-            lv_draw_buf_t *db = decode_png(d.buf, d.len, &tw, &th);
+            tile_t t = { dst, w, h, tx * 256 - (int)ox, ty * 256 - (int)oy };
+            bool decoded = png_rows(d.buf, d.len, tile_row, &t, NULL, NULL);
             free(d.buf);
-            if (!db) continue;
-            int x0 = tx * 256 - (int)ox, y0 = ty * 256 - (int)oy;
-            for (int y = 0; y < (int)th; y++) {
-                int sy = y0 + y;
-                if (sy < 0 || sy >= h) continue;
-                for (int x = 0; x < (int)tw; x++) {
-                    int sx = x0 + x;
-                    if (sx < 0 || sx >= w) continue;
-                    const uint8_t *px = db->data + y * db->header.stride + x * 4;
-                    dst[sy * w + sx] = dim_map(px[0], px[1], px[2]);
-                }
-            }
-            lv_draw_buf_destroy(db);
+            if (!decoded) continue;
             ok++;
         }
     }
@@ -430,38 +410,42 @@ static void geomet_url(char *url, size_t n, const char *layer, time_t t, char *i
  * 10 minutes on a 2.5 km grid, published every 10 min, kept 3 h, Canada + 250 km. The image (density colours on
  * small squares) would be lost in the rain, so each 20x20 px block with any flash becomes one bolt mark at the
  * flashes' centre. Optional: a failed request leaves the frame without marks. */
+enum { LTG_BW = (W + LTG_BLOCK - 1) / LTG_BLOCK, LTG_BH = (H + LTG_BLOCK - 1) / LTG_BLOCK };
+
+static bool lightning_row(unsigned y, const uint8_t *rgba, unsigned w, void *user)
+{
+    uint32_t *sx = user, *sy = sx + LTG_BW * LTG_BH, *cnt = sy + LTG_BW * LTG_BH;
+    if ((y & 63) == 63) vTaskDelay(1);
+    if (w != W || y >= H) return false;
+    for (int x = 0; x < W; x++) {
+        if (!rgba[x * 4 + 3]) continue;
+        int b = (y / LTG_BLOCK) * LTG_BW + x / LTG_BLOCK;
+        sx[b] += x; sy[b] += y; cnt[b]++;
+    }
+    return true;
+}
+
 static void fetch_lightning(time_t t, frame_t *f)
 {
+    enum { BW = LTG_BW, BH = LTG_BH };
     f->nltg = 0;
     time_t lt = t / 600 * 600;                  // the 10-min window the radar time falls in
     char url[420], iso[24];
-    lv_draw_buf_t *db = NULL;
-    for (int k = 0; k < 2 && !db; k++, lt -= 600) {   // the newest window may not be published yet
+    uint32_t *sx = heap_caps_calloc(3 * BW * BH, sizeof(uint32_t), MALLOC_CAP_SPIRAM);   // internal RAM is scarce
+    if (!sx) return;
+    uint32_t *sy = sx + BW * BH, *cnt = sy + BW * BH;
+    bool got = false;
+    for (int k = 0; k < 2 && !got; k++, lt -= 600) {   // the newest window may not be published yet
         geomet_url(url, sizeof(url), "Lightning_2.5km_Density", lt, iso, sizeof(iso));
         dl_t d;
         if (!http_fetch(&geo_h, url, &d)) continue;
-        unsigned rw, rh;
+        unsigned rw = 0, rh = 0;
         bool png = d.len > 8 && !memcmp(d.buf, "\x89PNG", 4);   // else an XML error: time not published yet
-        db = png ? decode_png(d.buf, d.len, &rw, &rh) : NULL;
+        memset(sx, 0, 3 * BW * BH * sizeof(uint32_t));
+        got = png && png_rows(d.buf, d.len, lightning_row, sx, &rw, &rh) && (int)rw == W && (int)rh == H;
         free(d.buf);
-        if (db && ((int)rw != W || (int)rh != H)) { lv_draw_buf_destroy(db); db = NULL; }
     }
-    if (!db) { ESP_LOGW(TAG, "Lightning %s: not available", iso); return; }
-    enum { BW = (W + LTG_BLOCK - 1) / LTG_BLOCK, BH = (H + LTG_BLOCK - 1) / LTG_BLOCK };
-    uint32_t *sx = heap_caps_calloc(3 * BW * BH, sizeof(uint32_t), MALLOC_CAP_SPIRAM);   // internal RAM is scarce
-    if (!sx) { lv_draw_buf_destroy(db); return; }
-    uint32_t *sy = sx + BW * BH, *cnt = sy + BW * BH;
-    const uint8_t *px = db->data;
-    for (int y = 0; y < H; y++) {
-        if ((y & 63) == 63) vTaskDelay(1);
-        const uint8_t *row = px + y * db->header.stride;
-        for (int x = 0; x < W; x++) {
-            if (!row[x * 4 + 3]) continue;
-            int b = (y / LTG_BLOCK) * BW + x / LTG_BLOCK;
-            sx[b] += x; sy[b] += y; cnt[b]++;
-        }
-    }
-    lv_draw_buf_destroy(db);
+    if (!got) { ESP_LOGW(TAG, "Lightning %s: not available", iso); free(sx); return; }
     int flashes = 0;
     uint8_t *lx = LTG_X(f), *ly = LTG_Y(f);
     for (int b = 0; b < BW * BH; b++) {
@@ -477,6 +461,38 @@ static void fetch_lightning(time_t t, frame_t *f)
     ESP_LOGI(TAG, "Lightning %s: %d px, %d marks", iso, flashes, f->nltg);
 }
 
+// Palette-index the RGBA rows (radar styles use a handful of colours), one row at a time (png_rows)
+typedef struct { frame_t *f; uint32_t key[256], lastk; int npal, lasti, echoes; } frame_dec_t;
+
+static bool frame_row(unsigned y, const uint8_t *row, unsigned w, void *user)
+{
+    frame_dec_t *fd = user;
+    frame_t *f = fd->f;
+    if ((y & 31) == 31) vTaskDelay(1);        // let other tasks / idle run
+    if (w != W || y >= H) return false;
+    uint8_t *o = f->idx + y * W;
+    for (int x = 0; x < W; x++) {
+        const uint8_t *p = row + x * 4;
+        if (p[3] == 0) { o[x] = 0; continue; }
+        fd->echoes++;
+        uint32_t k = ((uint32_t)p[0] << 24) | (p[1] << 16) | (p[2] << 8) | p[3];
+        if (k != fd->lastk) {
+            int i;
+            for (i = 1; i < fd->npal && fd->key[i] != k; i++) {}
+            if (i == fd->npal) {
+                if (fd->npal < 256) {
+                    fd->key[fd->npal] = k; f->r[fd->npal] = p[0]; f->g[fd->npal] = p[1]; f->b[fd->npal] = p[2];
+                    f->a[fd->npal] = p[3] * 220 / 255;   // keep a hint of the map under the rain
+                    fd->npal++;
+                } else i = fd->npal - 1;
+            }
+            fd->lastk = k; fd->lasti = i;
+        }
+        o[x] = fd->lasti;
+    }
+    return true;
+}
+
 static bool fetch_frame(time_t t, frame_t *f)
 {
     char iso[24], url[420];
@@ -485,43 +501,13 @@ static bool fetch_frame(time_t t, frame_t *f)
     bool got = false;
     for (int attempt = 0; attempt < 2 && !got; attempt++) got = http_fetch(&geo_h, url, &d);
     if (!got) return false;
-    unsigned rw, rh;
-    lv_draw_buf_t *db = decode_png(d.buf, d.len, &rw, &rh);
-    if (!db) { ESP_LOGW(TAG, "Radar response: %.80s", (char *)d.buf); free(d.buf); return false; }
+    unsigned rw = 0, rh = 0;
+    frame_dec_t fd = { .f = f, .npal = 1, .lastk = 0xFFFFFFFF };
+    bool decoded = png_rows(d.buf, d.len, frame_row, &fd, &rw, &rh);
+    if (!decoded) { ESP_LOGW(TAG, "Radar response: %.80s", (char *)d.buf); free(d.buf); return false; }
     free(d.buf);
-    if ((int)rw != W || (int)rh != H) { lv_draw_buf_destroy(db); return false; }
-
-    // Palette-index the RGBA image (radar styles use a handful of colours)
-    static uint32_t key[256];
-    int npal = 1, echoes = 0;
-    uint32_t lastk = 0xFFFFFFFF; int lasti = 0;
-    const uint8_t *px = db->data;
-    uint32_t stride = db->header.stride;
-    for (int y = 0; y < H; y++) {
-        if ((y & 31) == 31) vTaskDelay(1);        // let other tasks / idle run
-        const uint8_t *row = px + y * stride;
-        uint8_t *o = f->idx + y * W;
-        for (int x = 0; x < W; x++) {
-            const uint8_t *p = row + x * 4;
-            if (p[3] == 0) { o[x] = 0; continue; }
-            echoes++;
-            uint32_t k = ((uint32_t)p[0] << 24) | (p[1] << 16) | (p[2] << 8) | p[3];
-            if (k != lastk) {
-                int i;
-                for (i = 1; i < npal && key[i] != k; i++) {}
-                if (i == npal) {
-                    if (npal < 256) {
-                        key[npal] = k; f->r[npal] = p[0]; f->g[npal] = p[1]; f->b[npal] = p[2];
-                        f->a[npal] = p[3] * 220 / 255;   // keep a hint of the map under the rain
-                        npal++;
-                    } else i = npal - 1;
-                }
-                lastk = k; lasti = i;
-            }
-            o[x] = lasti;
-        }
-    }
-    lv_draw_buf_destroy(db);
+    if ((int)rw != W || (int)rh != H) return false;
+    int npal = fd.npal, echoes = fd.echoes;
     f->t = t;
     ESP_LOGI(TAG, "Frame %s: %d px with echoes, %d colours", iso, echoes, npal - 1);
     fetch_lightning(t, f);
@@ -640,6 +626,7 @@ static void set_status(const char *title, const char *status)
 
 static void show_live(void)      // caller holds the display lock
 {
+    slide_cache_dirty(scr);      // the cached picture of the radar screen (drags, slide.c) is out of date
     // Newest image that did load: if the latest download failed, keep showing the previous one
     // (its time is in the label, so its age is visible) instead of a map without rain.
     frame_t *f = &frames[NFRAMES - 1];
