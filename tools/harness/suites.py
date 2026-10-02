@@ -86,6 +86,13 @@ def every_screen(ctx):
     # finger (slide.c); the first page bounces
     pages = lambda: dict(kv.split('=') for kv in b.cmd('page', r'test: page (.*)').group(1).split())
     pg = pages()
+    place = int(pg['place'])
+    while place > 0:                                       # from the first place (the board keeps the one shown:
+        b.cmd('drag 233 100 233 380 300')                  # from the last, "drag up" bounced and still passed)
+        time.sleep(1.2)
+        now = int(pages()['place'])
+        check(now == place - 1, f'drag down from place {place}: place {now}, expected {place - 1}')
+        place = now
     if int(pg['places']) > 1:
         b.cmd('drag 233 380 233 100 300')
         time.sleep(1.2)
@@ -231,10 +238,17 @@ def radar_timing(ctx):
     b.cmd('swipe right')
 
 
+DRAG_LINE = re.compile(r'slide: drag: first frame after (\d+) ms \((\d+) pictures rendered\), (\d+) frames in (\d+) ms')
+
+
 def measure(ctx, name, action, settle=1.0):
-    """Frame rate during `action` (a list of console commands): fps reset, act, wait for the animation to end."""
+    """Frame rate during `action` (a list of console commands): fps reset, act, wait for the animation to end.
+    swipe_fps counts every frame less than 250 ms apart, so it includes LVGL's redraws after the move (a new place's
+    clock and data: 57 fps for the drag, 30 with them). For drags, slide.c's own line gives the drag alone:
+    drag_fps and drag_start_ms (finger recognised -> first frame; the user noticed 0.1 s)."""
     b = ctx.board
     b.cmd('fps reset')
+    start = len(ctx.log.lines())
     for c in action:
         b.cmd(c)
     time.sleep(settle)
@@ -243,8 +257,16 @@ def measure(ctx, name, action, settle=1.0):
     ctx.metric(f'swipe_fps.{name}', round(v['anim_fps'], 1))
     ctx.metric(f'swipe_gap_max_ms.{name}', round(v['gap_max_ms']))
     ctx.metric(f'swipe_render_avg_ms.{name}', round(v['render_avg_ms'], 1))
+    drag = ''
+    m = next((DRAG_LINE.search(l) for l in ctx.log.lines()[start:] if DRAG_LINE.search(l)), None)
+    if m:
+        first, pics, frames, ms = (int(x) for x in m.groups())
+        ctx.metric(f'drag_fps.{name}', round(frames * 1000 / ms, 1) if ms else 0)
+        ctx.metric(f'drag_start_ms.{name}', first)
+        drag = (f'; the drag alone {frames * 1000 / ms if ms else 0:.0f} fps, first frame after {first} ms '
+                f'({pics} pictures rendered)')
     ctx.note(f'{name}: {v["anim_fps"]:.1f} fps, {int(v["anim_frames"])} frames, render avg {v["render_avg_ms"]:.1f} ms '
-             f'max {v["render_max_ms"]:.1f} ms, worst gap {v["gap_max_ms"]:.0f} ms')
+             f'max {v["render_max_ms"]:.1f} ms, worst gap {v["gap_max_ms"]:.0f} ms' + drag)
 
 
 def radar_settled(ctx, since, quiet=5, timeout=45):
@@ -285,9 +307,12 @@ def swipes(ctx):
     places = len(b.api('/api/config').get('places', []))
     since = len(ctx.log.lines())
     if places > 1:                                   # places: drawn by slide.c, vertical
+        if time.localtime().tm_sec > 48:             # not across a minute change: it makes every picture out of
+            time.sleep(64 - time.localtime().tm_sec)  # date (the clocks), and drag_start_ms would measure that
         measure(ctx, 'drag_place', ['drag 233 380 233 120 400'], settle=1.5)
-        b.cmd('drag 233 120 233 380 400')
-        time.sleep(1.5)
+        # Back ~2 s later, like a person going through their places: the pictures must still be ready. On October 2
+        # every switch redrew the pages with nothing changed, and the drag back waited 0.2-0.6 s (drag_start_ms).
+        measure(ctx, 'drag_place_back', ['drag 233 120 233 380 400'], settle=1.5)
         # Back on the first place, the radar fetches its maps and saves them to flash (both cores pause in bursts):
         # a tap then can go unseen and a move crawls. Wait for it, and tap twice if needed.
         radar_settled(ctx, since)

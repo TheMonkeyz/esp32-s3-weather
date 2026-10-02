@@ -180,11 +180,27 @@ static bool cache_header_ok(void)
 
 // Only the first place (home) is cached: switching to another place would otherwise rewrite up to 3.5 MB of
 // flash and fetch every zoom level from OSM each time. Other places load the zoom in use on demand.
+// Flash writes stall both cores (the PSRAM and flash cache is off during each ~40 ms sector erase): not while someone
+// is using the screen (slide_screen_busy), at most 10 s of waiting per map
+static void wait_screen_quiet(int *waited_ms)
+{
+    while (slide_screen_busy() && *waited_ms < 10000) { vTaskDelay(pdMS_TO_TICKS(50)); *waited_ms += 50; }
+}
+
 static void cache_save(void)
 {
-    if (config_active_place() != 0) return;
+    // Only the first place's maps are cached: checked by the view the tiles were downloaded for, not by the place shown
+    // now. A download for another place that ended just after a switch back was saved in the first place's slot
+    // (under the other place's view, so never shown, but the first place's map was lost: downloaded and written
+    // again, two rounds of ~3 s of flash writes after every return to the first place).
+    location_t home;
+    double hx, hy;
+    if (!config_get_place(0, &home)) return;
+    view_origin(zoom, home.lat, home.lon, &hx, &hy);
+    if (hx != view_x || hy != view_y) return;
     const esp_partition_t *p = cache_part();
     if (!p) return;
+    int waited = 0;
     const size_t SECT = 4096;
     size_t base = (size_t)(zoom - ZOOM_MIN) * SLOT_SIZE;
     if (base + SLOT_SIZE > p->size) return;
@@ -193,6 +209,7 @@ static void cache_save(void)
     // Erase and write one sector at a time with a short pause in between, so the idle task
     // (and the task watchdog) get to run: a single 450 KB erase blocks this core for seconds.
     for (size_t off = 0; off < len; off += SECT) {
+        wait_screen_quiet(&waited);
         if (esp_partition_erase_range(p, base + off, SECT) != ESP_OK) { xSemaphoreGive(cache_mux); return; }
         vTaskDelay(1);
     }
@@ -200,6 +217,7 @@ static void cache_save(void)
     size_t total = W * H * 2;
     for (size_t off = 0; off < total; off += SECT) {
         size_t n = total - off < SECT ? total - off : SECT;
+        wait_screen_quiet(&waited);
         if (esp_partition_write(p, base + sizeof(cache_hdr_t) + off, src + off, n) != ESP_OK) { xSemaphoreGive(cache_mux); return; }
         vTaskDelay(1);
     }

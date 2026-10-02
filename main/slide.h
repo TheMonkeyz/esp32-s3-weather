@@ -27,6 +27,9 @@ typedef void (*slide_commit_cb_t)(int side, void *user);
 bool slide_drag(bool vertical, int x0, int y0, int x1, int y1, slide_neighbour_cb_t neighbour,
                 slide_commit_cb_t commit, void *user);
 bool slide_drag_running(void);
+// Someone is using the screen: a finger down in the last 0.5 s, or a slide or drag queued or running. Any task (no
+// lock): radar.c holds its flash writes meanwhile (they stall both cores, and a drag then crawled at 3 fps).
+bool slide_screen_busy(void);
 
 // Picture cache: 5 pictures keyed by screen or pager page. paint(key, dst) renders the picture of key into dst (ui.c refreshes the
 // screen's content first). The current screen's picture goes dirty when LVGL redraws anything on it; the others are

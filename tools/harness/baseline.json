@@ -53,6 +53,16 @@
   "max": 10.4,
   "ref": 5.4
  },
+ "drag_start_ms.drag_place": {
+  "max": 100,
+  "note": "finger recognised -> first frame; ~15 ms with the pictures ready, 180-580 ms when a switch had made them out of date (October 2)",
+  "ref": 15
+ },
+ "drag_start_ms.drag_place_back": {
+  "max": 100,
+  "note": "finger recognised -> first frame; ~15 ms with the pictures ready, 180-580 ms when a switch had made them out of date (October 2)",
+  "ref": 15
+ },
  "internal_free_kb": {
   "min": 35,
   "note": "one reading; varies 25-55 KB with HTTPS sessions and downloads",
@@ -98,8 +108,8 @@
   "ref": 57.8
  },
  "swipe_fps.drag_place": {
-  "min": 28,
-  "note": "v1.10.1-perf.33, one run; generous limit",
+  "min": 20,
+  "note": "includes LVGL's redraws of the new place after the switch (30-47 fps); drag_fps.drag_place is the drag alone",
   "ref": 45.6
  },
  "swipe_fps.screen_extras_to_weather": {
