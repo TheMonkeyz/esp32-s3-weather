@@ -438,8 +438,8 @@ def unreachable_at_startup(ctx):
         check(ch == want_ch, f'Easy Connect listens on channel {ch} ({why}); "{saved}" is on {want_ch}')
     ctx.note(f'Easy Connect channel {ch} ({why})')
     if ctx.opts.phone:
-        ctx.ask('On your Android phone (connected to "%s"): Settings > Wi-Fi > the QR icon, scan the code on the '
-                'display now. The harness waits 3 minutes.' % saved)
+        ctx.ask('On your Android phone (connected to "%s"): scan the code on the display now with the camera or '
+                'any QR scanner. The harness waits 3 minutes.' % saved)
         ctx.log.wait(r'Easy Connect: received "', 180, 'credentials from the phone')
         ctx.log.wait(r'net: Connected, IP', 90, 'the restart joins the network')
         ctx.note('Easy Connect: phone sent the network, board restarted and connected')
