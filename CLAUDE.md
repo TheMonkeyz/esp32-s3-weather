@@ -126,6 +126,9 @@ Windows build gets both from `main/idf_component.yml`. `components/dns_server` *
     (`ESP_ERR_DPP_AUTH_TIMEOUT`) unless the display listened on the phone's own channel: scan and listen on the saved
     (or strongest) network's channel. To see DPP steps, set `CONFIG_WPA_DEBUG_PRINT=y` in `build\v55\sdkconfig`
     only (lines `wpa: DPP: …`). Reproduce with the bogus-SSID throwaway build (see Useful facts).
+    (d) v1.10.0's harness run caught the channel pick guessing: the broadcast scan missed the router (busy channel),
+    so the display scans for the saved network by name first. A flaky check needs several runs before calling it
+    fixed (4/4 after the fix).
 
 - Internal RAM ran out silently (10 KB free, 0 KB min ever) because LVGL's small allocations went to internal RAM
   first. Fixed with `lvgl_mem.c` (LVGL heap in PSRAM). Font kerning cost 71% of render time; fonts now use
