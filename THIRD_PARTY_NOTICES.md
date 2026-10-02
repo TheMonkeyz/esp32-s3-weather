@@ -15,7 +15,7 @@ own licenses. Firmware images built from this repository contain all of them.
 
 | Component | Version | License |
 |---|---|---|
-| [ESP-IDF](https://github.com/espressif/esp-idf) (FreeRTOS, lwIP, mbedTLS, Wi-Fi drivers…) | 5.4.2 | Apache-2.0, with components under their own compatible licenses (see ESP-IDF's `COPYRIGHT.rst`) |
+| [ESP-IDF](https://github.com/espressif/esp-idf) (FreeRTOS, lwIP, mbedTLS, Wi-Fi drivers…) | 5.5.4 | Apache-2.0, with components under their own compatible licenses (see ESP-IDF's `COPYRIGHT.rst`) |
 | [LVGL](https://github.com/lvgl/lvgl) (including its TinyTTF / stb_truetype, lodepng and QR code modules) | 9.2.2 | MIT |
 | [esp_codec_dev](https://components.espressif.com/components/espressif/esp_codec_dev) (microphone codec driver) | 1.5.x | Apache-2.0 |
 

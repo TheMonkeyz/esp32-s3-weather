@@ -172,7 +172,7 @@ The [web flasher](https://themonkeyz.github.io/esp32-s3-weather/) has two channe
 picker: **Stable** (the latest release) and **Beta** (a release candidate, offered only while it's newer than the
 latest release). `?channel=beta` in the address preselects Beta.
 
-`.github/workflows/firmware.yml` builds the firmware with ESP-IDF v5.4.2 on every push and pull request, but only
+`.github/workflows/firmware.yml` builds the firmware with ESP-IDF v5.5.4 on every push and pull request, but only
 tags publish anything, and the flasher is assembled from the files attached to the releases, so people install
 exactly what was released.
 

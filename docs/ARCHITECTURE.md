@@ -468,7 +468,7 @@ LVGL timer and event callbacks already run inside the lock.
 
 `firmware.yml` (GitHub Actions):
 
-1. **build** (every push, PR and tag): `espressif/esp-idf-ci-action` (ESP-IDF v5.4.2, component manager), then
+1. **build** (every push, PR and tag): `espressif/esp-idf-ci-action` (ESP-IDF v5.5.4, component manager), then
    `make_flasher_site.py dist` → release files + `flash-parts.json` (chip, version, offsets from
    `build/flasher_args.json`), plus a merged full image. Uploaded as a workflow artifact.
 2. **release** (`v*` tags): GitHub Release with those files; `prerelease` when the tag contains `-`.
