@@ -9,6 +9,10 @@ How to write an entry: add a `## vX.Y.Z - YYYY-MM-DD` section at the top **befor
 their own `## vX.Y.Z-rc.N` section. Those are shown only to Beta users, while the final release's section should
 list everything again.
 
+## v1.10.1-rc.3 - 2026-10-02
+- Moving between places starts at once, even right after the previous move. It could wait up to half a second before the screen followed your finger.
+- Fixed: going back to your first place made the radar save its map twice, and the screen stuttered for a few seconds. It saves once now, and waits while you're touching the screen.
+
 ## v1.10.1-rc.2 - 2026-10-02
 - Smoother moves: going from screen to screen, from place to place (drag up or down) and from day to day in the hourly view now runs at 45 to 70 frames per second instead of 10 to 15. The screen follows your finger, bounces at the first and last one, and a quick flick is enough to go to the next. Please report any swipe that gets missed or a screen that freezes.
 - Scrolling the hourly list and the Settings screen is unchanged for now.
