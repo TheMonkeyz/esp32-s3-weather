@@ -176,6 +176,10 @@ How it works:
   afterwards. The PC stays online through Ethernet. Before joining, the harness sends `portal windows-quiet` so
   the display answers Windows' own connectivity check: otherwise Windows opens a browser tab (msftconnecttest →
   msn.com, because the PC is online). Until restart, and only that one URL; phones still get the portal.
+- **Boot metrics:** `boot_s.forecast_shown` (the active place's forecast on screen, limit 20 s) is what the user
+  waits for. `boot_s.first_weather` is the `diag: mark first weather` line, logged after the whole first round (every
+  place, alerts, air quality): it follows Open-Meteo's speed (~4 s per request on a slow evening, 17.8 s total
+  once), so its limit is a loose 30 s.
 - **Baseline:** `perf` metrics are checked against `baseline.json` (`min`/`max` per metric, `ref` = value when it
   was set). After an intended change, `--update-baseline` rewrites it (limits ±25–40 %; adjust by hand, as the
   first one was: network timings get generous limits, render times 25 %).

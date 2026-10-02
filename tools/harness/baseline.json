@@ -24,8 +24,14 @@
   "ref": 66
  },
  "boot_s.first_weather": {
-  "max": 17.0,
+  "max": 30,
+  "note": "whole first round (all places, alerts, air): network-bound",
   "ref": 12.0
+ },
+ "boot_s.forecast_shown": {
+  "max": 20,
+  "note": "active place on screen",
+  "ref": 11.7
  },
  "boot_s.net_init": {
   "max": 7.7,
