@@ -15,7 +15,8 @@ session (Sept 2026): what worked, what cost time, and how to avoid repeating it.
      starts `start_flash_helper.bat` once, Claude writes `flash.request` (containing the log seconds) and polls for
      `flash.done`, then reads `serial_log.txt`.
 - **Claude Code on this PC (September 30):** ESP-IDF **v5.5.4** is installed at `C:\Espressif\esp-idf` (CI uses
-  v5.4.2). Test builds go to `build\v55` with their own sdkconfig; see docs/TESTING.md.
+  v5.5.4 too since v1.10.0; before that CI used v5.4.2 and the mismatch went unnoticed, see docs/TESTING.md). Test
+  builds go to `build\v55` with their own sdkconfig; see docs/TESTING.md.
 - **Talk to the user:** post a one-line progress note before anything that takes more than a minute (build, flash,
   log window). Long silences read as "stuck". Don't take control of the user's screen; ask first, and prefer the flash
   helper. Ask the user to interact with the board (swipe, tap, open the page) *during* the log window, and say when.
@@ -25,7 +26,7 @@ session (Sept 2026): what worked, what cost time, and how to avoid repeating it.
 The network allowlist blocked PyPI, dl.espressif.com, Docker Hub and the component registry; only GitHub worked:
 
 ```bash
-git clone --depth 1 --branch v5.4.2 --recursive --shallow-submodules https://github.com/espressif/esp-idf.git
+git clone --depth 1 --branch v5.5.4 --recursive --shallow-submodules https://github.com/espressif/esp-idf.git
 ./install.sh esp32s3            # toolchains download from GitHub; the python-env step fails, which is OK
 python3 -m venv --system-site-packages idfenv && . idfenv/bin/activate
 pip install --no-deps git+https://github.com/pyserial/pyserial.git@v3.5 \

@@ -46,10 +46,10 @@ jobs:
           echo "version=$v" >> "$GITHUB_OUTPUT"
           echo "Firmware version: $v"
 
-      - name: Build (ESP-IDF v5.4.2)
+      - name: Build (ESP-IDF v5.5.4, same as the PC test builds)
         uses: espressif/esp-idf-ci-action@v1
         with:
-          esp_idf_version: v5.4.2
+          esp_idf_version: v5.5.4
           target: esp32s3
           path: "."
           command: idf.py build

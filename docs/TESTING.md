@@ -7,9 +7,9 @@ board (log, snapshot, or both). The Windows PC drives the board on **COM5**; the
 
 | Where | ESP-IDF | Components | Use |
 |---|---|---|---|
-| CI (`.github/workflows/firmware.yml`) | v5.4.2 | component manager (`main/idf_component.yml`) | releases, the web flasher |
+| CI (`.github/workflows/firmware.yml`) | v5.5.4 (v5.4.2 until v1.9.0) | component manager (`main/idf_component.yml`) | releases, the web flasher |
 | Windows PC, Claude Code | v5.5.4 (`C:\Espressif\esp-idf`) | component manager | test builds |
-| Cowork cloud container | v5.4.2 | vendored (see CLAUDE.md) | test builds when no PC shell |
+| Cowork cloud container | v5.5.4 (clone that tag) | vendored (see CLAUDE.md) | test builds when no PC shell |
 
 Test build on the PC, in its own folder so the repo's `sdkconfig` is never touched (PowerShell):
 
@@ -30,8 +30,9 @@ idf.py -B build\v55 -D SDKCONFIG=build\v55\sdkconfig build
   Put the user's settings back afterwards.
 - After changing `sdkconfig.defaults`, delete `build\v55\sdkconfig` and run `idf.py ... reconfigure`: an existing
   sdkconfig keeps its old values (an option that exists as "not set" ignores the new default).
-- The PC's v5.5.4 differs from CI's v5.4.2. A test build checks the change, not the release toolchain. Flashing it
-  keeps the board's v5.4.2 bootloader (the helper flashes `firmware\bootloader.bin`), which is what boards updated over
+- **Keep the PC and CI on the same ESP-IDF.** Until v1.9.0 CI used v5.4.2 while the PC had v5.5.4, so test builds
+  didn't match releases (Easy Connect's failure event differs between them). Change both together. Flashing a test
+  build keeps the board's v5.4.2 bootloader (the helper flashes `firmware\bootloader.bin`), which is what boards updated over
   Wi-Fi have.
 
 ## 2. Flash and log (flash helper)
