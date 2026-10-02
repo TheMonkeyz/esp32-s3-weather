@@ -103,6 +103,7 @@ def every_screen(ctx):
     b.cmd('drag 233 100 233 380 300')                      # above the first place: bounces
     time.sleep(1.2)
     check(pages()['place'] == '0', 'drag down on the first place did not bounce back')
+    pictest(ctx, 'weather screen after place drags')
     b.wait_screen('weather', 3)
     b.cmd('tap 125 350')
     b.wait_screen('hourly', 6)
@@ -114,6 +115,7 @@ def every_screen(ctx):
     b.cmd('swipe right')
     time.sleep(1.2)
     check(int(pages()['day']) == d0, f'hourly: swipe right went to day {pages()["day"]}, expected {d0}')
+    pictest(ctx, 'hourly view after day drags')
     b.cmd('tap 233 233')
     b.wait_screen('weather', 6)
     for extra in ('settings1', 'settings2', 'settings3', 'phone', 'setup0', 'setup1', 'update'):
@@ -238,6 +240,22 @@ def radar_timing(ctx):
     b.cmd('swipe right')
 
 
+SCROLL_LINE = re.compile(r'slide: scroll: (\d+) frames in (\d+) ms, .*per frame: move ([\d.]+), render ([\d.]+), '
+                         r'send ([\d.]+) ms')
+
+
+def pictest(ctx, what):
+    """slide.c's picture of the screen shown must equal a fresh rendering of it: drags start from it, and list
+    scrolls move it and only render the rows coming in (a bug there smeared the hourly graph's labels)."""
+    b = ctx.board
+    start = len(ctx.log.lines())
+    b.cmd('pictest', r'test: ok pictest')
+    m = ctx.log.wait(r'slide: pictest rows_differ=(-?\d+) first=(-?\d+)', 10, 'pictest result', start=start)
+    bad = int(m.group(1))
+    check(bad == 0, f'{what}: the picture of the screen differs from the screen in {bad} rows (from row {m.group(2)})'
+          if bad > 0 else f'{what}: no picture of the screen (pictest {bad})')
+
+
 DRAG_LINE = re.compile(r'slide: drag: first frame after (\d+) ms \((\d+) pictures rendered\), (\d+) frames in (\d+) ms')
 
 
@@ -258,13 +276,27 @@ def measure(ctx, name, action, settle=1.0):
     ctx.metric(f'swipe_gap_max_ms.{name}', round(v['gap_max_ms']))
     ctx.metric(f'swipe_render_avg_ms.{name}', round(v['render_avg_ms'], 1))
     drag = ''
-    m = next((DRAG_LINE.search(l) for l in ctx.log.lines()[start:] if DRAG_LINE.search(l)), None)
+    lines = ctx.log.lines()
+    hit = next((l for l in lines[start:] if DRAG_LINE.search(l)), None)
+    m = DRAG_LINE.search(hit) if hit else None
     if m:
         first, pics, frames, ms = (int(x) for x in m.groups())
         ctx.metric(f'drag_fps.{name}', round(frames * 1000 / ms, 1) if ms else 0)
-        ctx.metric(f'drag_start_ms.{name}', first)
+        # The clock's minute makes every picture but the shown one out of date: a drag in the next seconds renders
+        # its neighbour first (~0.13 s). Known (ARCHITECTURE "Moves"); not what drag_start_ms watches.
+        tick = [l for l in lines[max(0, start - 60):start] if 'ui: clock ' in l]
+        if tick and ms_of(hit) - ms_of(tick[-1]) < 6000:
+            ctx.note(f'{name}: the minute changed {(ms_of(hit) - ms_of(tick[-1])) / 1000:.1f} s before: start '
+                     f'{first} ms not checked')
+        else:
+            ctx.metric(f'drag_start_ms.{name}', first)
         drag = (f'; the drag alone {frames * 1000 / ms if ms else 0:.0f} fps, first frame after {first} ms '
                 f'({pics} pictures rendered)')
+    m = next((SCROLL_LINE.search(l) for l in ctx.log.lines()[start:] if SCROLL_LINE.search(l)), None)
+    if m:                                            # a list scroll (slide.c): time per frame, by part
+        mv, rd, sd = (float(x) for x in m.groups()[2:])
+        ctx.metric(f'scroll_frame_ms.{name}', round(mv + rd + sd, 1))
+        drag = f'; scroll frames {mv + rd + sd:.1f} ms (move {mv}, render {rd}, send {sd})'
     ctx.note(f'{name}: {v["anim_fps"]:.1f} fps, {int(v["anim_frames"])} frames, render avg {v["render_avg_ms"]:.1f} ms '
              f'max {v["render_max_ms"]:.1f} ms, worst gap {v["gap_max_ms"]:.0f} ms' + drag)
 
@@ -328,12 +360,14 @@ def swipes(ctx):
     time.sleep(1)
     measure(ctx, 'drag_hourly_day', ['drag 380 233 100 233 400'], settle=1.5)
     measure(ctx, 'scroll_hourly_list', ['drag 233 400 233 250 300'], settle=2.0)
+    pictest(ctx, 'hourly list scrolled')
     b.cmd('tap 233 233')
     b.wait_screen('weather', 6)
     b.cmd('press 233 233')
     b.wait_screen('settings', 6)
     time.sleep(1)
     measure(ctx, 'scroll_settings', ['drag 233 330 233 130 300'], settle=2.0)
+    pictest(ctx, 'Settings scrolled')
     b.cmd('tap 233 45')
     b.wait_screen('weather', 6)
 

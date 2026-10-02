@@ -100,7 +100,7 @@ static volatile bool forget;            // touch_forget(): the touch LVGL last s
 // drag had started (it opened the hourly view after place drags).
 void touch_forget(void) { forget = true; }
 
-static void read_cb(lv_indev_t *indev, lv_indev_data_t *data)
+static void read_core(lv_indev_t *indev, lv_indev_data_t *data)
 {
     static int lx, ly;
     static bool was;
@@ -146,6 +146,16 @@ static void read_cb(lv_indev_t *indev, lv_indev_data_t *data)
 // The finger now, read directly (for drags drawn outside LVGL, slide.c): 1 = pressed at x,y, 0 = up, -1 = bus error
 // (keep the last point). LVGL isn't reading meanwhile (display lock held by the caller).
 int touch_get(int *x, int *y) { return touch_read(x, y); }
+
+static touch_read_hook_t read_hook;
+
+void touch_set_read_hook(touch_read_hook_t hook) { read_hook = hook; }
+
+static void read_cb(lv_indev_t *indev, lv_indev_data_t *data)
+{
+    read_core(indev, data);
+    if (read_hook) read_hook(indev, data);               // before LVGL handles this read
+}
 
 void touch_register_lvgl(void)
 {

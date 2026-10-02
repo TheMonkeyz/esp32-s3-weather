@@ -285,7 +285,8 @@ static void clock_tick(lv_timer_t *t)
         }
         if (!new_minute) return;
         ESP_LOGI("ui", "clock %s", buf);
-        slide_cache_dirty(NULL);                            // clocks, ages, the sun: every picture is a minute old
+        slide_cache_dirty_hidden();                         // clocks, ages, the sun: every picture is a minute old
+                                                            // (the one shown gets its changes as they're drawn)
         if (lv_screen_active() == scr_hour && tm.tm_min == 0) hour_fill(0);   // new hour
         if (lv_screen_active() == scr_extras) extras_refresh();
     }
@@ -693,7 +694,7 @@ static void hour_create(void)
 {
     scr_hour = base_screen();
     hr_pager = pager_create(scr_hour, false, WX_DAYS, hr_changed, hr_settled, NULL);
-    pager_freeze(hr_pager);                              // days are dragged as pictures (slide.c, drag_watch_cb)
+    pager_freeze(hr_pager);                              // days are dragged as pictures (slide.c, drag_read)
 
     for (int d = 0; d < WX_DAYS; d++) {
         day_page_t *dp = &pg[d];
@@ -749,9 +750,10 @@ static void hour_create(void)
 /* ---------- drags that follow the finger (slide.c) ----------
  * Screens, left to right: status | extras | weather | radar. Places: the weather screen's vertical pager. Days: the
  * hourly view's horizontal pager. A drag (16 px, along the larger axis) is handed to slide_drag(): the neighbour comes
- * in under the finger, the ends resist and bounce back. The pagers are frozen (LVGL no longer scrolls them); the
- * hourly list's vertical scroll and the radar's zoom swipes stay with LVGL. Pictures come from slide.c's cache,
- * keyed by screen, or by page for the two pagers (key_of). gesture_cb() is the fallback while a slide runs. */
+ * in under the finger, the ends resist and bounce back. The pagers are frozen (LVGL no longer scrolls them). A
+ * vertical drag on any other list goes to slide_scroll(); the radar's zoom swipes stay with LVGL (gestures). Pictures
+ * come from slide.c's cache, keyed by screen, or by page for the two pagers (key_of). gesture_cb() is the fallback
+ * while a slide runs. */
 static void place_dots(int active);
 
 static lv_obj_t **drag_screens(int *n)
@@ -873,7 +875,7 @@ static void pictures_tick(lv_timer_t *t)
         keys[k++] = key_of(cur);
         for (int d = -1; d <= 1; d += 2) if (day_neighbour(d, NULL)) keys[k++] = day_neighbour(d, NULL);
     } else {
-        return;
+        keys[k++] = cur;                                 // any other screen: its own, for list scrolls (slide_scroll)
     }
     slide_cache_keep(keys, k);
     lv_indev_t *in = lv_indev_get_next(NULL);
@@ -881,51 +883,48 @@ static void pictures_tick(lv_timer_t *t)
     slide_cache_idle_work(800);
 }
 
-// LVGL 9.2 sends PRESSED and RELEASED to the input device's handlers but not PRESSING: while a press could still
-// become a drag, a 10 ms timer watches the finger (indev point, updated at every touch read).
-static lv_point_t drag_p0;
-static lv_timer_t *drag_watch;
-
-static lv_point_t drag_p1;                // where the finger was when the move became a drag
+// Drags are recognised in the touch read itself (touch.c's hook, before LVGL handles that read). A 10 ms timer looking
+// at LVGL's point came too late on flicks: the finger moves 30-60 px between two reads, and LVGL had started its own
+// scroll of a list on that same read (the list scroll then took over with no speed: a flick barely moved it).
+static lv_point_t drag_p0;                // where the finger went down
+static lv_point_t drag_p1;                // where it was when the move became a drag
+static int64_t drag_t0;                   // when it went down (a list's flick speed)
+static bool drag_down, drag_armed;
 
 static bool drag_start(bool vertical, slide_neighbour_cb_t neighbour, slide_commit_cb_t commit)
 {
     return slide_drag(vertical, drag_p0.x, drag_p0.y, drag_p1.x, drag_p1.y, neighbour, commit, NULL);
 }
 
-static void drag_watch_cb(lv_timer_t *t)
+static void drag_read(lv_indev_t *in, lv_indev_data_t *data)
 {
-    lv_indev_t *in = lv_indev_get_next(NULL);
+    if (data->state != LV_INDEV_STATE_PRESSED) { drag_down = false; return; }
+    lv_point_t p = data->point;
+    if (!drag_down) {                                    // a new press: may become a drag
+        drag_down = true;
+        drag_armed = !ov_state;
+        drag_p0 = p;
+        drag_t0 = esp_timer_get_time();
+        return;
+    }
+    if (!drag_armed || ov_state) return;
     lv_obj_t *cur = lv_screen_active();
-    lv_point_t p;
-    lv_indev_get_point(in, &p);
     int dx = p.x - drag_p0.x, dy = p.y - drag_p0.y;
-    if (lv_indev_get_state(in) != LV_INDEV_STATE_PRESSED || ov_state) { lv_timer_pause(t); return; }
     // Decided after 16 px, by the larger axis (as LVGL picks a scroll direction). Requiring a 2:1 ratio missed curved
     // swipes on the round screen, and the hours list took those that started slightly vertical.
     if (abs(dx) < 16 && abs(dy) < 16) return;
+    drag_armed = false;
     bool horiz = abs(dx) > abs(dy), vert = !horiz;
-    lv_timer_pause(t);
     drag_p1 = p;
     bool took = false;
     if (horiz && drag_index(cur) >= 0) took = drag_start(false, screen_neighbour, screen_commit);
     else if (vert && cur == scr_main) took = drag_start(true, place_neighbour, place_commit);
     else if (horiz && cur == scr_hour) took = drag_start(false, day_neighbour, day_commit);
-    if (took) lv_indev_wait_release(in);                               // the drag owns this touch now
-}
-
-static void drag_detect(lv_event_t *e)
-{
-    lv_indev_t *in = lv_indev_active();
-    if (!in || !drag_watch) return;
-    lv_obj_t *cur = lv_screen_active();
-    if (lv_event_get_code(e) == LV_EVENT_PRESSED && !ov_state && (drag_index(cur) >= 0 || cur == scr_hour)) {
-        lv_indev_get_point(in, &drag_p0);
-        lv_timer_reset(drag_watch);
-        lv_timer_resume(drag_watch);
-    } else if (lv_event_get_code(e) == LV_EVENT_RELEASED) {
-        lv_timer_pause(drag_watch);
+    else if (vert && cur != scr_radar) {                                // a list (hourly hours, Settings, status...)
+        lv_obj_t *list = slide_scroll_target(cur, drag_p0.x, drag_p0.y);   // (the radar: zoom swipes, LVGL gestures)
+        if (list) took = slide_scroll(list, drag_p0.y, drag_t0, drag_p1.y);
     }
+    if (took) lv_indev_wait_release(in);       // the drag owns this touch: LVGL ignores it from this read on
 }
 
 static void gesture_cb(lv_event_t *e)
@@ -2254,7 +2253,7 @@ void ui_init(void)
 
     scr_main = base_screen();
     place_pager = pager_create(scr_main, true, MAX_PLACES, place_scrolled, place_settled, NULL);
-    pager_freeze(place_pager);                           // places are dragged as pictures (slide.c, drag_watch_cb)
+    pager_freeze(place_pager);                           // places are dragged as pictures (slide.c, drag_read)
     for (int i = 0; i < MAX_PLACES; i++) place_page_create(i, pager_page(place_pager, i));
     // Weather alert pill, in place of the city name while an alert is active (tap for details)
     al_pill = lv_obj_create(scr_main);
@@ -2319,9 +2318,7 @@ void ui_init(void)
     status_create();
     cfg_create();
     touch_register_lvgl();
-    lv_indev_add_event_cb(lv_indev_get_next(NULL), drag_detect, LV_EVENT_ALL, NULL);   // screen-to-screen drags
-    drag_watch = lv_timer_create(drag_watch_cb, 10, NULL);
-    lv_timer_pause(drag_watch);
+    touch_set_read_hook(drag_read);                                     // drags and list scrolls (slide.c)
     slide_cache_init(drag_paint, key_of);
     lv_timer_create(pictures_tick, 30, NULL);
 
@@ -2553,6 +2550,7 @@ const char *ui_screen_name(void)
 
 lv_draw_buf_t *ui_snapshot(const char *screen)
 {
+    if (!strcmp(screen, "picture")) return slide_picture_copy();   // slide.c's picture of the screen shown (tests)
     lv_obj_t *s = !strcmp(screen, "weather") ? scr_main : !strcmp(screen, "extras") ? scr_extras :
                   !strcmp(screen, "status") ? scr_status : !strcmp(screen, "radar") ? scr_radar :
                   !strcmp(screen, "update") ? scr_update : !strcmp(screen, "alert") ? scr_alert :

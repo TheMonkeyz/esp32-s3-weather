@@ -127,6 +127,6 @@ RAM for the two 8 KB draw stacks. Reverted.
 |---|---|---|
 | Radar zoom feels choppy (10 fps) | render the zoom animation from a half-resolution copy, or fewer steps | fewer pixels transformed per frame |
 | ~~Swipes/animations feel choppy~~ (done, v1.10.1) | profiled (docs/TESTING.md §7); 80 MHz SPI; moves drawn as pictures (`slide.c`, ARCHITECTURE "Moves") | screens 10–15 → 64–70 fps, places 10 → 46, days 11 → 58 |
-| Lists scroll at 17–22 fps (hourly hours, Settings) | the same picture approach for a list's content (a tall picture, scrolled by copying rows) | ~60 fps, if it's ever wanted |
+| ~~Lists scroll at 17–22 fps~~ (done, v1.10.1-rc.4) | move the picture of the screen, render only the new rows (ARCHITECTURE "Moves", List scrolls) | hourly ~52 fps, Settings ~70 |
 | UI hiccup while the radar loads | compose radar frames outside `display_lock()` | removes 75 ms stalls |
 | Internal RAM low again | check `diag: mark` lines to find the stage; stacks from the task table | — |
