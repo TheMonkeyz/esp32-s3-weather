@@ -9,6 +9,9 @@ How to write an entry: add a `## vX.Y.Z - YYYY-MM-DD` section at the top **befor
 their own `## vX.Y.Z-rc.N` section. Those are shown only to Beta users, while the final release's section should
 list everything again.
 
+## v1.10.0-rc.3 - 2026-10-01
+- Behind the scenes: the display now tells the automatic tests when an update has just been installed, so the tests wait for it to be confirmed instead of restarting it too early (which made it go back to the previous version).
+
 ## v1.10.0-rc.2 - 2026-10-01
 - Built with a newer version of the Espressif tools (ESP-IDF 5.5.4), the same one used for testing. Nothing should look different; please report anything that behaves oddly, especially Wi-Fi, updates and the radar.
 - Behind the scenes: an automatic test setup now checks the screens, the settings page, speed and memory, and the Wi-Fi setup (setup network, sign-in page, Easy Connect) before releases.
