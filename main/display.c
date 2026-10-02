@@ -12,7 +12,28 @@
 #include "esp_log.h"
 
 /* ---- diagnostics: lock contention and frame timing (read by diag.c) ---- */
-static display_stats_t st;
+static display_stats_t st, tst;          // st: diag.c's 60 s reports; tst: the test console's "fps" (its own, so a
+                                          // diag report in the middle of a measurement doesn't reset it)
+
+static void count_frame(uint32_t render_us)
+{
+    display_stats_t *s[2] = {&st, &tst};
+    for (int i = 0; i < 2; i++) {
+        s[i]->frames++;
+        s[i]->render_us += render_us;
+        if (render_us > s[i]->render_max_us) s[i]->render_max_us = render_us;
+    }
+}
+
+static void count_anim(uint32_t gap_us)                 // back-to-back frames (an animation): the interval
+{
+    display_stats_t *s[2] = {&st, &tst};
+    for (int i = 0; i < 2; i++) {
+        s[i]->anim_frames++;
+        s[i]->anim_us += gap_us;
+        if (gap_us > s[i]->anim_gap_max_us) s[i]->anim_gap_max_us = gap_us;
+    }
+}
 static TaskHandle_t lvgl_th;
 static int lock_depth;                 // only touched by the mutex owner
 static int64_t lock_t0, render_t0, last_render;
@@ -32,6 +53,11 @@ static const char *TAG = "display";
 
 static esp_lcd_panel_io_handle_t io;
 static SemaphoreHandle_t lvgl_mux;
+static void *buf1, *buf2;                // LVGL's two band buffers (internal, DMA), also used by display_raw_frame()
+static volatile bool raw_mode;           // a raw frame is being sent: transfers complete to raw_done, not to LVGL
+static SemaphoreHandle_t raw_done;
+volatile int raw_phase, raw_band;     // breadcrumbs for the test console's "where"
+static int lvgl_inflight;               // LVGL band transfers not finished yet (its last band outlives the refresh)
 
 #define CMD(c)  (((uint32_t)0x02 << 24) | ((uint32_t)(c) << 8))
 #define PIXELS  (((uint32_t)0x32 << 24) | ((uint32_t)0x2C << 8))
@@ -57,8 +83,66 @@ static const init_cmd_t init_cmds[] = {
 
 static bool on_trans_done(esp_lcd_panel_io_handle_t h, esp_lcd_panel_io_event_data_t *e, void *ctx)
 {
-    lv_display_flush_ready((lv_display_t *)ctx);
+    if (__atomic_load_n(&lvgl_inflight, __ATOMIC_ACQUIRE) > 0) {   // LVGL's band: done before any raw band (in order)
+        __atomic_fetch_sub(&lvgl_inflight, 1, __ATOMIC_ACQ_REL);
+        lv_display_flush_ready((lv_display_t *)ctx);
+        return false;
+    }
+    if (raw_mode) {
+        BaseType_t woken = pdFALSE;
+        xSemaphoreGiveFromISR(raw_done, &woken);
+        return woken == pdTRUE;
+    }
     return false;
+}
+
+/* A whole frame without LVGL (see display.h): bands of BUF_LINES rows, filled by the caller into one buffer while
+ * the other one is being sent. The caller holds the display lock, so LVGL isn't using the buffers. */
+static bool raw_wait(void)
+{
+    if (xSemaphoreTake(raw_done, pdMS_TO_TICKS(200)) == pdTRUE) return true;
+    ESP_LOGE(TAG, "raw frame: a band transfer did not finish");   // never hang the display (lock held)
+    return false;
+}
+
+void display_raw_frame(display_fill_cb_t fill, void *user)
+{
+    raw_phase = 1;
+    for (int i = 0; i < 100 && __atomic_load_n(&lvgl_inflight, __ATOMIC_ACQUIRE) > 0; i++) vTaskDelay(1);   // LVGL's last band still going out
+    while (xSemaphoreTake(raw_done, 0) == pdTRUE) {}                     // no stale tokens
+    raw_mode = true;
+    void *bufs[2] = {buf1, buf2};
+    int inflight = 0;
+    for (int y = 0, k = 0; y < DISP_H; y += BUF_LINES, k ^= 1) {
+        int n = DISP_H - y < BUF_LINES ? DISP_H - y : BUF_LINES;
+        raw_band = y;
+        raw_phase = 2;
+        fill(y, n, bufs[k], user);                        // while the previous band is still going out
+        raw_phase = 3;
+        // No esp_lcd call while a transfer is in flight: its tx_param/tx_color take the bus and then wait for the
+        // queued transfer, and called during a transfer (a band fills in ~0.5 ms, sends in ~0.75 ms) they hung for
+        // good, a few frames in (breadcrumbs: raw_phase 3). LVGL's path rarely lands there (bands render in ~4 ms).
+        if (inflight) { if (!raw_wait()) break; inflight--; }
+        int x1 = X_GAP, x2 = DISP_W - 1 + X_GAP, y2 = y + n - 1;
+        uint8_t col[4] = {x1 >> 8, x1 & 0xFF, x2 >> 8, x2 & 0xFF};
+        uint8_t row[4] = {y >> 8, y & 0xFF, y2 >> 8, y2 & 0xFF};
+        lcd_cmd(0x2A, col, 4);
+        lcd_cmd(0x2B, row, 4);
+        raw_phase = 4;
+        esp_lcd_panel_io_tx_color(io, PIXELS, bufs[k], DISP_W * n * 2);
+        raw_phase = 5;
+        inflight++;
+        st.pixels += DISP_W * n;
+        tst.pixels += DISP_W * n;
+    }
+    raw_phase = 6;
+    while (inflight-- > 0) if (!raw_wait()) break;
+    raw_phase = 0;
+    raw_mode = false;
+    count_frame(0);                                       // counted like LVGL frames (fps in the test console)
+    int64_t now = esp_timer_get_time();
+    if (last_render && now - last_render < 250000) count_anim(now - last_render);
+    last_render = now;
 }
 
 static bool bench_no_panel;          // diag bench: render only, don't send to the panel
@@ -75,7 +159,9 @@ static void flush_cb(lv_display_t *disp, const lv_area_t *a, uint8_t *px)
     lcd_cmd(0x2B, row, 4);
     uint32_t n = lv_area_get_size(a);
     st.pixels += n;
+    tst.pixels += n;
     lv_draw_sw_rgb565_swap(px, n);
+    __atomic_fetch_add(&lvgl_inflight, 1, __ATOMIC_ACQ_REL);   // the transfer-done interrupt may run on the other core
     esp_lcd_panel_io_tx_color(io, PIXELS, px, n * 2);
 }
 
@@ -118,19 +204,14 @@ static void render_evt(lv_event_t *e)
 {
     int64_t now = esp_timer_get_time();
     if (lv_event_get_code(e) == LV_EVENT_RENDER_START) {
-        if (last_render && now - last_render < 250000) {     // back-to-back frames = animation
-            st.anim_frames++;
-            st.anim_us += now - last_render;
-            if (now - last_render > st.anim_gap_max_us) st.anim_gap_max_us = now - last_render;
-        }
+        if (last_render && now - last_render < 250000) count_anim(now - last_render);   // back-to-back = animation
         last_render = render_t0 = now;
     } else {
-        uint32_t us = now - render_t0;
-        st.frames++;
-        st.render_us += us;
-        if (us > st.render_max_us) st.render_max_us = us;
+        count_frame(now - render_t0);
     }
 }
+
+int display_lvgl_inflight(void) { return __atomic_load_n(&lvgl_inflight, __ATOMIC_ACQUIRE); }
 
 void display_get_stats(display_stats_t *out, bool reset)
 {
@@ -140,12 +221,21 @@ void display_get_stats(display_stats_t *out, bool reset)
     display_unlock();
 }
 
+void display_get_test_stats(display_stats_t *out, bool reset)
+{
+    display_lock(-1);
+    *out = tst;
+    if (reset) memset(&tst, 0, sizeof(tst));
+    display_unlock();
+}
+
 static void lvgl_task(void *arg)
 {
     while (1) {
         uint32_t wait = 10;
         if (display_lock(-1)) { wait = lv_timer_handler(); display_unlock(); }
-        if (wait < 5) wait = 5;
+        // 1 ms minimum: enough to let other tasks run, and at 60 fps (16.7 ms a frame) the old 5 ms was 30 %
+        if (wait < 1) wait = 1;
         if (wait > 50) wait = 50;
         vTaskDelay(pdMS_TO_TICKS(wait));
     }
@@ -160,6 +250,10 @@ void display_init(void)
         .sclk_io_num = PIN_CLK, .data0_io_num = PIN_D0, .data1_io_num = PIN_D1,
         .data2_io_num = PIN_D2, .data3_io_num = PIN_D3,
         .max_transfer_sz = buf_bytes,
+        // SPI interrupt on the LVGL task's core: "transfer done" (on_trans_done) then completes before the task runs
+        // again. On core 0 the task could reach esp_lcd while the driver was still finishing that transfer on the
+        // other core, and display_raw_frame() hung for good every few slides.
+        .isr_cpu_id = ESP_INTR_CPU_AFFINITY_1,
     };
     ESP_ERROR_CHECK(spi_bus_initialize(LCD_HOST, &bus, SPI_DMA_CH_AUTO));
 
@@ -169,7 +263,7 @@ void display_init(void)
 
     esp_lcd_panel_io_spi_config_t io_cfg = {
         .cs_gpio_num = PIN_CS, .dc_gpio_num = -1, .spi_mode = 0,
-        .pclk_hz = 40 * 1000 * 1000, .trans_queue_depth = 10,
+        .pclk_hz = 80 * 1000 * 1000, .trans_queue_depth = 10,   // 40 MHz until v1.10.1: 22 ms a frame, 11 now
         .on_color_trans_done = on_trans_done, .user_ctx = disp,
         .lcd_cmd_bits = 32, .lcd_param_bits = 8,
         .flags = { .quad_mode = true },
@@ -189,6 +283,8 @@ void display_init(void)
     void *b1 = heap_caps_malloc(buf_bytes, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
     void *b2 = heap_caps_malloc(buf_bytes, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
     assert(b1 && b2);
+    buf1 = b1; buf2 = b2;
+    raw_done = xSemaphoreCreateCounting(2, 0);
     lv_display_set_color_format(disp, LV_COLOR_FORMAT_RGB565);
     lv_display_set_buffers(disp, b1, b2, buf_bytes, LV_DISPLAY_RENDER_MODE_PARTIAL);
     lv_display_set_flush_cb(disp, flush_cb);

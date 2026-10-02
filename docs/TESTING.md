@@ -155,17 +155,19 @@ the window at the end.
 | Suite | What it proves |
 |---|---|
 | `smoke` | console answers, firmware version, Wi-Fi up, settings API |
-| `navigation` | swipes and taps land on the right screen (weather ↔ extras ↔ status, radar, Settings by long-press, hourly by tapping a day); snapshot of every screen incl. `settings1..3`, `phone`, `setup0/1`, `update` |
+| `navigation` | swipes and taps land on the right screen (weather ↔ extras ↔ status, radar, Settings by long-press, hourly by tapping a day); the ends bounce back, a short slow drag snaps back; places (drag up / down, the first one bounces) and hourly days (left / right) change by one (`page`); snapshot of every screen incl. `settings1..3`, `phone`, `setup0/1`, `update` |
 | `web` | the Playwright suite (`tools/webtest`) and the live API on the board; the page must arrive whole |
-| `perf` | boot stage times and internal RAM, heap low points, full-screen render bench, radar first frame and animation fps; compared with `tools/harness/baseline.json` |
+| `perf` | boot stage times and internal RAM, heap low points, full-screen render bench (best of 3), radar first frame and lightning, frame rate of each move (`fps`: screen to screen, places, days, the hourly list and Settings scrolling); compared with `tools/harness/baseline.json`. The radar animation plays at 3 fps by design: not measured |
 | `wifi_runtime` | network lost while running: retries go on; long-press opens setup and **pauses them**; tap closes it; reconnects |
 | `wifi_setup` | start-up with the network unreachable (the October 1 path): setup after 30 s, no retries while open, **the PC joins the setup network like a phone** (DNS answers every name with 192.168.4.1, the Android check gets the 302, the page and `/api/config` load, the PC is not dropped for 15 s), Easy Connect listens on the router's 2.4 GHz channel as the PC sees it, the setup network works again after Easy Connect (DNS socket bug), tap → 30 s retry → setup again, network back → weather screen. `--phone` adds the real Easy Connect scan |
 
 How it works:
 
-- **Test console** (`main/testcon.c`, USB only): `ping`, `screen`, `tap X Y`, `press X Y [ms]`, `swipe
-  left|right|up|down`, `drag …`, `wake`, `presence`, `wifi status|offline|offline-boot|online`, `portal
-  windows-quiet`, `heap`, `bench`, `reboot`, `help`. Answers are log lines `test: …`. Simulated touches enter at the
+- **Test console** (`main/testcon.c`, USB only): `ping`, `screen`, `page` (place and day shown), `tap X Y`,
+  `press X Y [ms]`, `swipe left|right|up|down`, `drag X1 Y1 X2 Y2 [ms]`, `wake`, `presence`, `wifi
+  status|offline|offline-boot|online`, `portal windows-quiet`, `fps [reset]` (frames and animation fps since the
+  reset), `where` (display breadcrumbs, takes no lock), `memspeed` (PSRAM / internal copy speeds), `heap`, `bench`,
+  `profile` (§7, profiler builds only), `reboot`, `help`. Answers are log lines `test: …`. Simulated touches enter at the
   touch controller read (`touch_inject()`), so wake-up, long-press and gestures run the real code. `wifi offline`
   points the station at a network that doesn't exist (saved credentials untouched); `offline-boot` does it for the
   next boot only (flag in RTC memory) so the real start-up path runs.
@@ -196,10 +198,43 @@ Pitfalls met while building it:
   command's own position, events from the test's read position (`Log.wait(start=…)`).
 - The setup screens can't be snapshot while the display is offline (snapshots use the home network); the
   navigation suite captures them with the `setup0/1` pseudo-screens.
-- Unexpected restarts fail the test even if every check passed (panic text goes to the UART, not this USB log).
+- Unexpected restarts fail the test even if every check passed. The report decodes the backtrace with
+  `addr2line` against `build/v55/weather_amoled.elf` (wrong for any other build).
+- **A command that gets no answer, or answers `display busy`, makes the harness send `where`**, which takes no lock:
+  the failure then says where the display stuck (`slide_phase`, `raw_phase`, `raw_band`, `lvgl_inflight`, the LVGL
+  task's state). That is how the raw-frame hangs of the v1.10.1 work were found (see ARCHITECTURE, "Display
+  pipeline").
+- A simulated **tap lasts 120 ms**: a 60 ms tap could fall entirely inside a 100 ms redraw and never be seen.
+- The board's **automatic render bench** (45 s after boot) blocked the screen for 1.5 s and swallowed the swipes the
+  harness made meanwhile; it is off since v1.10.1 (`BENCH_AT_S` 0) and `perf` runs it on request, keeping the best of
+  3 runs (a run is "postponed" while a redraw is going on).
+- `fps` has its own counters: `diag`'s 60 s report used to reset them in the middle of a measurement.
+- After a **place change**, the radar saves the new location's map to flash (both cores pause in bursts for ~3 s): a
+  tap then can go unseen, and a drag measured then crawled (3 fps, first frame after 2 s). `perf` waits until the
+  radar has been quiet for 5 s with no map preload running (`radar_settled`), and taps the forecast twice if needed.
+- Drag tests check the result with `page`, not by the screen name: a place or day change stays on the same screen.
 - **Don't restart a board in the first 60 s after an update:** the new firmware is still "pending verify" and the
   bootloader rolls back to the previous one. On October 1 the harness restarted rc.2 right after the user installed
   it, then tested the old build and reported a pass. Now: `GET /api/update` has `pending_verify` and `uptime_s`; the
   harness waits until the update is confirmed (75 s blind wait for firmware without the field), fails if the version
   changed across its restart, prints the version it tests, and `--expect vX` fails on any other version. Use
   `--expect` when testing a release.
+
+## 7. Profiling LVGL rendering (`profile`)
+
+Used in the v1.10.1 frame-rate work to see where a frame's time goes, per function and per draw task type. A local
+experiment, never committed in a build:
+
+1. `python tools/harness/lvgl_profile_patch.py apply`: tags each draw task type (`t_fill`, `t_label`, `t_image`…) in
+   `managed_components` (not in git; `revert` undoes it).
+2. In `build\v55\sdkconfig` only: `CONFIG_LV_USE_PROFILER=y`, `CONFIG_LV_USE_PROFILER_BUILTIN=y`,
+   `CONFIG_LV_PROFILER_INCLUDE="src/misc/lv_profiler_builtin.h"`. Build and flash.
+3. Send `profile` to the test console (`echo profile > serial.send`): one render-only frame of each screen, the
+   trace between `PROFILE-BEGIN <screen>` and `PROFILE-END <screen>` lines.
+4. `python tools/harness/profile.py serial_live.txt`: per screen, each marker's count, inclusive and self time.
+5. Revert the patch and the sdkconfig lines (the profiler slows rendering), rebuild.
+
+What it showed (the weather screen, ~75 ms a frame): no single hot spot. The time is spread over the 15 bands of 32
+lines, each walking the whole object tree, and TinyTTF glyphs. Two LVGL images of the whole screen still cost ~35 ms a
+frame. Hence pictures copied straight to the panel (`slide.c`) rather than faster widgets. `memspeed` gives the copy
+speeds that bound that approach (~8 ms per screen from PSRAM).

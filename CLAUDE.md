@@ -129,6 +129,27 @@ Windows build gets both from `main/idf_component.yml`. `components/dns_server` *
     (d) v1.10.0's harness run caught the channel pick guessing: the broadcast scan missed the router (busy channel),
     so the display scans for the saved network by name first. A flaky check needs several runs before calling it
     fixed (4/4 after the fix).
+21. **Frame rate (v1.10.1, October 2):** LVGL 9.2 can't redraw a full screen in less than ~65–85 ms, and profiling
+    found no single hot spot (docs/TESTING.md §7). Moves between screens, places and days are now pictures sent
+    straight to the panel by `slide.c` (ARCHITECTURE "Moves"). What it took, in order of cost:
+    (a) **Hangs:** esp_lcd isn't thread-safe. Its transfer-done interrupt ran on the other core and raced with the
+    raw frames: the interrupt now runs on core 1, and no esp_lcd call is made while a band is in flight. Found
+    with breadcrumbs and the console's `where` (no lock), not by guessing; keep both when touching `display.c`.
+    (b) **Drawing outside LVGL hides the touch from LVGL.** After a drag, reset its input (`touch_resync`:
+    `touch_forget()`, `wait_until_release`, `lv_indev_reset`). Otherwise the next swipe is ignored, or `touch.c`'s
+    NACK guard replays the last point as a stray tap (the hourly view opened after place drags).
+    (c) **The CST9217 NACKs instead of reporting "up".** A loop waiting for the finger to lift must count read errors
+    as a release (5 in a row), or it never ends.
+    (d) **Anything that blocks LVGL for more than ~50 ms loses quick flicks:** cache pictures are rendered in
+    64-row strips, the neighbour is rendered before the first frame, and the automatic render bench is off.
+    (e) **Big PSRAM users fragment PSRAM for the others:** with the 2.2 MB picture cache, lodepng's 2–3 MB radar
+    decodes failed. The radar now decodes row by row (`png_rows.c`, ROM inflate, ~50 KB). After a change that holds
+    PSRAM, check the `radar: Frame` lines and the harness's `psram_min_kb`.
+    (f) **Content changed while its screen isn't shown** must call `slide_cache_dirty()`, or a drag shows the old
+    picture for a moment.
+    (g) A drag must decide its axis like LVGL (larger axis after 16 px): a 2:1 rule missed curved swipes on the
+    round screen. Check drags with the harness (`navigation`, `perf`), then ask the user to try them: the
+    harness's straight synthetic drags passed while real swipes were still missed.
 
 - Internal RAM ran out silently (10 KB free, 0 KB min ever) because LVGL's small allocations went to internal RAM
   first. Fixed with `lvgl_mem.c` (LVGL heap in PSRAM). Font kerning cost 71% of render time; fonts now use
@@ -175,7 +196,9 @@ Windows build gets both from `main/idf_component.yml`. `components/dns_server` *
 - Wants short progress notes, no screen takeover, and changes verified on the device (log + snapshot) before
   being called done.
 - Screen-to-screen moves should feel like the hourly view: follow the finger, snap, bounce at the ends, no
-  wrap-around. Reuse `pager.c` for that.
+  wrap-around. Since v1.10.1 screens, places and days all go through `slide.c` (~60 fps). The user asked for 60 fps,
+  noticed at once when a faster animation lost the finger-following and the bounce, and noticed a 0.1 s delay
+  before a drag started. Frame rate alone isn't the goal: it has to follow the finger.
 - **French = Canadian French (Québec), standard written:** "endroit(s)" for places (not "lieux"), "tamiser" for dim
   (not "atténuer"), "balayez le code QR", "appuyez longuement", **1er** for the first of the month. No joual, slang
   or anglicisms. Check grammar agreement when a noun changes (un endroit → "Nouvel endroit", "cet endroit").

@@ -20,5 +20,12 @@ typedef struct {
     uint32_t hold_max_us;                          // longest lock hold by another task...
     char hold_task[16];                            // ...and which task
 } display_stats_t;
-void display_get_stats(display_stats_t *out, bool reset);
+void display_get_stats(display_stats_t *out, bool reset);        // diag.c
+void display_get_test_stats(display_stats_t *out, bool reset);   // the test console's "fps" (own counters)
 void display_bench_no_panel(bool on);             // diag bench only
+
+// A frame drawn without LVGL (slide.c): fill() writes rows y0..y0+n-1, full width, RGB565 *byte-swapped* (panel
+// order), into dst; display_raw_frame() sends each band while the next one is filled. Display lock held; afterwards
+// LVGL must redraw before it flushes again (lv_obj_invalidate).
+typedef void (*display_fill_cb_t)(int y0, int n, void *dst, void *user);
+void display_raw_frame(display_fill_cb_t fill, void *user);
