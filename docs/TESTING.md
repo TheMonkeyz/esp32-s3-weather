@@ -193,3 +193,9 @@ Pitfalls met while building it:
 - The setup screens can't be snapshot while the display is offline (snapshots use the home network); the
   navigation suite captures them with the `setup0/1` pseudo-screens.
 - Unexpected restarts fail the test even if every check passed (panic text goes to the UART, not this USB log).
+- **Don't restart a board in the first 60 s after an update:** the new firmware is still "pending verify" and the
+  bootloader rolls back to the previous one. On October 1 the harness restarted rc.2 right after the user installed
+  it, then tested the old build and reported a pass. Now: `GET /api/update` has `pending_verify` and `uptime_s`; the
+  harness waits until the update is confirmed (75 s blind wait for firmware without the field), fails if the version
+  changed across its restart, prints the version it tests, and `--expect vX` fails on any other version. Use
+  `--expect` when testing a release.

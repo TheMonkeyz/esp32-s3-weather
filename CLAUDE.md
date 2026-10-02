@@ -59,7 +59,8 @@ Windows build gets both from `main/idf_component.yml`. `components/dns_server` *
 - **Harness: `python tools/harness/harness.py`** (docs/TESTING.md §6) runs everything without the user: screens by
   simulated touch, the settings page, performance against `tools/harness/baseline.json`, and the offline Wi-Fi
   setup paths with the PC's Wi-Fi card acting as a phone. Run it before calling a change done, and add a test when
-  a bug is fixed. Only Easy Connect's final phone scan needs a person (`--phone`).
+  a bug is fixed. Only Easy Connect's final phone scan needs a person (`--phone`). Testing a release: `--expect
+  vX.Y.Z-rc.N`, and read the "Testing vX" line: a restart within 60 s of an update rolls it back (it happened).
 - **Settings page tests:** `cd tools/webtest && npm test` (Playwright + mock display, see docs/TESTING.md §5). Run
   them and look at `shots/` before building firmware with a page change. In the first session a headless test
   proved the page's JS was fine, which pointed at the device.
