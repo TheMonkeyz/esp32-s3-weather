@@ -135,6 +135,12 @@ def boot_and_memory(ctx):
         if m:
             ctx.metric(f'boot_s.{m.group(1).strip().replace(" ", "_")}', round(ms_of(l) / 1000, 1))
             ctx.metric(f'boot_internal_kb.{m.group(1).strip().replace(" ", "_")}', int(m.group(2)))
+    # "first weather" (above) is logged after the whole first round: every place's forecast, alerts and air quality,
+    # ~4 s per Open-Meteo request on a slow evening. What the user waits for is the active place on screen.
+    for l in lines:
+        if re.search(r'weather: .+: now ', l):
+            ctx.metric('boot_s.forecast_shown', round(ms_of(l) / 1000, 1))
+            break
     h = ctx.board.heap()
     ctx.metric('internal_free_kb', h['internal'])
     ctx.metric('internal_min_kb', h['min'])
