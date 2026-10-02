@@ -327,8 +327,11 @@ LVGL timer and event callbacks already run inside the lock.
   tells `main.c` when it closed.
 - **Easy Connect (DPP enrollee, `net.c`)**: `CONFIG_ESP_WIFI_DPP_SUPPORT=y`, `wpa_supplicant` in REQUIRES. The radio
   can't serve the AP and listen at once, so page 2 stops the AP (`net_setup_ap_stop_any()`, even in first-time setup),
-  disconnects the station and pauses our reconnects (`dpp_active`). It then scans (~1.7 s) and listens on **one
-  channel**: the saved network's if in range, else the strongest network's (`dpp_pick_channel()`). The phone stays on
+  disconnects the station and pauses our reconnects (`dpp_active`). It then scans (~2 s) and listens on **one
+  channel**: the saved network's if in range, else the strongest network's (`dpp_pick_channel()`). The saved network
+  is looked for **by name** first (probe requests carrying its SSID, 120 ms per channel): a broadcast scan at 40-80 ms
+  missed a router on a busy channel and keeps only the 16 strongest records (v1.10.0: picked channel 11 instead
+  of 1). The broadcast scan is only the fallback. The phone stays on
   its own network's channel and the display needs ~0.3 s to answer its Authentication Request: on another channel the
   phone had already left and the exchange ended in `ESP_ERR_DPP_AUTH_TIMEOUT` (with "1,6,11" or "6"). It only worked
   online because the station was already on the router's channel. `esp_supp_dpp_bootstrap_gen(channel, QR)` is

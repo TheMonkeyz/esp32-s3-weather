@@ -328,27 +328,39 @@ void net_setup_ap_stop_any(void) { ap_down(); }
 // the display was on the router's channel anyway, which is why Easy Connect only worked then.
 static char dpp_chan[4] = "6";
 
-static void dpp_pick_channel(void)
+// One scan; returns the channel of the strongest 2.4 GHz record (of `ssid` if given), 0 if none. *seen = records.
+static int scan_channel(const char *ssid, int dwell_ms, int *seen)
 {
-    char saved[33] = "", pass[65];
-    net_load_creds(saved, sizeof(saved), pass, sizeof(pass));
-    wifi_scan_config_t sc = { .scan_type = WIFI_SCAN_TYPE_ACTIVE,
-                              .scan_time.active = { .min = 40, .max = 80 } };   // ~1 s for 13 channels
+    wifi_scan_config_t sc = { .ssid = (uint8_t *)ssid, .scan_type = WIFI_SCAN_TYPE_ACTIVE,
+                              .scan_time.active = { .min = dwell_ms / 2, .max = dwell_ms } };
     uint16_t n = 16;
     wifi_ap_record_t *r = calloc(n, sizeof(*r));
     int ch = 0;
-    const char *why = "default";
     if (r && esp_wifi_scan_start(&sc, true) == ESP_OK && esp_wifi_scan_get_ap_records(&n, r) == ESP_OK) {
-        for (int i = 0; i < n && !ch; i++)
-            if (saved[0] && !strcmp((char *)r[i].ssid, saved)) { ch = r[i].primary; why = "saved network"; }
-        if (!ch && n) { ch = r[0].primary; why = "strongest network"; }   // records come sorted by signal
+        for (int i = 0; i < n && !ch; i++)                  // records come sorted by signal
+            if (r[i].primary >= 1 && r[i].primary <= 13) ch = r[i].primary;
     } else {
         n = 0;
     }
     free(r);
+    *seen = n;
+    return ch;
+}
+
+static void dpp_pick_channel(void)
+{
+    char saved[33] = "", pass[65];
+    net_load_creds(saved, sizeof(saved), pass, sizeof(pass));
+    int seen = 0, ch = 0;
+    const char *why = "default";
+    // The saved network first, by name: a probe request carrying its name is answered more reliably than a broadcast
+    // one, and only its records come back (a broadcast scan keeps the 16 strongest). The broadcast scan at 40-80 ms per
+    // channel missed a router on a busy channel (v1.10.0 harness run: it picked the strongest network, channel 11).
+    if (saved[0] && (ch = scan_channel(saved, 120, &seen))) why = "saved network";      // ~1.6 s
+    else if ((ch = scan_channel(NULL, 80, &seen))) why = "strongest network";          // ~1 s more
     if (ch < 1 || ch > 13) ch = 6;
     snprintf(dpp_chan, sizeof(dpp_chan), "%d", ch);
-    ESP_LOGI(TAG, "Easy Connect: channel %d (%s, %d networks seen)", ch, why, n);
+    ESP_LOGI(TAG, "Easy Connect: channel %d (%s, %d networks seen)", ch, why, seen);
 }
 
 static net_dpp_uri_cb_t dpp_uri_cb;
