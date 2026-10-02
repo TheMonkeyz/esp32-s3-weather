@@ -9,6 +9,11 @@ How to write an entry: add a `## vX.Y.Z - YYYY-MM-DD` section at the top **befor
 their own `## vX.Y.Z-rc.N` section. Those are shown only to Beta users, while the final release's section should
 list everything again.
 
+## v1.10.1-rc.4 - 2026-10-02
+- Lists scroll smoothly: the hourly view's hours, Settings, the status page, alert details and the update notes now scroll at 50 to 70 frames per second instead of about 20. They follow your finger, keep going after a flick and slow down, stop when you touch them, and spring back at the top and bottom.
+- Android Easy Connect: the setup screen and the settings page now say to scan the code with the phone's camera or any QR app while the phone is on your Wi-Fi. Not every phone has a QR icon in its Wi-Fi settings.
+- Moves between screens and places start at once more often: the screen you're on never needs redrawing before a move.
+
 ## v1.10.1-rc.3 - 2026-10-02
 - Moving between places starts at once, even right after the previous move. It could wait up to half a second before the screen followed your finger.
 - Fixed: going back to your first place made the radar save its map twice, and the screen stuttered for a few seconds. It saves once now, and waits while you're touching the screen.
