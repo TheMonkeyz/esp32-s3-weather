@@ -5,146 +5,554 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Weather Display – Web Flasher</title>
 <meta name="description" content="Install the weather display firmware on a Waveshare ESP32-S3-Touch-AMOLED-1.75 from your browser.">
+<meta name="theme-color" content="#000000">
+<meta property="og:title" content="Weather Display – Web Flasher">
+<meta property="og:description" content="Weather, forecast and rain radar on a round AMOLED screen. Install it from your browser.">
+<meta property="og:image" content="https://themonkeyz.github.io/esp32-s3-weather/img/weather.png">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14.5' fill='%23000' stroke='%23384452' stroke-width='3'/%3E%3Ccircle cx='16' cy='16' r='6' fill='%23ffc83d'/%3E%3C/svg%3E">
+<link rel="preload" href="fonts/montserrat.ttf" as="font" type="font/ttf" crossorigin>
 <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
 <style>
-:root{--bg:#0b0e12;--card:#141a21;--line:#232c36;--text:#eef2f6;--dim:#93a0ae;--accent:#5ab0ff;--ok:#6fd08c;--warn:#ffc83d;
-  --radius:14px;color-scheme:dark}
+/* Montserrat Medium, the display's own font (copied into fonts/ by tools/make_flasher_site.py, SIL OFL). */
+@font-face{font-family:"Montserrat";src:url(fonts/montserrat.ttf) format("truetype");font-weight:500;font-style:normal;
+  font-display:swap}
+@property --glow{syntax:"<color>";inherits:true;initial-value:rgba(255,200,61,.3)}
+:root{--bg:#000;--card:#0e131a;--card2:#121922;--line:#1d2631;--line2:#2a3542;--text:#f2f5f8;--body:#c3ccd6;--dim:#8e9aa9;
+  --accent:#5ab0ff;--sun:#ffc83d;--ok:#6fd08c;--warn:#ffc83d;--radius:20px;
+  --font:"Montserrat",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --syl:"Montserrat",Gadugi,"Euphemia UCAS",Euphemia,"Noto Sans Canadian Aboriginal",system-ui,sans-serif;
+  color-scheme:dark}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--text);font:16px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
-main{max-width:880px;margin:0 auto;padding:40px 20px 56px}
-h1{font-size:clamp(28px,5vw,40px);line-height:1.15;margin:0 0 8px;letter-spacing:-.01em}
-h2{font-size:20px;margin:0 0 12px}
+html{font-synthesis-weight:none;-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--body);font:500 16px/1.6 var(--font);overflow-x:hidden}
+h1,h2,h3{color:var(--text);font-weight:500;margin:0}
 p{margin:0 0 12px}
-a{color:var(--accent)}
-.lead{color:var(--dim);font-size:18px;max-width:40em}
-.hero{display:grid;grid-template-columns:1fr auto;gap:32px;align-items:center;margin-bottom:28px}
-.shots{display:flex;gap:14px}
-.shots img{width:170px;height:170px;border-radius:50%;box-shadow:0 0 0 6px #1b222b,0 12px 40px #0008}
-.shots img+img{margin-top:60px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:22px 24px;margin:16px 0}
-.install{display:flex;flex-wrap:wrap;gap:20px;align-items:center;justify-content:space-between}
-.ver{color:var(--dim);font-size:14px}
-.ver b{color:var(--text);font-weight:600}
-.install-main{display:flex;flex-direction:column;align-items:flex-start;gap:14px}
-.channels{display:inline-flex;background:#0d1217;border:1px solid var(--line);border-radius:12px;padding:4px;gap:4px}
-.channels label{position:relative;cursor:pointer}
-.channels input{position:absolute;opacity:0;pointer-events:none}
-.channels span{display:block;padding:8px 16px;border-radius:9px;color:var(--dim);font-size:15px;white-space:nowrap}
-.channels span small{display:block;font-size:12px;opacity:.85}
-.channels input:checked+span{background:#1f3350;color:var(--text)}
+a{color:var(--accent);text-underline-offset:3px}
+a:hover{color:#8cc8ff}
+b,strong{font-weight:inherit;color:var(--text)}
+i,em{color:var(--text)}
+img{max-width:100%}
+.nw{white-space:nowrap}
+main{overflow-x:clip}
+:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:6px}
+kbd{font:inherit;font-size:13px;color:var(--text);background:#1a222c;border:1px solid #344150;border-bottom-width:2px;
+  border-radius:6px;padding:1px 7px;white-space:nowrap}
+.wrap{max-width:1120px;margin:0 auto;padding:0 32px}
+.icon{width:22px;height:22px;flex:none;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;
+  stroke-linejoin:round}
+
+/* top bar */
+.top{display:flex;align-items:center;justify-content:space-between;gap:16px;padding-top:20px;padding-bottom:20px}
+.brand{display:inline-flex;align-items:center;gap:10px;color:var(--text);text-decoration:none;font-size:15px;white-space:nowrap}
+.brand::before{content:"";width:18px;height:18px;border-radius:50%;background:radial-gradient(circle,var(--sun) 0 32%,#000 36%);
+  box-shadow:0 0 0 2px #384452}
+.top a.gh{display:inline-flex;align-items:center;gap:8px;font-size:14px;color:var(--dim);text-decoration:none;white-space:nowrap;
+  padding:6px 12px;border:1px solid var(--line2);border-radius:999px}
+.top a.gh:hover{color:var(--text);border-color:#3c4a5b}
+
+/* hero */
+.hero{position:relative;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,440px);gap:64px;align-items:center;
+  padding-top:36px;padding-bottom:40px}
+.hero::before{content:"";position:absolute;inset:-120px -10% 0;z-index:-1;pointer-events:none;
+  background:radial-gradient(48% 55% at 78% 45%,rgba(90,176,255,.10),transparent 70%),
+             radial-gradient(40% 40% at 10% 0%,rgba(255,200,61,.05),transparent 70%)}
+.eyebrow{display:block;color:var(--accent);font-size:13px;letter-spacing:.12em;text-transform:uppercase;margin-bottom:12px}
+h1{font-size:clamp(40px,6.2vw,64px);line-height:1.05;letter-spacing:-.025em;margin-bottom:18px}
+.lead{font-size:18px;line-height:1.6;max-width:32em;color:var(--body);margin-bottom:18px}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 28px;padding:0;list-style:none}
+.chips li{display:inline-flex;align-items:center;gap:8px;font-size:13px;color:var(--body);padding:5px 12px;
+  border:1px solid var(--line2);border-radius:999px;background:#0a0e13}
+.chips li::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--accent)}
+
+/* device mockup */
+.device-wrap{display:flex;flex-direction:column;align-items:center;gap:18px}
+.device{--glow:rgba(255,200,61,.3);width:100%;max-width:440px;aspect-ratio:1;border-radius:50%;padding:4.2%;
+  background:conic-gradient(from 200deg,#1b2027,#3b434e 12%,#14181d 30%,#2c333c 50%,#101317 68%,#3a424c 84%,#1b2027);
+  box-shadow:0 0 0 1px rgba(255,255,255,.07),inset 0 1px 1px rgba(255,255,255,.18),0 40px 70px -30px #000,
+    0 0 110px 6px var(--glow);
+  transition:--glow 1.6s ease}
+.bezel{width:100%;height:100%;border-radius:50%;padding:3.2%;background:#020304;
+  box-shadow:inset 0 0 0 1px #000,inset 0 3px 8px rgba(0,0,0,.9),0 0 0 1px rgba(0,0,0,.6)}
+.screen{position:relative;width:100%;height:100%;border-radius:50%;overflow:hidden;background:#000}
+.screen img{position:absolute;inset:0;width:100%;height:100%;opacity:0;transition:opacity 1.4s ease}
+.screen img.on{opacity:1}
+.screen::after{content:"";position:absolute;inset:0;border-radius:50%;pointer-events:none;
+  background:linear-gradient(135deg,rgba(255,255,255,.07),rgba(255,255,255,0) 38%),
+             radial-gradient(120% 120% at 50% 50%,transparent 62%,rgba(255,255,255,.04) 70%,transparent 72%)}
+.device-nav{display:flex;align-items:center;gap:14px;min-height:28px}
+.shot-name{font-size:14px;color:var(--dim);min-width:5.5em;text-align:right}
+.dots{display:flex;gap:2px}
+.dots button{appearance:none;border:0;background:none;padding:8px 4px;cursor:pointer;display:grid;place-items:center}
+.dots button::before{content:"";display:block;width:8px;height:8px;border-radius:999px;background:#3a4553;
+  transition:width .3s ease,background-color .3s ease}
+.dots button[aria-pressed=true]::before{width:24px;background:var(--text)}
+.dots button:hover::before{background:#6b7888}
+.dots button[aria-pressed=true]:hover::before{background:var(--text)}
+
+/* install card */
+.install{position:relative;padding:24px 24px 20px;border-radius:var(--radius);border:1px solid transparent;
+  background:linear-gradient(180deg,#111821,#0b1016) padding-box,
+    linear-gradient(140deg,rgba(90,176,255,.65),rgba(90,176,255,.08) 38%,rgba(255,255,255,.04) 62%,rgba(255,200,61,.4)) border-box;
+  box-shadow:0 30px 60px -36px rgba(90,176,255,.45)}
+.install h2{font-size:20px;margin-bottom:16px;display:flex;align-items:center;gap:10px}
+.install h2 .icon{color:var(--accent)}
+.channels{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:5px;margin-bottom:14px;background:#06090d;
+  border:1px solid var(--line);border-radius:14px}
+.channels label{position:relative;cursor:pointer;min-width:0}
+.channels input{position:absolute;opacity:0;width:1px;height:1px;margin:0;pointer-events:none}
+.channels span{display:flex;flex-wrap:wrap;align-items:center;column-gap:8px;padding:10px 14px;border-radius:10px;
+  color:var(--dim);font-size:15px;border:1px solid transparent;transition:background-color .2s,border-color .2s,color .2s}
+.channels span::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--ok)}
+.channels label+label span::before{background:var(--sun)}
+.channels small{flex-basis:100%;font-size:12.5px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  padding-left:16px}
+.channels label:hover input:not(:disabled)+span{color:var(--text)}
+.channels input:checked+span{background:#13243a;border-color:rgba(90,176,255,.55);color:var(--text)}
+.channels input:checked+span small{color:#a9d3ff}
 .channels input:focus-visible+span{outline:2px solid var(--accent);outline-offset:2px}
 .channels input:disabled+span{opacity:.45;cursor:not-allowed}
-.beta-warn{display:none;border-left:3px solid var(--warn);padding:8px 12px;background:#221d10;border-radius:6px;
-  color:#f4e3b5;font-size:14px;max-width:34em}
+.ver{color:var(--dim);font-size:14px;margin-bottom:14px;min-height:1.6em}
+.ver b{color:var(--text)}
+.beta-warn{display:none;border-left:3px solid var(--warn);padding:9px 12px;background:#1f1a0c;border-radius:8px;
+  color:#f4e3b5;font-size:14px;margin-bottom:14px}
 .beta-warn.on{display:block}
-esp-web-install-button button,.btn{background:var(--accent);color:#04121f;border:0;border-radius:10px;padding:14px 26px;
-  font:600 17px system-ui,sans-serif;cursor:pointer}
-esp-web-install-button button:hover{filter:brightness(1.08)}
+.beta-warn i{color:#fff2cc}
+esp-web-install-button{display:block}
+esp-web-install-button button,.btn{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;
+  min-height:56px;padding:14px 24px;border:0;border-radius:14px;cursor:pointer;color:#03101d;
+  background:linear-gradient(180deg,#7cc2ff,#4aa6ff);font:500 17px/1.2 var(--font);letter-spacing:.01em;
+  box-shadow:0 10px 30px -10px rgba(90,176,255,.7),inset 0 1px 0 rgba(255,255,255,.45);
+  transition:transform .15s ease,box-shadow .15s ease,filter .15s ease}
+esp-web-install-button button:hover,.btn:hover{filter:brightness(1.07);transform:translateY(-1px);
+  box-shadow:0 14px 36px -10px rgba(90,176,255,.85),inset 0 1px 0 rgba(255,255,255,.45)}
+esp-web-install-button button:active{transform:none}
+esp-web-install-button button:focus-visible{outline:2px solid #fff;outline-offset:3px}
+esp-web-install-button button .icon{width:20px;height:20px;stroke-width:2}
 esp-web-install-button:not(:defined) [slot=unsupported],esp-web-install-button:not(:defined) [slot=not-allowed]{display:none}
-.note{margin-top:16px;border-left:3px solid var(--warn);padding:10px 14px;background:#221d10;border-radius:6px;color:#f4e3b5;font-size:15px}
-ol{margin:0;padding-left:22px}
-ol li{margin:0 0 10px}
-ol li::marker{color:var(--accent);font-weight:700}
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-.grid .card{margin:0}
-ul.plain{margin:0;padding-left:18px;color:var(--dim)}
-ul.plain li{margin:4px 0}
-kbd{background:#222b35;border:1px solid #33404d;border-radius:5px;padding:1px 6px;font-size:14px}
-footer{color:var(--dim);font-size:14px;margin-top:32px;border-top:1px solid var(--line);padding-top:18px}
-@media (max-width:720px){.hero{grid-template-columns:1fr}.shots{justify-content:center}.shots img{width:140px;height:140px}
-  .grid{grid-template-columns:1fr}}
+.esp-msg{display:block;padding:12px 14px;border-radius:12px;background:#1f1a0c;border:1px solid #4a3d15;color:#f4e3b5;
+  font-size:15px}
+.req{display:flex;flex-wrap:wrap;gap:4px 14px;margin:14px 0 0;font-size:13.5px;color:var(--dim)}
+.req span{display:inline-flex;align-items:center;gap:6px}
+.req span::before{content:"";width:4px;height:4px;border-radius:50%;background:#4a5666}
+
+/* what's new */
+.notes{display:grid;grid-template-columns:240px minmax(0,1fr);gap:16px 40px;margin-top:8px;padding:28px 32px;
+  background:linear-gradient(180deg,var(--card2),var(--card));border:1px solid var(--line);border-radius:var(--radius)}
+.notes[hidden]{display:none}
+.notes h2{font-size:26px;letter-spacing:-.01em;overflow-wrap:anywhere}
+.notes h2 .eyebrow{margin-bottom:6px}
+.notes-meta{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;margin-top:12px;font-size:14px;color:var(--dim)}
+.pill{display:inline-block;font-size:12px;letter-spacing:.06em;text-transform:uppercase;padding:3px 10px;border-radius:999px;
+  color:#8ee0a6;background:#0f2418;border:1px solid #1d4a2e}
+.pill.beta{color:#ffd36b;background:#2a2208;border-color:#5a4610}
+.notes ul{list-style:none;margin:0;padding:0;max-width:62ch}
+.notes li{position:relative;padding-left:22px;margin:0 0 10px}
+.notes li:last-child{margin-bottom:0}
+.notes li::before{content:"";position:absolute;left:2px;top:.62em;width:7px;height:7px;border-radius:50%;
+  background:var(--accent);box-shadow:0 0 8px rgba(90,176,255,.7)}
+
+/* sections */
+.section{margin-top:104px}
+.section-head{margin-bottom:36px;max-width:40em}
+.section-head h2{font-size:clamp(28px,3.6vw,36px);letter-spacing:-.015em;line-height:1.15}
+.section-head p{margin:10px 0 0;color:var(--dim)}
+.card{background:linear-gradient(180deg,var(--card2),var(--card));border:1px solid var(--line);border-radius:var(--radius);
+  padding:26px 28px}
+
+/* steps timeline */
+.steps-grid{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(0,1fr);gap:48px;align-items:start}
+.timeline{list-style:none;margin:0;padding:0;counter-reset:step}
+.timeline li{position:relative;padding:0 0 30px 68px;counter-increment:step;min-height:48px}
+.timeline li:last-child{padding-bottom:0}
+.timeline li::before{content:counter(step);position:absolute;left:0;top:-4px;width:46px;height:46px;border-radius:50%;
+  display:grid;place-items:center;font-size:18px;color:var(--accent);background:#060a0f;border:1.5px solid rgba(90,176,255,.7);
+  box-shadow:0 0 18px -2px rgba(90,176,255,.45),inset 0 0 12px rgba(90,176,255,.12)}
+.timeline li::after{content:"";position:absolute;left:22px;top:46px;bottom:-2px;width:2px;border-radius:2px;
+  background:linear-gradient(rgba(90,176,255,.45),rgba(90,176,255,.08))}
+.timeline li:last-child::after{display:none}
+.timeline h3{font-size:18px;margin:6px 0 6px}
+.timeline p{margin:0}
+.timeline p+p{margin-top:8px}
+.erase{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.erase span{display:inline-flex;align-items:center;gap:9px;font-size:13.5px;padding:6px 12px 6px 8px;border-radius:10px;
+  background:#0a0e13;border:1px solid var(--line2);color:var(--dim)}
+.erase span b{color:var(--text)}
+.box{position:relative;width:16px;height:16px;border-radius:4px;border:1.5px solid #5b6878;flex:none}
+.box.on{background:var(--accent);border-color:var(--accent)}
+.box.on::after{content:"";position:absolute;left:4.5px;top:1px;width:4px;height:8px;border:solid #03101d;
+  border-width:0 2px 2px 0;transform:rotate(45deg)}
+.trouble h3{display:flex;align-items:center;gap:10px;font-size:18px;margin-bottom:14px}
+.trouble h3 .icon{color:var(--sun)}
+.trouble ul{list-style:none;margin:0;padding:0}
+.trouble li{position:relative;padding:12px 0 12px 22px;border-top:1px solid var(--line);font-size:15px}
+.trouble li:first-child{border-top:0;padding-top:0}
+.trouble li::before{content:"";position:absolute;left:3px;top:calc(12px + .62em);width:6px;height:6px;border-radius:50%;
+  background:var(--sun)}
+.trouble li:first-child::before{top:.62em}
+
+/* gallery */
+.gallery{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:56px 40px}
+.shot img,.lang img{display:block;width:100%;height:auto;aspect-ratio:1;border-radius:50%;background:#000;
+  box-shadow:0 0 0 7px #0d1218,0 0 0 8px #252f3b,0 26px 50px -24px #000;transition:box-shadow .4s ease,transform .4s ease}
+.shot{text-align:center}
+.shot img{max-width:280px;margin:0 auto 26px}
+.shot p{max-width:30em;margin-left:auto;margin-right:auto}
+.shot:hover img{transform:translateY(-3px);
+  box-shadow:0 0 0 7px #0d1218,0 0 0 8px #33465c,0 0 60px -6px rgba(90,176,255,.35),0 26px 50px -24px #000}
+.tag{display:inline-block;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--accent);
+  margin-bottom:6px}
+.shot h3{font-size:19px;margin-bottom:6px}
+.shot p{margin:0;font-size:15px;color:var(--body)}
+.note{display:flex;gap:16px;align-items:flex-start;margin:56px 0 0;padding:18px 22px;border-radius:16px;
+  background:#0b1310;border:1px solid #1d3a2a;color:#cfe9d8;font-size:15px}
+.note .icon{color:var(--ok);margin-top:1px}
+
+/* languages */
+.lang-tools{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:16px;margin-bottom:36px}
+.seg{display:inline-flex;gap:4px;padding:4px;background:#06090d;border:1px solid var(--line);border-radius:12px}
+.seg button{appearance:none;border:1px solid transparent;background:none;color:var(--dim);font:500 14px/1 var(--font);
+  padding:10px 16px;border-radius:9px;cursor:pointer}
+.seg button:hover{color:var(--text)}
+.seg button[aria-pressed=true]{background:#13243a;border-color:rgba(90,176,255,.55);color:var(--text)}
+.langs{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:40px}
+.lang{margin:0;text-align:center}
+.lang .pic{position:relative;max-width:280px;margin:0 auto 22px}
+.lang img{transition:opacity .35s ease,box-shadow .4s ease}
+.lang img.loading{opacity:.25}
+.lang.missing img{visibility:hidden}
+.lang.missing .pic::after{content:"Picture not available";position:absolute;inset:0;display:grid;place-items:center;
+  border-radius:50%;color:var(--dim);font-size:14px;background:#06090d;
+  box-shadow:0 0 0 7px #0d1218,0 0 0 8px #252f3b}
+.lang figcaption{font-size:20px;color:var(--text)}
+.lang figcaption small{display:block;font-size:13px;color:var(--dim);margin-top:2px}
+.lang [lang|=iu]{font-family:var(--syl)}
+.draft{display:inline-block;margin-left:6px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#ffd36b;
+  border:1px solid #5a4610;background:#2a2208;border-radius:999px;padding:1px 8px;vertical-align:2px}
+.lang-note{margin:32px 0 0;color:var(--dim);font-size:15px;max-width:52em}
+
+/* using it */
+.uses{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.uses li{display:flex;gap:16px;align-items:flex-start;padding:20px 22px;border-radius:16px;background:var(--card);
+  border:1px solid var(--line);font-size:15px}
+.uses .ic{flex:none;width:44px;height:44px;border-radius:12px;display:grid;place-items:center;color:var(--accent);
+  background:#0c1824;border:1px solid #1b3249}
+.uses .ic .icon{width:24px;height:24px}
+.uses p{margin:0}
+
+footer.wrap{margin-top:112px;padding-top:32px;padding-bottom:56px;border-top:1px solid var(--line);color:var(--dim);font-size:14px}
+footer p{max-width:62em}
+
+@media (max-width:960px){
+  .hero{grid-template-columns:1fr;gap:32px;padding-top:12px}
+  .device-wrap{order:-1}
+  .device{max-width:360px}
+  .steps-grid{grid-template-columns:1fr;gap:32px}
+  .gallery{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media (max-width:720px){
+  .notes{grid-template-columns:1fr;padding:22px 20px}
+  .uses{grid-template-columns:1fr}
+}
+@media (max-width:600px){
+  .wrap{padding:0 16px}
+  .top{padding-top:14px;padding-bottom:6px}
+  .hero{padding-bottom:24px}
+  .device{max-width:300px}
+  .lead{font-size:17px}
+  .install{padding:20px 16px 16px}
+  .channels span{padding:9px 10px}
+  .section{margin-top:72px}
+  .section-head{margin-bottom:28px}
+  .card{padding:22px 18px}
+  .timeline li{padding-left:58px}
+  .timeline li::before{width:40px;height:40px;font-size:16px}
+  .timeline li::after{left:19px;top:40px}
+  .timeline h3{margin-top:4px}
+  .gallery{grid-template-columns:1fr;gap:28px}
+  .shot{display:grid;grid-template-columns:120px minmax(0,1fr);gap:20px;align-items:center;text-align:left}
+  .shot img{margin:0;box-shadow:0 0 0 5px #0d1218,0 0 0 6px #252f3b}
+  .shot h3{font-size:17px}
+  .shot p{font-size:14.5px}
+  .note{margin-top:40px;padding:16px}
+  .lang-tools{margin-bottom:28px}
+  .langs{display:flex;gap:16px;overflow-x:auto;scroll-snap-type:x mandatory;padding:10px 4px 16px;margin:0 -16px;
+    padding-left:16px;padding-right:16px;scrollbar-width:none}
+  .langs::-webkit-scrollbar{display:none}
+  .langs>li{flex:0 0 70%;scroll-snap-align:center}
+  .top .long{display:none}
+  .uses li{padding:16px}
+  footer.wrap{margin-top:80px}
+}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{transition:none!important;scroll-behavior:auto!important}
+}
 </style>
 </head>
 <body>
-<main>
-  <section class="hero">
-    <div>
+<header class="wrap top">
+  <a class="brand" href="#top">Weather Display</a>
+  <a class="gh" href="https://github.com/TheMonkeyz/esp32-s3-weather">
+    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 19c-4 1.3-4-2-6-2.5M15 21v-3.5c0-1 .1-1.4-.5-2 2.8-.3 5.5-1.4 5.5-6a4.6 4.6 0 0 0-1.3-3.2 4.2 4.2 0 0 0-.1-3.2s-1-.3-3.4 1.3a11.6 11.6 0 0 0-6 0C6.8 2.8 5.8 3.1 5.8 3.1a4.2 4.2 0 0 0-.1 3.2A4.6 4.6 0 0 0 4.4 9.5c0 4.6 2.7 5.7 5.5 6-.6.6-.6 1.2-.5 2V21"/></svg>
+    <span><span class="long">Source on </span>GitHub</span></a>
+</header>
+
+<main id="top">
+  <section class="wrap hero">
+    <div class="hero-text">
+      <span class="eyebrow">For the Waveshare <span class="nw">ESP32-S3-Touch-AMOLED-1.75</span></span>
       <h1>Weather Display</h1>
-      <p class="lead">Current weather, a 3-day and hourly forecast, and an animated rain radar on a round AMOLED screen,
-        for the <b>Waveshare ESP32-S3-Touch-AMOLED-1.75</b>. Install it straight from this page.</p>
-    </div>
-    <div class="shots" aria-hidden="true">
-      <img src="img/weather.png" alt="">
-      <img src="img/hourly.png" alt="">
-    </div>
-  </section>
+      <p class="lead">Current weather, a 3-day and hourly forecast, and an animated rain radar on a round AMOLED screen.
+        Install it straight from this page.</p>
+      <ul class="chips">
+        <li>No API keys</li>
+        <li>Updates over Wi-Fi</li>
+        <li>English, French, Inuktitut</li>
+      </ul>
 
-  <section class="card install">
-    <div class="install-main">
-      <h2 style="margin:0">Install the firmware</h2>
-      <div class="channels" role="radiogroup" aria-label="Firmware channel">
-        <label><input type="radio" name="ch" value="stable" checked><span>Stable<small id="verStable">…</small></span></label>
-        <label><input type="radio" name="ch" value="beta" disabled><span>Beta<small id="verBeta">none right now</small></span></label>
+      <section class="install" id="install" aria-labelledby="installTitle">
+        <h2 id="installTitle"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>
+          Install the firmware</h2>
+        <div class="channels" role="radiogroup" aria-label="Firmware channel">
+          <label><input type="radio" name="ch" value="stable" checked><span>Stable<small id="verStable">…</small></span></label>
+          <label><input type="radio" name="ch" value="beta" disabled><span>Beta<small id="verBeta">none right now</small></span></label>
+        </div>
+        <div class="ver" id="ver">Loading version…</div>
+        <div class="beta-warn" id="betaWarn">Beta builds are release candidates for testing the next version and may have
+          bugs. You can go back to Stable at any time the same way (leave <i>Erase device</i> unticked).</div>
+        <esp-web-install-button id="installBtn" manifest="stable/manifest.json">
+          <button slot="activate"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 2v5M15 2v5M6 7h12v3a6 6 0 0 1-12 0zM12 16v6"/></svg>
+            Connect &amp; install</button>
+          <span slot="unsupported" class="esp-msg">Your browser can't talk to USB devices. Use <b>Chrome</b> or <b>Edge</b> on a computer.</span>
+          <span slot="not-allowed" class="esp-msg">This page must be opened over HTTPS (or on localhost) to flash.</span>
+        </esp-web-install-button>
+        <p class="req"><span>Chrome or Edge on a computer</span><span>USB-C data cable</span><span><a href="#steps">See the steps</a></span></p>
+      </section>
+    </div>
+
+    <div class="device-wrap">
+      <div class="device" id="device" role="img" aria-label="The round display, showing its weather, hourly, radar and extras screens in turn">
+        <div class="bezel"><div class="screen">
+          <img class="on" src="img/weather.png" width="466" height="466" alt="" data-name="Weather" data-glow="rgba(255,200,61,.30)">
+          <img src="img/hourly.png" width="466" height="466" alt="" decoding="async" data-name="Hourly" data-glow="rgba(90,176,255,.32)">
+          <img src="img/radar.png" width="466" height="466" alt="" decoding="async" data-name="Radar" data-glow="rgba(90,200,140,.26)">
+          <img src="img/extras.png" width="466" height="466" alt="" decoding="async" data-name="Extras" data-glow="rgba(255,170,60,.28)">
+        </div></div>
       </div>
-      <div class="ver" id="ver">Loading version…</div>
-      <div class="beta-warn" id="betaWarn">Beta builds are release candidates for testing the next version and may have
-        bugs. You can go back to Stable at any time the same way (leave <i>Erase device</i> unticked).</div>
+      <div class="device-nav">
+        <span class="shot-name" id="shotName">Weather</span>
+        <div class="dots" id="dots" role="group" aria-label="Show a screen">
+          <button type="button" aria-pressed="true" aria-label="Weather screen"></button>
+          <button type="button" aria-pressed="false" aria-label="Hourly view"></button>
+          <button type="button" aria-pressed="false" aria-label="Radar screen"></button>
+          <button type="button" aria-pressed="false" aria-label="Extras screen"></button>
+        </div>
+      </div>
     </div>
-    <esp-web-install-button id="installBtn" manifest="stable/manifest.json">
-      <button slot="activate">Connect &amp; install</button>
-      <span slot="unsupported">Your browser can't talk to USB devices. Use <b>Chrome</b> or <b>Edge</b> on a computer.</span>
-      <span slot="not-allowed">This page must be opened over HTTPS (or on localhost) to flash.</span>
-    </esp-web-install-button>
   </section>
 
-  <section class="card">
-    <h2>Steps</h2>
-    <ol>
-      <li>Plug the board into this computer with a USB-C <b>data</b> cable.</li>
-      <li>Click <b>Connect &amp; install</b> and pick the port named <i>USB JTAG/serial debug unit</i> (or the COM port
-        that appears when you plug it in).</li>
-      <li>First install: tick <b>Erase device</b>. Updating: leave it unticked to keep your Wi-Fi and settings.</li>
-      <li>When it's done the display restarts and shows a <b>Wi-Fi setup</b> QR code. Scan it with your phone: it joins
-        the display's <i>Weather-Setup</i> network and the setup page opens by itself. Pick your home Wi-Fi.</li>
-      <li>Set your location later: long-press the weather screen for the settings QR code.</li>
-    </ol>
-  </section>
+  <div class="wrap">
+    <section class="notes" id="notes" aria-labelledby="notesTitle" hidden>
+      <div>
+        <h2 id="notesTitle"><span class="eyebrow">What's new in</span> <span id="notesVer"></span></h2>
+        <p class="notes-meta"><span class="pill" id="notesChan"></span><time id="notesDate"></time></p>
+      </div>
+      <ul id="notesList"></ul>
+    </section>
 
-  <section class="grid">
-    <div class="card">
-      <h2>Using it</h2>
-      <ul class="plain">
-        <li>Tap a forecast day for its hourly view; drag sideways for other days.</li>
-        <li>Swipe left for the radar; tap to animate the last 3 hours, swipe down/up to zoom.</li>
-        <li>Long-press for the settings page (location, Wi-Fi, screen dimming).</li>
-        <li>The microphones dim the screen when the room is quiet and wake it on sustained sound.</li>
+    <section class="section" id="steps" aria-labelledby="stepsTitle">
+      <div class="section-head">
+        <h2 id="stepsTitle">Install in five steps</h2>
+      </div>
+      <div class="steps-grid">
+        <ol class="timeline" role="list">
+          <li><h3>Plug it in</h3>
+            <p>Plug the board into this computer with a USB-C <b>data</b> cable.</p></li>
+          <li><h3>Connect</h3>
+            <p>Click <b>Connect &amp; install</b> and pick the port named <i>USB JTAG/serial debug unit</i> (or the COM port
+              that appears when you plug it in).</p></li>
+          <li><h3>Erase, or keep your settings</h3>
+            <p>First install: tick <b>Erase device</b>. Updating: leave it unticked to keep your <span class="nw">Wi-Fi</span> and settings.</p>
+            <div class="erase" aria-hidden="true">
+              <span><i class="box on"></i><b>Erase device</b> first install</span>
+              <span><i class="box"></i><b>Erase device</b> update</span>
+            </div></li>
+          <li><h3>Join your Wi-Fi</h3>
+            <p>When it's done the display restarts and shows a <b class="nw">Wi-Fi setup</b> QR code. Scan it with your phone: it joins
+              the display's <i class="nw">Weather-Setup</i> network and the setup page opens by itself. Pick your home <span class="nw">Wi-Fi.</span></p>
+            <p><b class="nw">Android 10+:</b> nothing to type. Swipe the setup screen left to its <b class="nw">Easy Connect</b> code
+              and scan it with the phone (the camera or any QR scanner) while the phone is on your <span class="nw">Wi-Fi.</span> The phone sends
+              the network and its password.</p></li>
+          <li><h3>Set your location</h3>
+            <p>Later, long-press the weather screen, tap <b>More on your phone</b> and scan the settings QR code.</p></li>
+        </ol>
+        <aside class="card trouble" aria-labelledby="troubleTitle">
+          <h3 id="troubleTitle"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2 20h20L12 3zM12 10v4M12 17.2v.1"/></svg>
+            If it doesn't connect</h3>
+          <ul>
+            <li>No port listed: try another cable or USB port; some cables only charge.</li>
+            <li>Still nothing: hold <kbd>BOOT</kbd>, tap <kbd>RESET</kbd>, release <kbd>BOOT</kbd>, then try again.</li>
+            <li>Close other programs using the port (serial monitors, the flash helper).</li>
+            <li>After flashing in BOOT mode, tap <kbd>RESET</kbd> once to start the firmware.</li>
+          </ul>
+        </aside>
+      </div>
+    </section>
+
+    <section class="section" id="screens" aria-labelledby="screensTitle">
+      <div class="section-head">
+        <h2 id="screensTitle">What it shows</h2>
+        <p>Screenshots from the display itself.</p>
+      </div>
+      <ul class="gallery" role="list">
+        <li class="shot">
+          <img src="img/weather.png" width="466" height="466" loading="lazy" decoding="async"
+            alt="Weather screen: 18:13 in Quebec, 15 degrees and clear sky, with the forecast for today, Saturday and Sunday">
+          <div><span class="tag">Main screen</span><h3>Forecast and places</h3>
+            <p>Time, temperature and conditions, rain or snow starting or stopping within 2 hours, and 3 days ahead.
+              Up to 4 places: drag up or down to switch. Environment Canada alerts show in place of the city.</p></div>
+        </li>
+        <li class="shot">
+          <img src="img/hourly.png" width="466" height="466" loading="lazy" decoding="async"
+            alt="Hourly view for Friday: a temperature graph from 0 to 24 h, then one row per hour with temperature, chance of rain and wind">
+          <div><span class="tag">Tap a day</span><h3>Hourly view</h3>
+            <p>7 days, each with a temperature graph and one row per hour: temperature, chance of rain and wind.
+              Drag sideways to change day.</p></div>
+        </li>
+        <li class="shot">
+          <img src="img/radar.png" width="466" height="466" loading="lazy" decoding="async"
+            alt="Radar screen: rain over a map of the Quebec City area, with a 100 km ring and the radar time">
+          <div><span class="tag">Swipe left</span><h3>Rain radar with lightning</h3>
+            <p>Environment Canada radar on an OpenStreetMap map, with lightning from the last 10 minutes. Tap to play the
+              last 3 hours; swipe down or up to zoom.</p></div>
+        </li>
+        <li class="shot">
+          <img src="img/extras.png" width="466" height="466" loading="lazy" decoding="async"
+            alt="Extras screen: the sun's arc from 06:45 to 18:22, UV index low, moon in last quarter 61% lit, air quality good">
+          <div><span class="tag">Swipe right</span><h3>Sun, UV, moon and air</h3>
+            <p>The sun's arc from sunrise to sunset, the UV index now and today's high, the moon phase, and the air
+              quality.</p></div>
+        </li>
+        <li class="shot">
+          <img src="img/status.png" width="466" height="466" loading="lazy" decoding="async"
+            alt="Status page: firmware version, Wi-Fi signal and a list of online services, each with a green dot and its response time">
+          <div><span class="tag">Swipe right twice</span><h3>Status page</h3>
+            <p>Firmware version, <span class="nw">Wi-Fi</span> signal, and every online service the display uses: when it last answered, and how
+              fast.</p></div>
+        </li>
+        <li class="shot">
+          <img src="img/settings.png" width="466" height="466" loading="lazy" decoding="async"
+            alt="Settings screen: dim when quiet and wake on pick-up switched on, timing Short, temperature in °C, brightness 83%">
+          <div><span class="tag">Long-press</span><h3>Settings on the display</h3>
+            <p>Dimming, wake on pick-up, brightness, units and language. Location and places are set on your phone,
+              from a QR code.</p></div>
+        </li>
       </ul>
-    </div>
-    <div class="card">
-      <h2>If it doesn't connect</h2>
-      <ul class="plain">
-        <li>No port listed: try another cable or USB port; some cables only charge.</li>
-        <li>Still nothing: hold <kbd>BOOT</kbd>, tap <kbd>RESET</kbd>, release <kbd>BOOT</kbd>, then try again.</li>
-        <li>Close other programs using the port (serial monitors, the flash helper).</li>
-        <li>After flashing in BOOT mode, tap <kbd>RESET</kbd> once to start the firmware.</li>
+      <p class="note" id="radarNote"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><path d="M12 12l6.4-6.4"/></svg>
+        <span>The rain radar uses Environment Canada data, so it covers Canada and the northern US border region.</span></p>
+    </section>
+
+    <section class="section" id="languages" aria-labelledby="langTitle">
+      <div class="section-head">
+        <h2 id="langTitle">In three languages</h2>
+        <p>The display and its phone settings page speak English, French or Inuktitut.</p>
+      </div>
+      <div class="lang-tools">
+        <div class="seg" id="langPick" role="group" aria-label="Screen to compare">
+          <button type="button" aria-pressed="true" data-screen="weather">Weather</button>
+          <button type="button" aria-pressed="false" data-screen="extras">Extras</button>
+          <button type="button" aria-pressed="false" data-screen="settings">Settings</button>
+        </div>
+      </div>
+      <ul class="langs" role="list">
+        <li><figure class="lang">
+          <div class="pic"><img src="img/weather-en.png" width="466" height="466" loading="lazy" decoding="async"
+            data-suffix="-en" data-lang="English" alt="The weather screen in English"></div>
+          <figcaption lang="en">English</figcaption>
+        </figure></li>
+        <li><figure class="lang">
+          <div class="pic"><img src="img/weather-fr.png" width="466" height="466" loading="lazy" decoding="async"
+            data-suffix="-fr" data-lang="French" alt="The weather screen in French"></div>
+          <figcaption><span lang="fr">Français</span><small>French (Canada)</small></figcaption>
+        </figure></li>
+        <li><figure class="lang">
+          <div class="pic"><img src="img/weather-iu.png" width="466" height="466" loading="lazy" decoding="async"
+            data-suffix="-iu" data-lang="Inuktitut" alt="The weather screen in Inuktitut syllabics"></div>
+          <figcaption><span lang="iu-Cans">ᐃᓄᒃᑎᑐᑦ</span><small>Inuktitut <span class="draft">Draft</span></small></figcaption>
+        </figure></li>
       </ul>
-    </div>
-  </section>
+      <p class="lang-note">Switch the language in the <b>Language</b> row of the display's Settings screen (long-press the
+        weather screen), or in the Units card of the phone settings page. The Inuktitut text is a first draft that a
+        fluent speaker hasn't reviewed yet.</p>
+    </section>
 
-  <p class="note" id="radarNote">The rain radar uses Environment Canada data, so it covers Canada and the northern US
-    border region.</p>
-
-  <footer>
-    <p>Source code, releases and documentation:
-      <a href="https://github.com/TheMonkeyz/esp32-s3-weather">github.com/TheMonkeyz/esp32-s3-weather</a>.
-      Downloads for other tools: <a href="https://github.com/TheMonkeyz/esp32-s3-weather/releases">releases</a>.</p>
-    <p>Weather: Open-Meteo. Radar: Environment and Climate Change Canada (GeoMet). Map © OpenStreetMap contributors.
-      Flashing by ESP Web Tools.</p>
-    <p>Firmware © 2026 Laurent Mathieu, <a href="https://github.com/TheMonkeyz/esp32-s3-weather/blob/main/LICENSE">MIT license</a>
-      (<a href="https://github.com/TheMonkeyz/esp32-s3-weather/blob/main/THIRD_PARTY_NOTICES.md">third-party notices</a>).</p>
-  </footer>
+    <section class="section" id="using" aria-labelledby="usingTitle">
+      <div class="section-head">
+        <h2 id="usingTitle">Using it</h2>
+      </div>
+      <ul class="uses" role="list">
+        <li><span class="ic"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="2.5"/><circle cx="12" cy="12" r="7" opacity=".5"/></svg></span>
+          <p>Tap a forecast day for its hourly view; drag sideways for other days.</p></li>
+        <li><span class="ic"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12H5M10 7l-5 5 5 5"/><circle cx="20" cy="12" r="1.2"/></svg></span>
+          <p>Swipe left for the radar; tap to animate the last 3 hours, swipe down or up to zoom.</p></li>
+        <li><span class="ic"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="2"/><circle cx="12" cy="12" r="5.5"/><circle cx="12" cy="12" r="9.5" stroke-dasharray="2.5 3"/></svg></span>
+          <p>Long-press for Settings: screen dimming, units, <span class="nw">Wi-Fi,</span> and the QR code for the phone page (location).</p></li>
+        <li><span class="ic"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg></span>
+          <p>The microphones dim the screen when the room is quiet and wake it on sustained sound.</p></li>
+      </ul>
+    </section>
+  </div>
 </main>
+
+<footer class="wrap">
+  <p>Source code, releases and documentation:
+    <a href="https://github.com/TheMonkeyz/esp32-s3-weather">github.com/TheMonkeyz/esp32-s3-weather</a>.
+    Downloads for other tools: <a href="https://github.com/TheMonkeyz/esp32-s3-weather/releases">releases</a>.</p>
+  <p>Weather: Open-Meteo. Radar: Environment and Climate Change Canada (GeoMet). Map © OpenStreetMap contributors.
+    Flashing by ESP Web Tools.</p>
+  <p>Firmware © 2026 Laurent Mathieu, <a href="https://github.com/TheMonkeyz/esp32-s3-weather/blob/main/LICENSE">MIT license</a>
+    (<a href="https://github.com/TheMonkeyz/esp32-s3-weather/blob/main/THIRD_PARTY_NOTICES.md">third-party notices</a>).
+    Set in Montserrat, the display's font (<a href="fonts/montserrat-OFL.txt">SIL Open Font License</a>).</p>
+</footer>
+
 <script>
-// channels.json is written by tools/make_flasher_site.py: {stable:{version,built,manifest}, beta:{...}|null}
 const $ = id => document.getElementById(id);
-let channels = null;
+
+// Channels and release notes. channels.json and notes.json are written by tools/make_flasher_site.py:
+// channels.json = {stable:{version,built,manifest}, beta:{...}|null}, notes.json = {releases:[{version,date,notes:[str]}]}
+let channels = null, releases = null, current = 'stable';
 function pick(name) {
   const c = channels && channels[name];
   if (!c) return;
+  current = name;
   $('installBtn').setAttribute('manifest', c.manifest);
-  $('ver').innerHTML = 'Firmware <b></b> · built ' + c.built;
-  $('ver').querySelector('b').textContent = c.version;
+  const v = document.createElement('b'), built = document.createElement('span');
+  v.textContent = c.version;
+  built.className = 'nw';
+  built.textContent = 'built ' + c.built;
+  $('ver').replaceChildren('Firmware ', v, ' · ', built);
   $('betaWarn').classList.toggle('on', name === 'beta');
+  showNotes();
+}
+function niceDate(d) {
+  const t = new Date(d + 'T12:00:00Z');
+  return isNaN(t) ? d : t.toLocaleDateString('en-US', {year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC'});
+}
+function showNotes() {
+  const c = channels && channels[current];
+  const r = c && Array.isArray(releases) && releases.find(x => x && x.version === c.version);
+  if (!r || !Array.isArray(r.notes) || !r.notes.length) { $('notes').hidden = true; return; }
+  $('notesVer').textContent = r.version;
+  $('notesChan').textContent = current === 'beta' ? 'Beta' : 'Stable';
+  $('notesChan').className = 'pill ' + current;
+  const t = $('notesDate');
+  t.hidden = !r.date;
+  if (r.date) { t.dateTime = r.date; t.textContent = niceDate(r.date); }
+  $('notesList').replaceChildren(...r.notes.map(n => {
+    const li = document.createElement('li');
+    li.textContent = String(n);
+    return li;
+  }));
+  $('notes').hidden = false;
 }
 fetch('channels.json', {cache: 'no-store'}).then(r => r.json()).then(ch => {
   channels = ch;
@@ -157,7 +565,56 @@ fetch('channels.json', {cache: 'no-store'}).then(r => r.json()).then(ch => {
   document.querySelector(`input[value=${want}]`).checked = true;
   pick(want);
 }).catch(() => { $('ver').textContent = 'Firmware version unavailable'; });
+fetch('notes.json', {cache: 'no-store'}).then(r => r.json()).then(n => {
+  releases = n && n.releases;
+  showNotes();
+}).catch(() => {});
 document.querySelectorAll('input[name=ch]').forEach(r => r.addEventListener('change', () => pick(r.value)));
+
+// Hero: slow crossfade between screens. No auto-cycling with reduced motion; a click on a dot stops it.
+const device = $('device'), shots = [...device.querySelectorAll('img')], dots = [...$('dots').children];
+const still = matchMedia('(prefers-reduced-motion: reduce)');
+let idx = 0, timer = null, chosen = false, hover = false;
+function show(i) {
+  idx = i;
+  shots.forEach((s, k) => s.classList.toggle('on', k === i));
+  dots.forEach((d, k) => d.setAttribute('aria-pressed', k === i));
+  $('shotName').textContent = shots[i].dataset.name;
+  device.style.setProperty('--glow', shots[i].dataset.glow);
+}
+function run() {
+  clearInterval(timer);
+  timer = still.matches || chosen ? null : setInterval(() => { if (!hover && !document.hidden) show((idx + 1) % shots.length); }, 5000);
+}
+dots.forEach((d, k) => d.addEventListener('click', () => { chosen = true; show(k); run(); }));
+device.addEventListener('mouseenter', () => { hover = true; });
+device.addEventListener('mouseleave', () => { hover = false; });
+still.addEventListener('change', run);
+run();
+
+// Languages: the same screen in English, French and Inuktitut.
+const langImgs = [...document.querySelectorAll('.lang img')];
+const screenNames = {weather: 'weather screen', extras: 'extras screen', settings: 'Settings screen'};
+function langState(img, missing) {
+  img.classList.remove('loading');
+  img.closest('.lang').classList.toggle('missing', missing);
+}
+langImgs.forEach(img => {
+  img.addEventListener('load', () => langState(img, false));
+  img.addEventListener('error', () => langState(img, true));
+  if (img.complete && !img.naturalWidth) langState(img, true);
+});
+document.querySelectorAll('#langPick button').forEach(btn => btn.addEventListener('click', () => {
+  const s = btn.dataset.screen;
+  document.querySelectorAll('#langPick button').forEach(b => b.setAttribute('aria-pressed', b === btn));
+  langImgs.forEach(img => {
+    const src = `img/${s}${img.dataset.suffix}.png`;
+    if (img.getAttribute('src') === src) return;
+    img.classList.add('loading');
+    img.src = src;
+    img.alt = `The ${screenNames[s]} in ${img.dataset.lang}${img.dataset.suffix === '-iu' ? ' syllabics' : ''}`;
+  });
+}));
 </script>
 </body>
 </html>
