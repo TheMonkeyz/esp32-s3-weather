@@ -6,6 +6,8 @@
 #include "freertos/task.h"
 #include "esp_https_server.h"
 #include "esp_wifi.h"
+#include "esp_ota_ops.h"
+#include "esp_timer.h"
 #include "esp_system.h"
 #include "esp_log.h"
 #include "esp_heap_caps.h"
@@ -336,6 +338,12 @@ static esp_err_t update_get(httpd_req_t *req)
     cJSON_AddStringToObject(j, "state", ota_state_name(o.state));
     cJSON_AddNumberToObject(j, "progress", o.progress);
     cJSON_AddStringToObject(j, "error", o.error);
+    // A fresh update is "pending verify" until ota.c confirms it (60 s); a restart before that rolls it back.
+    // tools/harness waits for this to turn false before restarting the board.
+    esp_ota_img_states_t st;
+    cJSON_AddBoolToObject(j, "pending_verify", esp_ota_get_state_partition(esp_ota_get_running_partition(), &st) ==
+                                               ESP_OK && st == ESP_OTA_IMG_PENDING_VERIFY);
+    cJSON_AddNumberToObject(j, "uptime_s", (double)(esp_timer_get_time() / 1000000));
     if (o.state == OTA_AVAILABLE) {
         char *notes = heap_caps_malloc(3072, MALLOC_CAP_SPIRAM);
         if (notes) {

@@ -87,10 +87,33 @@ class Board:
         except OSError:
             return ''
 
+    def version_before_restart(self):
+        """Version running now, after waiting for a fresh update to be confirmed. A restart in the first 60 s of an
+        update rolls it back to the previous firmware (seen: the harness tested the old build instead of rc.2)."""
+        try:
+            u = self.api('/api/update')
+        except Exception:
+            return None                                # offline or no API: can't tell, carry on
+        if 'pending_verify' not in u:                  # firmware before v1.10.0-rc.3 can't say: assume just updated
+            print(f'  {u["current"]} does not report whether it is confirmed: waiting 75 s before restarting',
+                  flush=True)
+            time.sleep(75)
+            return u.get('current')
+        if u.get('pending_verify'):
+            wait = max(0, 75 - int(u.get('uptime_s', 0)))
+            print(f'  {u["current"]} was just installed and is not confirmed yet: waiting {wait} s before restarting',
+                  flush=True)
+            time.sleep(wait)
+            u = self.api('/api/update')
+            if u.get('pending_verify'):
+                raise Fail(f'{u["current"]} still not confirmed after {u.get("uptime_s")} s: not restarting it')
+        return u.get('current')
+
     def start_log(self, seconds, flash_bin=None):
         """Restart the board (or flash firmware first) and log for `seconds`. Waits until logging."""
         if self.helper_status() not in ('idle', ''):
             raise Fail(f'flash helper busy ({self.helper_status()})')
+        self.before = None if flash_bin else self.version_before_restart()
         # serial_live.txt goes too: "logging" shows ~2 s before monitor.ps1 recreates it, and the old one would be
         # read as the new boot
         for f in ('flash.done', 'serial_live.txt'):

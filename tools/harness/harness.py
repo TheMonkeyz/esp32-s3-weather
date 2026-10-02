@@ -75,6 +75,7 @@ def main():
     ap.add_argument('--phone', action='store_true', help='wifi_setup: ask for a phone to test Easy Connect fully')
     ap.add_argument('--update-baseline', action='store_true', help='store the measured numbers as the reference')
     ap.add_argument('--minutes', type=int, default=40, help='log window to request from the flash helper')
+    ap.add_argument('--expect', help='fail unless the board runs this version (e.g. v1.10.0-rc.2)')
     opts = ap.parse_args()
     suites = opts.suites or ORDER
     for s in suites:
@@ -96,7 +97,13 @@ def main():
             board.start_log(opts.minutes * 60, opts.flash and os.path.join(ROOT, opts.flash))
             log.wait(r'diag: mark first weather', 90, 'start-up')   # Wi-Fi up and the first forecast shown
             time.sleep(5)
-        board.cmd('ping', r'test: pong', timeout=10)
+        version = board.cmd('ping', r'test: pong (\S+)', timeout=10).group(1)
+        before = getattr(board, 'before', None)
+        if before and version != before:
+            raise Fail(f'the board ran {before} before the restart and {version} after: the bootloader rolled back')
+        if opts.expect and version != opts.expect:
+            raise Fail(f'the board runs {version}, not {opts.expect}')
+        print(f'Testing {version}', flush=True)
     except Fail as e:
         print('Cannot start:', e)
         return 2
@@ -132,7 +139,7 @@ def main():
     failed = [r for r in results if r['status'] != 'pass']
 
     # report
-    lines = [f'# Harness report {time.strftime("%Y-%m-%d %H:%M")}', '',
+    lines = [f'# Harness report {time.strftime("%Y-%m-%d %H:%M")}: {version}', '',
              f'{len(results) - len(failed)}/{len(results)} tests passed, {len(perf_bad)} performance regressions, '
              f'{time.time() - started:.0f} s.', '', '| test | result | time | detail |', '|---|---|---|---|']
     lines += [f'| {r["test"]} | {r["status"]} | {r["seconds"]} s | {r["detail"]} |' for r in results]

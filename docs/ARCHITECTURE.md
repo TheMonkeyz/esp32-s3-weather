@@ -154,7 +154,9 @@ LVGL timer and event callbacks already run inside the lock.
   `esp_https_ota` (begin / perform / finish), progress to the listener, project name must match, restart 2.5 s later.
 - **Rollback**: `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE`. A new image boots `PENDING_VERIFY`; after 60 s running the
   task calls `esp_ota_mark_app_valid_cancel_rollback()`. A reset before that makes the bootloader return to the
-  previous slot. (Needs the new bootloader: one USB flash.)
+  previous slot. (Needs the new bootloader: one USB flash.) `GET /api/update` reports `pending_verify` and
+  `uptime_s` (since v1.10.0-rc.3) so tools don't restart a board during those 60 s: the test harness did once and
+  tested the rolled-back firmware.
 - **UI**: `ui_ota()` from the OTA task: pill at the bottom of the weather screen (tap region y > 408), `scr_update`
   with Install button and progress bar; `GET/POST /api/update` (`channel`, `action: check|install`) for the settings
   page's Firmware card.
