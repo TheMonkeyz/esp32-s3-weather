@@ -12,7 +12,9 @@ Two steps, used by CI (.github/workflows/firmware.yml) and for local previews:
        python3 tools/make_flasher_site.py site --stable dist [--beta dist-beta] [--out _site]
      -> web/flash/* + stable/ (and beta/) each with its images and an ESP Web Tools manifest.json,
         channels.json, which the page reads to show the Stable / Beta picker, and notes.json, the
-        release notes from CHANGELOG.md, which the display shows before installing an update.
+        release notes from CHANGELOG.md, which the display shows before installing an update (and the
+        page shows for the selected version). fonts/ gets the display's font (main/montserrat.ttf) and
+        its license, so the page matches the display.
 
 The images stay separate parts on purpose: a single merged image would also overwrite the NVS
 partition (Wi-Fi credentials, location, settings, the TLS certificate) with 0xFF on every update.
@@ -139,6 +141,9 @@ def cmd_site(a):
     if os.path.exists(a.out):
         shutil.rmtree(a.out)
     shutil.copytree(os.path.join(ROOT, "web", "flash"), a.out)
+    os.makedirs(os.path.join(a.out, "fonts"), exist_ok=True)
+    for name in ("montserrat.ttf", "montserrat-OFL.txt"):        # the display's font (SIL OFL), for the page
+        shutil.copy2(os.path.join(ROOT, "main", name), os.path.join(a.out, "fonts", name))
     print(f"Site in {a.out}:")
     channels = {"stable": add_channel(a.out, "stable", a.stable), "beta": None}
     if a.beta:
