@@ -167,7 +167,8 @@ How it works:
   `press X Y [ms]`, `swipe left|right|up|down`, `drag X1 Y1 X2 Y2 [ms]`, `wake`, `presence`, `wifi
   status|offline|offline-boot|online`, `portal windows-quiet`, `fps [reset]` (frames and animation fps since the
   reset), `where` (display breadcrumbs, takes no lock), `memspeed` (PSRAM / internal copy speeds), `heap`, `bench`,
-  `profile` (§7, profiler builds only), `reboot`, `help`. Answers are log lines `test: …`. Simulated touches enter at the
+  `profile` (§7, profiler builds only), `pictest` (slide.c's picture of the screen shown against a fresh rendering:
+  `slide: pictest rows_differ=N first=Y`), `reboot`, `help`. Answers are log lines `test: …`. Simulated touches enter at the
   touch controller read (`touch_inject()`), so wake-up, long-press and gestures run the real code. `wifi offline`
   points the station at a network that doesn't exist (saved credentials untouched); `offline-boot` does it for the
   next boot only (flag in RTC memory) so the real start-up path runs.
@@ -217,6 +218,16 @@ Pitfalls met while building it:
   place "drag up" bounced and the check still passed (October 2). `navigation` first goes back to the first place.
 - `swipe_fps` counts every frame less than 250 ms apart, LVGL's redraws after a move included (a new place's
   data: 30 fps for a 57 fps drag). `drag_fps` (from the first frame) and `drag_start_ms` are the drag alone.
+  `drag_start_ms` isn't checked when the clock's minute changed in the 6 s before (every hidden picture is out of
+  date then: a known ~0.13 s, noted in the report).
+- List scrolls: `scroll_frame_ms` (from slide.c's `scroll:` line: render + move + send per frame) is the number to
+  watch; their `swipe_fps` includes the slow end of the flick (less than a pixel per frame). After the drags and
+  each list scroll the harness runs `pictest`: the picture of the screen must equal the screen.
+- **Checking pictures pixel by pixel:** `GET /api/snapshot?screen=picture` (slide.c's picture of the screen shown)
+  against `?screen=current` (a fresh rendering). Parse the BMPs and compare rows (no PIL on this PC: plain
+  `struct`/`zlib`, `tools/snapshot.py`'s `bmp_to_png`). It found the smeared hourly graph after a bounce. On a
+  live screen (the status page's ages tick every second) two snapshots differ anyway: use `pictest`, which compares
+  at one instant.
 - **Don't restart a board in the first 60 s after an update:** the new firmware is still "pending verify" and the
   bootloader rolls back to the previous one. On October 1 the harness restarted rc.2 right after the user installed
   it, then tested the old build and reported a pass. Now: `GET /api/update` has `pending_verify` and `uptime_s`; the

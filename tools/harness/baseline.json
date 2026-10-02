@@ -102,6 +102,16 @@
   "max": 95.5,
   "ref": 76.4
  },
+ "scroll_frame_ms.scroll_hourly_list": {
+  "max": 25,
+  "note": "list scroll by moving the picture (slide.c): render the new rows + move and send",
+  "ref": 19.1
+ },
+ "scroll_frame_ms.scroll_settings": {
+  "max": 19,
+  "note": "list scroll by moving the picture (slide.c)",
+  "ref": 14.5
+ },
  "swipe_fps.drag_hourly_day": {
   "min": 35,
   "note": "v1.10.1-perf.33, one run; generous limit",
@@ -128,13 +138,13 @@
   "ref": 31.6
  },
  "swipe_fps.scroll_hourly_list": {
-  "min": 12,
-  "note": "v1.10.1-perf.33, one run; generous limit",
-  "ref": 17.5
+  "min": 25,
+  "note": "frames < 250 ms apart, the slow end of the flick included (19 ms frames while moving); LVGL scrolled it at 17.5",
+  "ref": 36.0
  },
  "swipe_fps.scroll_settings": {
-  "min": 14,
-  "note": "v1.10.1-perf.33, one run; generous limit",
-  "ref": 21.9
+  "min": 35,
+  "note": "frames < 250 ms apart, the end of the flick included; LVGL scrolled it at 21.9",
+  "ref": 51.9
  }
 }

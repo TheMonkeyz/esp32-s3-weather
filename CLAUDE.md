@@ -157,6 +157,11 @@ Windows build gets both from `main/idf_component.yml`. `components/dns_server` *
     (h) A drag must decide its axis like LVGL (larger axis after 16 px): a 2:1 rule missed curved swipes on the
     round screen. Check drags with the harness (`navigation`, `perf`), then ask the user to try them: the
     harness's straight synthetic drags passed while real swipes were still missed.
+    (i) **List scrolls** (v1.10.1-rc.4) move the picture of the screen shown and render only the new rows, so the
+    picture must equal the screen: the display's flush hook keeps it so, `pictest` and the `picture` snapshot check
+    it. `lv_obj_scroll_to_y()` silently stops at the ends: past them the list didn't move while the picture did (the
+    user saw the hourly graph smeared). Use `lv_obj_scroll_by()`. Recognise drags in the touch read, before LVGL
+    handles it, or LVGL's own scroll starts first on a flick.
 
 - Internal RAM ran out silently (10 KB free, 0 KB min ever) because LVGL's small allocations went to internal RAM
   first. Fixed with `lvgl_mem.c` (LVGL heap in PSRAM). Font kerning cost 71% of render time; fonts now use

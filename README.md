@@ -474,7 +474,7 @@ main/
   display.c     CO5300 QSPI panel driver + LVGL display port (flush, rounder, LVGL task + mutex, raw frames)
   touch.c       CST9217 I2C touch -> LVGL pointer
   ui.c          weather screen, hourly view, message/QR screens, settings overlay, swipe handling
-  slide.c       moves between screens, places and days drawn as sliding pictures (follow the finger, ~60 fps)
+  slide.c       moves between screens, places and days, and list scrolls, drawn from pictures (follow the finger, ~60 fps)
   pager.c       full-screen pages (places, days)
   png_rows.c    row-by-row PNG decoding with the ROM's inflate (radar frames, lightning, map tiles)
   radar.c       radar screen: basemap tiles + flash cache, GeoMet frames, animation

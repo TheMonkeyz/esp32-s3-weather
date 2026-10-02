@@ -117,15 +117,15 @@ bool slide_picture(lv_obj_t *scr, lv_draw_buf_t *dst) { return slide_picture_row
 // Rows y0..y1 of a screen into dst (a whole-screen RGB565 buffer): lv_snapshot_take_to_draw_buf() clipped to those
 // rows, so a picture can be rendered a strip at a time (a whole one blocks LVGL for 60-180 ms: a quick swipe that
 // started and ended meanwhile was never seen).
-bool slide_picture_rows(lv_obj_t *scr, lv_draw_buf_t *dst, int y0, int y1)
+static bool render_rows(lv_obj_t *scr, lv_draw_buf_t *dst, int top, int y0, int y1)
 {
     lv_obj_update_layout(scr);
-    lv_area_t rows = {0, y0, DISP_W - 1, y1};
-    lv_draw_buf_clear(dst, &rows);
+    lv_area_t rows = {0, y0, DISP_W - 1, y1}, in_buf = {0, y0 - top, DISP_W - 1, y1 - top};
+    lv_draw_buf_clear(dst, &in_buf);
     lv_layer_t layer;
     lv_memzero(&layer, sizeof(layer));
     layer.draw_buf = dst;
-    layer.buf_area = (lv_area_t){0, 0, DISP_W - 1, DISP_H - 1};
+    layer.buf_area = (lv_area_t){0, top, DISP_W - 1, top + dst->header.h - 1};
     layer.color_format = LV_COLOR_FORMAT_RGB565;
     layer._clip_area = rows;
     layer.phy_clip_area = rows;
@@ -142,6 +142,8 @@ bool slide_picture_rows(lv_obj_t *scr, lv_draw_buf_t *dst, int y0, int y1)
     lv_refr_set_disp_refreshing(old);
     return true;
 }
+
+bool slide_picture_rows(lv_obj_t *scr, lv_draw_buf_t *dst, int y0, int y1) { return render_rows(scr, dst, 0, y0, y1); }
 
 /* ---------- picture cache ----------
  * Rendering a picture takes 50-130 ms: done at the start of a drag, the screen lagged the finger by ~0.1 s. So the
@@ -165,7 +167,8 @@ static slide_key_cb_t key_cb;
 static bool painting;                    // a page's picture: its pager moves there and back, not a change
 static bool committing;                  // a drag's switch: the pager scrolls to the new page, no content changes
 static int64_t last_change;              // last invalidation of the screen shown
-static const void *just_loaded;          // screen shown by a slide: its first repaint is that same picture
+static const void *inv_key;              // the screen shown when LVGL was last asked to redraw...
+static bool inv_pending;                 // ...and that redraw isn't on the panel yet
 
 // Painting a page moves its pager there and back: those invalidations are not a change of the screen, and LVGL must
 // not repaint for them (the panel still shows the same thing): its redraw list is put back as it was
@@ -229,15 +232,23 @@ static lv_draw_buf_t *get(const void *key, bool render, bool force, const void *
 lv_draw_buf_t *slide_cache_get(const void *key, bool render) { return get(key, render, false, NULL); }
 
 
+static void mark(int i)
+{
+    if (!cache[i].dirty) { cache[i].dirty = true; cache[i].dirty_since = esp_timer_get_time(); }
+    cache[i].rows = 0;                                   // restart one in progress
+}
+
 void slide_cache_dirty(const void *key)
 {
-    for (int i = 0; i < CACHE_N; i++) {
-        if ((key && cache[i].key != key) || cache[i].dirty) continue;
-        cache[i].dirty = true;
-        cache[i].dirty_since = esp_timer_get_time();
-        cache[i].rows = 0;
-    }
-    for (int i = 0; i < CACHE_N; i++) if (!key || cache[i].key == key) cache[i].rows = 0;   // restart one in progress
+    for (int i = 0; i < CACHE_N; i++) if (!key || cache[i].key == key) mark(i);
+}
+
+static const void *key_of(lv_obj_t *scr);
+
+void slide_cache_dirty_hidden(void)
+{
+    const void *shown = key_of(lv_screen_active());
+    for (int i = 0; i < CACHE_N; i++) if (cache[i].key && cache[i].key != shown) mark(i);
 }
 
 
@@ -280,19 +291,39 @@ bool slide_cache_idle_work(int quiet_ms)
     return false;
 }
 
-// The screen shown changed (any redraw): its picture is out of date
 static const void *key_of(lv_obj_t *scr) { return key_cb ? key_cb(scr) : scr; }
+
+/* The picture of the screen shown follows the panel: every area LVGL sends (display flush hook) is copied into it, so
+ * a redraw of the screen shown doesn't make it out of date (it did: after any change, the clock's minute included,
+ * the next drag or list scroll waited ~0.1 s for a new one). Only when the screen shown changes before LVGL has drawn
+ * its last redraw (a screen load right after a change) does that redraw miss the picture: then it is marked. */
+static void flushed(const lv_area_t *a, const uint8_t *px)
+{
+    if (painting) return;
+    int e = find(key_of(lv_screen_active()));
+    if (e < 0 || !cache[e].buf) return;
+    lv_draw_buf_t *b = cache[e].buf;
+    int w = a->x2 - a->x1 + 1, x1 = a->x1 < 0 ? 0 : a->x1, x2 = a->x2 > DISP_W - 1 ? DISP_W - 1 : a->x2;
+    for (int y = a->y1 < 0 ? 0 : a->y1; y <= a->y2 && y < DISP_H; y++)
+        memcpy(b->data + y * b->header.stride + x1 * 2, px + ((y - a->y1) * w + x1 - a->x1) * 2, (x2 - x1 + 1) * 2);
+}
 
 static void invalidated(lv_event_t *e)
 {
     if (painting) return;
-    if (committing) { last_change = esp_timer_get_time(); return; }
-    const void *k = key_of(lv_screen_active());
     last_change = esp_timer_get_time();
-    if (k != just_loaded) slide_cache_dirty(k);
+    if (committing) return;
+    const void *k = key_of(lv_screen_active());
+    if (inv_pending && inv_key != k) slide_cache_dirty(inv_key);   // shown no more: its last redraw never came
+    inv_key = k;
+    inv_pending = true;
 }
 
-static void rendered(lv_event_t *e) { just_loaded = NULL; }
+static void rendered(lv_event_t *e)
+{
+    if (inv_pending && inv_key != key_of(lv_screen_active())) slide_cache_dirty(inv_key);
+    inv_pending = false;
+}
 
 void slide_cache_init(slide_paint_cb_t paint, slide_key_cb_t key)
 {
@@ -301,12 +332,12 @@ void slide_cache_init(slide_paint_cb_t paint, slide_key_cb_t key)
     lv_display_t *d = lv_display_get_default();
     lv_display_add_event_cb(d, invalidated, LV_EVENT_INVALIDATE_AREA, NULL);
     lv_display_add_event_cb(d, rendered, LV_EVENT_RENDER_READY, NULL);
+    display_set_flush_hook(flushed);
 }
 
-// After a slide: the real screen goes back up; LVGL repaints all of it, but it's the picture just shown
+// After a slide: the real screen goes back up; LVGL repaints all of it (into its picture too: the same)
 static void shown(lv_obj_t *scr)
 {
-    just_loaded = key_of(scr);
     lv_screen_load(scr);
     lv_obj_invalidate(scr);
 }
@@ -376,7 +407,9 @@ static struct {
     void *user;
 } drag;
 
-static bool req_pending(void) { return req.queued || drag.queued; }
+static struct { lv_obj_t *list; int y0, y1; int64_t t0, t1; bool queued; } scroll;   // a list scroll (below)
+
+static bool req_pending(void) { return req.queued || drag.queued || scroll.queued; }
 
 bool slide_screen_busy(void) { return req_pending() || touch_idle_ms() < 500; }
 
@@ -485,7 +518,6 @@ static void drag_run(void *unused)
     int64_t t1 = esp_timer_get_time();
     slide_phase = 16;
     if ((go || blind) && drag.commit) {
-        just_loaded = nkey[si];                              // its picture is what the panel shows now
         // The switch scrolls the pager (SCROLL_BEGIN, layout): LVGL redraws the page being left, whose content didn't
         // change. Counted as a change, its picture went out of date at every switch, and a drag back soon after
         // waited ~0.2 s for it. Content changes made meanwhile still mark their pictures (slide_cache_dirty).
@@ -494,7 +526,6 @@ static void drag_run(void *unused)
         committing = false;
         lv_obj_invalidate(lv_screen_active());
     } else {
-        just_loaded = ckey;
         lv_obj_invalidate(cur);
     }
     touch_resync(true);
@@ -508,4 +539,278 @@ static void drag_run(void *unused)
                   (t1 - t0) / 1000, go || blind ? (side < 0 ? "to prev" : "to next") : "back");
     drag.queued = false;
     slide_phase = 0;
+}
+
+/* ---------- list scrolling ----------
+ * LVGL redraws all of a scrolling list for every frame (35-50 ms: 17-22 fps). Here each frame moves the rows already
+ * on screen within the picture of the screen shown (which matches the panel, see flushed()), has LVGL render only the
+ * rows that come into view, and sends just the list's rectangle to the panel. LVGL's own scroll position is kept up to
+ * date (lv_obj_scroll_by) so it renders those rows right and carries on from there afterwards; its redraw requests
+ * are dropped at the end (the panel and the picture already show the result). Like LVGL: the list follows the finger,
+ * goes on after a flick and slows down, resists past the ends and springs back; a touch stops it. */
+
+// The scrollable object under x,y with somewhere to scroll vertically, or NULL
+lv_obj_t *slide_scroll_target(lv_obj_t *scr, int x, int y)
+{
+    lv_point_t p = {x, y};
+    for (lv_obj_t *o = lv_indev_search_obj(scr, &p); o && o != scr; o = lv_obj_get_parent(o)) {
+        if (!lv_obj_has_flag(o, LV_OBJ_FLAG_SCROLLABLE) || !(lv_obj_get_scroll_dir(o) & LV_DIR_VER)) continue;
+        if (lv_obj_get_scroll_top(o) > 0 || lv_obj_get_scroll_bottom(o) > 0) return o;
+    }
+    return NULL;
+}
+
+static void scroll_run(void *unused);
+
+bool slide_scroll(lv_obj_t *list, int y0, int64_t t0, int y1)
+{
+    if (req_pending()) return false;
+    int e = find(key_of(lv_screen_active()));
+    if (e < 0 || cache[e].dirty || !cache[e].buf) return false;   // no exact picture of the screen: LVGL scrolls
+    scroll.list = list;
+    scroll.y0 = y0;
+    scroll.t0 = t0;
+    scroll.y1 = y1;
+    scroll.t1 = esp_timer_get_time();
+    scroll.queued = true;
+    lv_async_call(scroll_run, NULL);
+    return true;
+}
+
+static void scroll_fill(int x0, int w, int y0, int n, void *dst, void *user)
+{
+    const lv_draw_buf_t *p = user;
+    uint8_t *d = dst;
+    for (int y = y0; y < y0 + n; y++, d += w * 2) copy_swap(d, p->data + y * p->header.stride + x0 * 2, w);
+}
+
+typedef struct {
+    lv_obj_t *scr, *list;
+    lv_draw_buf_t *pic;                  // the screen shown
+    lv_draw_buf_t *strip;                // the rows coming into view, rendered before the frame is sent
+    int d, in0, in1;                     // this frame: rows move by d (> 0: up); rows in0..in1 come from the strip
+    lv_area_t r;                         // the list on screen: the rows that move
+    int shown;                           // the scroll position the picture shows
+    int frames;
+    int64_t us_move, us_render, us_send; // time per part (log)
+} scroller_t;
+
+// One pass per frame: each row of the list area is moved within the picture (or taken from the strip) and sent.
+// Moving rows down in place needs the bottom rows first: then the bands go bottom up and each band's rows too.
+static void scroll_move_fill(int x0, int w, int y0, int n, void *dst, void *user)
+{
+    scroller_t *s = user;
+    const lv_area_t *r = &s->r;
+    uint32_t st = s->pic->header.stride, lw = lv_area_get_width(r) * 2;
+    uint8_t *pic = s->pic->data;
+    for (int i = 0; i < n; i++) {
+        int y = s->d < 0 ? y0 + n - 1 - i : y0 + i;
+        if (y >= r->y1 && y <= r->y2) {
+            const uint8_t *src = y >= s->in0 && y <= s->in1 ? s->strip->data + (y - s->in0) * s->strip->header.stride
+                                                            : pic + (y + s->d) * st;
+            memcpy(pic + y * st + r->x1 * 2, src + r->x1 * 2, lw);
+        }
+        copy_swap((uint8_t *)dst + (y - y0) * w * 2, pic + y * st + x0 * 2, w);
+    }
+}
+
+// Scroll to position `want`: LVGL's state, the picture (moved rows + rendered new ones), the panel
+static void scroll_step(scroller_t *s, int want)
+{
+    int d = want - s->shown, h = lv_area_get_height(&s->r);
+    if (!d) return;
+    // lv_obj_scroll_by: lv_obj_scroll_to_y() stops at the ends, and past them (pulled, springing back) the picture
+    // moved while the list didn't: the rows rendered for it repeated the edge (smeared graph labels, a doubled row)
+    lv_obj_scroll_by(s->list, 0, lv_obj_get_scroll_y(s->list) - want, LV_ANIM_OFF);
+    const lv_area_t *r = &s->r;
+    int64_t t0 = esp_timer_get_time(), t1 = t0, t2;
+    if (abs(d) < h && s->strip && abs(d) <= (int)s->strip->header.h) {
+        // The rows coming in (at the bottom when the content goes up), rendered into the strip; then one pass
+        s->d = d;
+        s->in0 = d > 0 ? r->y2 - d + 1 : r->y1;
+        s->in1 = d > 0 ? r->y2 : r->y1 - d - 1;
+        render_rows(s->scr, s->strip, s->in0, s->in0, s->in1);
+        t2 = esp_timer_get_time();
+        display_raw_area(r->x1, r->y1, r->x2, r->y2, d < 0, scroll_move_fill, s);
+    } else {                                             // a jump (or no strip): the whole list, then send
+        if (abs(d) >= h) render_rows(s->scr, s->pic, 0, r->y1, r->y2);
+        else {
+            uint8_t *base = s->pic->data + r->x1 * 2;
+            uint32_t st = s->pic->header.stride, w = lv_area_get_width(r) * 2;
+            if (d > 0) for (int y = r->y1; y <= r->y2 - d; y++) memcpy(base + y * st, base + (y + d) * st, w);
+            else for (int y = r->y2; y >= r->y1 - d; y--) memcpy(base + y * st, base + (y + d) * st, w);
+            t1 = esp_timer_get_time();
+            render_rows(s->scr, s->pic, 0, d > 0 ? r->y2 - d + 1 : r->y1, d > 0 ? r->y2 : r->y1 - d - 1);
+        }
+        t2 = esp_timer_get_time();
+        display_raw_area(r->x1, r->y1, r->x2, r->y2, false, scroll_fill, s->pic);
+    }
+    s->us_move += t1 - t0;
+    s->us_render += t2 - t1;
+    s->us_send += esp_timer_get_time() - t2;
+    s->shown = want;
+    s->frames++;
+}
+
+static void scroll_run(void *unused)
+{
+    scroller_t s = { .scr = lv_screen_active(), .list = scroll.list };
+    lv_display_t *disp = lv_display_get_default();
+    int e = find(key_of(s.scr));
+    slide_phase = 21;
+    if (e < 0 || cache[e].dirty || !lv_obj_is_valid(s.list)) { scroll.queued = false; slide_phase = 0; return; }
+    s.pic = cache[e].buf;
+    s.strip = lv_draw_buf_create(DISP_W, 96, LV_COLOR_FORMAT_RGB565, 0);   // 87 KB; NULL: the slower path
+    int64_t t0 = esp_timer_get_time();
+    // LVGL lets go of the touch (the row pressed under the finger, its own scroll if it had begun) and draws that now:
+    // to the panel and, through flushed(), into the picture
+    lv_indev_t *in = lv_indev_get_next(NULL);
+    lv_indev_reset(in, NULL);
+    lv_refr_now(disp);
+    uint32_t inv0 = disp->inv_p;
+    painting = true;                                     // from here the picture is kept up to date by this code
+    lv_obj_get_coords(s.list, &s.r);
+    lv_area_t screen = {0, 0, DISP_W - 1, DISP_H - 1};
+    lv_area_intersect(&s.r, &s.r, &screen);
+    const int H = lv_area_get_height(&s.r);
+    s.shown = lv_obj_get_scroll_y(s.list);
+    const int lo = s.shown - lv_obj_get_scroll_top(s.list), hi = s.shown + lv_obj_get_scroll_bottom(s.list);
+    const int over = H / 5;                              // how far past an end it can be pulled
+    slide_phase = 22;
+
+    int ref_y = scroll.y1, ref_pos = s.shown, pos = s.shown, fy = scroll.y1, errs = 0, moved = 0;
+    float fpos = pos, v = 0;
+    struct { int64_t t; int p; } smp[8];                 // finger samples (time, position) for the flick speed:
+    smp[0].t = scroll.t0;                                // the press and the 16 px that made it a scroll come first
+    smp[0].p = ref_pos + (scroll.y1 - scroll.y0);        // (a flick can be over by now)
+    smp[1].t = scroll.t1;
+    smp[1].p = ref_pos;
+    int ns = 2;
+    bool down = true;
+    int64_t t = esp_timer_get_time();
+    for (;;) {
+        int x, y, r = touch_get(&x, &y);
+        int64_t now = esp_timer_get_time();
+        if (down) {
+            if (r == 0 || (r < 0 && ++errs >= 5)) {      // lifted (5 silent reads: the chip NACKs when idle)
+                down = false;
+                v = 0;                                   // speed over the last ~80 ms (0 if the finger stopped)
+                int nk = (ns - 1) % 8;
+                for (int i = ns - 2; i >= 0 && i >= ns - 8; i--) {
+                    int k = i % 8;
+                    int64_t span = smp[nk].t - smp[k].t;
+                    if (span > 80000) break;
+                    if (span >= 10000) v = (float)(smp[nk].p - smp[k].p) / (span / 1000.0f);
+                }
+                if (now - smp[nk].t > 80000) v = 0;
+                fpos = pos;
+                t = now;
+                continue;
+            }
+            if (r > 0) { fy = y; errs = 0; }            // (a read error: keep the last point)
+            int raw = ref_pos + (ref_y - fy);            // the content follows the finger
+            if (!ns || now - smp[(ns - 1) % 8].t >= 8000) { smp[ns % 8].t = now; smp[ns % 8].p = raw; ns++; }
+            int want = raw < lo ? lo - (lo - raw) / 3 : raw > hi ? hi + (raw - hi) / 3 : raw;   // resists past an end
+            if (want < lo - over) want = lo - over;
+            if (want > hi + over) want = hi + over;
+            if (want == s.shown) { vTaskDelay(1); continue; }
+            moved += abs(want - pos);
+            pos = want;
+            scroll_step(&s, pos);
+            continue;
+        }
+        if (r > 0) {                                     // touched while moving: stop, follow the finger again
+            down = true;
+            errs = 0;
+            ref_y = fy = y;
+            ref_pos = pos;
+            ns = 0;
+            continue;
+        }
+        float dt = (now - t) / 1000.0f;
+        t = now;
+        bool past = pos < lo || pos > hi;
+        if (past) v *= expf(-dt / 30.0f);                // past an end: brake hard...
+        else v *= expf(-dt / 300.0f);                    // a flick goes on ~v x 300 ms, as LVGL's (10% per frame)
+        if (past ? fabsf(v) < 0.1f : fabsf(v) < 0.03f) {
+            if (!past) break;
+            // ...then spring back to the end (ease out, 220 ms)
+            int from = pos, to = pos < lo ? lo : hi;
+            int64_t start = esp_timer_get_time();
+            for (;;) {
+                float k = (esp_timer_get_time() - start) / 220000.0f;
+                if (k > 1) k = 1;
+                float ease = 1 - (1 - k) * (1 - k) * (1 - k);
+                pos = from + (int)((to - from) * ease);
+                scroll_step(&s, pos);
+                if (k >= 1) break;
+            }
+            break;
+        }
+        fpos += v * dt;
+        if (fpos < lo - over) { fpos = lo - over; v = 0; }
+        if (fpos > hi + over) { fpos = hi + over; v = 0; }
+        if ((int)fpos == pos) { vTaskDelay(1); continue; }
+        moved += abs((int)fpos - pos);
+        pos = (int)fpos;
+        scroll_step(&s, pos);
+    }
+    painting = false;
+    disp->inv_p = inv0;                                  // LVGL's redraw requests for the list: already on the panel
+    if (s.strip) lv_draw_buf_destroy(s.strip);
+    last_change = esp_timer_get_time();
+    touch_resync(true);
+    int64_t t1 = esp_timer_get_time();
+    int f = s.frames ? s.frames : 1;
+    ESP_LOGI(TAG, "scroll: %d frames in %lld ms, moved %d px, now at %d of %d..%d; per frame: move %.1f, render %.1f, "
+             "send %.1f ms", s.frames, (t1 - t0) / 1000, moved, pos, lo, hi, s.us_move / 1000.0f / f,
+             s.us_render / 1000.0f / f, s.us_send / 1000.0f / f);
+    scroll.queued = false;
+    slide_phase = 0;
+}
+
+// Test console "pictest": the picture of the screen shown against a fresh rendering, 32 rows at a time. Returns the
+// number of rows that differ (first one in *first), -1 without a picture, -2 without memory, -3 out of date.
+static int picture_check(int *first)
+{
+    *first = -1;
+    lv_refr_now(NULL);                                   // pending redraws first (a live screen: the status ages)
+    int e = find(key_of(lv_screen_active()));
+    if (e < 0 || !cache[e].buf) return -1;
+    if (cache[e].dirty) return -3;
+    lv_draw_buf_t *strip = lv_draw_buf_create(DISP_W, 32, LV_COLOR_FORMAT_RGB565, 0);
+    if (!strip) return -2;
+    lv_display_t *disp = lv_display_get_default();
+    uint32_t inv0 = disp->inv_p;
+    painting = true;
+    int bad = 0;
+    for (int y0 = 0; y0 < DISP_H; y0 += 32) {
+        int y1 = y0 + 31 > DISP_H - 1 ? DISP_H - 1 : y0 + 31;
+        render_rows(lv_screen_active(), strip, y0, y0, y1);
+        for (int y = y0; y <= y1; y++) {
+            if (!memcmp(strip->data + (y - y0) * strip->header.stride, cache[e].buf->data + y * cache[e].buf->header.stride,
+                        DISP_W * 2)) continue;
+            if (*first < 0) *first = y;
+            bad++;
+        }
+    }
+    painting = false;
+    disp->inv_p = inv0;
+    lv_draw_buf_destroy(strip);
+    return bad;
+}
+
+static void check_cb(void *unused)
+{
+    int first, bad = picture_check(&first);
+    ESP_LOGI(TAG, "pictest rows_differ=%d first=%d", bad, first);
+}
+
+void slide_picture_check_async(void) { lv_async_call(check_cb, NULL); }   // in the LVGL task (~8 KB of stack)
+
+// Snapshot "picture": a copy of the picture of the screen shown, to compare with the screen (tools/snapshot.py)
+lv_draw_buf_t *slide_picture_copy(void)
+{
+    int e = find(key_of(lv_screen_active()));
+    return e < 0 || !cache[e].buf ? NULL : lv_draw_buf_dup(cache[e].buf);
 }

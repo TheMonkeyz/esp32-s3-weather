@@ -105,35 +105,42 @@ static bool raw_wait(void)
     return false;
 }
 
-void display_raw_frame(display_fill_cb_t fill, void *user)
+void display_raw_area(int x0, int y0, int x1, int y1, bool bottom_up, display_area_fill_cb_t fill, void *user)
 {
+    x0 &= ~1; y0 &= ~1; x1 |= 1; y1 |= 1;                 // the CO5300's even start / odd end (as the rounder)
+    if (x0 < 0) x0 = 0;
+    if (y0 < 0) y0 = 0;
+    if (x1 > DISP_W - 1) x1 = DISP_W - 1;
+    if (y1 > DISP_H - 1) y1 = DISP_H - 1;
+    const int w = x1 - x0 + 1, rows = (DISP_W * BUF_LINES / w) & ~1;   // a narrow area: more rows per band
     raw_phase = 1;
     for (int i = 0; i < 100 && __atomic_load_n(&lvgl_inflight, __ATOMIC_ACQUIRE) > 0; i++) vTaskDelay(1);   // LVGL's last band still going out
     while (xSemaphoreTake(raw_done, 0) == pdTRUE) {}                     // no stale tokens
     raw_mode = true;
     void *bufs[2] = {buf1, buf2};
     int inflight = 0;
-    for (int y = 0, k = 0; y < DISP_H; y += BUF_LINES, k ^= 1) {
-        int n = DISP_H - y < BUF_LINES ? DISP_H - y : BUF_LINES;
+    const int last = y0 + (y1 - y0) / rows * rows;       // first row of the last band
+    for (int y = bottom_up ? last : y0, k = 0; bottom_up ? y >= y0 : y <= y1; y += bottom_up ? -rows : rows, k ^= 1) {
+        int n = y1 + 1 - y < rows ? y1 + 1 - y : rows;
         raw_band = y;
         raw_phase = 2;
-        fill(y, n, bufs[k], user);                        // while the previous band is still going out
+        fill(x0, w, y, n, bufs[k], user);                 // while the previous band is still going out
         raw_phase = 3;
         // No esp_lcd call while a transfer is in flight: its tx_param/tx_color take the bus and then wait for the
         // queued transfer, and called during a transfer (a band fills in ~0.5 ms, sends in ~0.75 ms) they hung for
         // good, a few frames in (breadcrumbs: raw_phase 3). LVGL's path rarely lands there (bands render in ~4 ms).
         if (inflight) { if (!raw_wait()) break; inflight--; }
-        int x1 = X_GAP, x2 = DISP_W - 1 + X_GAP, y2 = y + n - 1;
-        uint8_t col[4] = {x1 >> 8, x1 & 0xFF, x2 >> 8, x2 & 0xFF};
+        int cx1 = x0 + X_GAP, cx2 = x1 + X_GAP, y2 = y + n - 1;
+        uint8_t col[4] = {cx1 >> 8, cx1 & 0xFF, cx2 >> 8, cx2 & 0xFF};
         uint8_t row[4] = {y >> 8, y & 0xFF, y2 >> 8, y2 & 0xFF};
         lcd_cmd(0x2A, col, 4);
         lcd_cmd(0x2B, row, 4);
         raw_phase = 4;
-        esp_lcd_panel_io_tx_color(io, PIXELS, bufs[k], DISP_W * n * 2);
+        esp_lcd_panel_io_tx_color(io, PIXELS, bufs[k], w * n * 2);
         raw_phase = 5;
         inflight++;
-        st.pixels += DISP_W * n;
-        tst.pixels += DISP_W * n;
+        st.pixels += w * n;
+        tst.pixels += w * n;
     }
     raw_phase = 6;
     while (inflight-- > 0) if (!raw_wait()) break;
@@ -145,7 +152,24 @@ void display_raw_frame(display_fill_cb_t fill, void *user)
     last_render = now;
 }
 
+typedef struct { display_fill_cb_t fill; void *user; } full_t;
+
+static void full_fill(int x0, int w, int y0, int n, void *dst, void *user)
+{
+    const full_t *f = user;
+    f->fill(y0, n, dst, f->user);
+}
+
+void display_raw_frame(display_fill_cb_t fill, void *user)
+{
+    full_t f = { fill, user };
+    display_raw_area(0, 0, DISP_W - 1, DISP_H - 1, false, full_fill, &f);
+}
+
 static bool bench_no_panel;          // diag bench: render only, don't send to the panel
+static display_flush_hook_t flush_hook;
+
+void display_set_flush_hook(display_flush_hook_t hook) { flush_hook = hook; }
 
 void display_bench_no_panel(bool on) { bench_no_panel = on; }
 
@@ -160,6 +184,7 @@ static void flush_cb(lv_display_t *disp, const lv_area_t *a, uint8_t *px)
     uint32_t n = lv_area_get_size(a);
     st.pixels += n;
     tst.pixels += n;
+    if (flush_hook) flush_hook(a, px);                    // before the swap: LVGL's own byte order
     lv_draw_sw_rgb565_swap(px, n);
     __atomic_fetch_add(&lvgl_inflight, 1, __ATOMIC_ACQ_REL);   // the transfer-done interrupt may run on the other core
     esp_lcd_panel_io_tx_color(io, PIXELS, px, n * 2);

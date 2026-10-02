@@ -44,7 +44,17 @@ typedef const void *(*slide_key_cb_t)(lv_obj_t *screen);
 void slide_cache_init(slide_paint_cb_t paint, slide_key_cb_t key);
 void slide_cache_keep(const void *const *keys, int n);
 void slide_cache_dirty(const void *key);
+void slide_cache_dirty_hidden(void);   // every picture but the screen shown's (its changes reach it as LVGL draws them)
 bool slide_cache_idle_work(int quiet_ms);
 lv_draw_buf_t *slide_cache_get(const void *key, bool render);   // a clean picture, rendered now if `render`
 bool slide_picture(lv_obj_t *scr, lv_draw_buf_t *dst);          // a whole screen into dst
 bool slide_picture_rows(lv_obj_t *scr, lv_draw_buf_t *dst, int y0, int y1);   // only rows y0..y1 (paint callbacks)
+
+// List scrolling drawn by moving the picture of the screen shown (see slide.c): target = the scrollable object under
+// x,y (NULL: none); slide_scroll() takes over the touch on the next LVGL cycle: y0, t0 = the press (esp_timer us),
+// y1 = where the drag was recognised (the flick speed starts from these). false: nothing happens (busy, or no exact
+// picture of the screen yet): let LVGL scroll.
+lv_obj_t *slide_scroll_target(lv_obj_t *scr, int x, int y);
+bool slide_scroll(lv_obj_t *list, int y0, int64_t t0, int y1);
+lv_draw_buf_t *slide_picture_copy(void);   // snapshot "picture" (tests)
+void slide_picture_check_async(void);  // test console "pictest": logs "slide: pictest rows_differ=N first=Y"

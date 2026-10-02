@@ -54,6 +54,10 @@ LVGL timer and event callbacks already run inside the lock.
   in flight; every wait gives up after 200 ms. If it ever sticks, the test console's `where` prints the breadcrumbs
   (`slide_phase`, `raw_phase`, `raw_band`, `lvgl_inflight`). After a raw frame, LVGL must redraw before it flushes
   again (the slide invalidates the screen).
+- `display_raw_area()`: the same for a rectangle only (a list's), several rows per band when it is narrow, bands top
+  down or bottom up (a fill that moves rows down in place needs the bottom ones first).
+- **Flush hook** (`display_set_flush_hook()`): every area LVGL sends is also handed, before the byte swap, to
+  `slide.c`, which copies it into its picture of the screen shown (see Moves, Cache).
 - Fonts: Montserrat TTF embedded and rendered by TinyTTF at 15–96 px, so accents and "°" render correctly.
 
 ## Weather screen (`ui.c`)
@@ -67,7 +71,7 @@ LVGL timer and event callbacks already run inside the lock.
   (`LV_EVENT_DRAW_MAIN`), not typed.
   Decorative objects are made non-clickable so presses bubble up to the screen.
 - Moves between screens (status | extras | weather | radar), between places and between days follow the finger:
-  they are drawn as pictures by `slide.c` ("Moves" below), started by `drag_watch_cb` in `ui.c`. `LV_EVENT_GESTURE`
+  they are drawn as pictures by `slide.c` ("Moves" below), started by `drag_read` in `ui.c` (in the touch read). `LV_EVENT_GESTURE`
   (`gesture_cb`) still handles the radar's zoom swipes, and screen swipes while a slide is running. Every other
   screen change (hourly view, Settings, alerts, update) calls `slide_screen()`, which takes the same arguments as
   `lv_screen_load_anim()`.
@@ -115,9 +119,11 @@ order, and ~11 ms on the bus.
   screens, then frames sent with `display_raw_frame()`. `fill()` composes each row from the two pictures with a byte
   swap; the motion is a cubic ease-out with as many frames as fit (64–70 fps). Then the real screen is loaded and
   LVGL redraws it. Not enough PSRAM, or a picture failed: plain `lv_screen_load_anim()`.
-- **Drags** (`slide_drag()`): LVGL 9.2 sends PRESSED and RELEASED to input device handlers but not PRESSING, so
-  `ui.c` starts a 10 ms timer at PRESSED (`drag_watch_cb`). After 16 px the larger axis decides, as LVGL picks a
-  scroll direction; a 2:1 rule missed curved swipes on the round screen. From then on slide.c reads the finger
+- **Drags** (`slide_drag()`) are recognised in the touch read itself (`touch_set_read_hook()`: `ui.c`'s `drag_read`
+  sees each read before LVGL handles it, and `lv_indev_wait_release()` there keeps LVGL from acting on that same
+  read). A 10 ms timer watching LVGL's point (until v1.10.1-rc.3) came too late on flicks: the finger moves 30–60 px
+  between two reads, and LVGL had already begun its own scroll of a list. After 16 px the larger axis decides, as
+  LVGL picks a scroll direction; a 2:1 rule missed curved swipes on the round screen. From then on slide.c reads the finger
   itself (`touch_get()`, LVGL paused) and draws the current picture with the neighbour coming in under the finger.
   At an end (no neighbour) the screen resists (a third of the movement, at most a fifth of the screen) and bounces
   back. On release it goes on to the neighbour past a third of the screen, or after a flick (more than 24 px and
@@ -135,12 +141,17 @@ order, and ~11 ms on the bus.
   `slide_cache_idle_work(800)` renders the first missing or out-of-date one, one 64-row strip per tick (~15–25 ms):
   once nothing has changed on screen for 0.8 s and no finger is down, or when a picture has been out of date for 2 s.
   A whole picture at once blocked LVGL for 60–180 ms, and a quick flick could start and end unseen.
-  - Out of date: any LVGL redraw of the shown screen marks its picture (`LV_EVENT_INVALIDATE_AREA` on the display;
-    ignored right after a slide or drag loaded it until its first render, and during a drag's switch: the pager's
-    scroll redraws the page being left, which didn't change). For the screens not shown, the `ui_*` functions mark
-    what they change: `ui_place` its page (and, for the place shown, extras and the hourly days via
-    `place_current`), `ui_air` the extras page, `ui_alerts`, `ui_ota`, `ui_units_changed`, a new place count and the
-    minute tick everything (`slide_cache_dirty(NULL)`); the radar marks its own screen in `show_live()`. New code that
+  - **The picture of the screen shown follows the panel** (since the list scrolls): the flush hook copies every area
+    LVGL draws into it (`flushed()`), so a redraw of the screen shown never makes its picture out of date, and a drag
+    or a list scroll never waits for it. Only when the screen shown changes before LVGL has drawn its last redraw (a
+    screen load right after a change) does that redraw miss the picture: `invalidated()` / `rendered()` track the
+    key with redraws pending (`inv_key`, `inv_pending`) and mark it. Ignored: the redraws of painting (pager peeks)
+    and of a drag's switch (the pager's scroll redraws the page being left, which didn't change). `pictures_tick`
+    keeps the picture of every screen shown (any screen can have a list), plus the neighbours of the four drag screens.
+  - For the screens not shown, the `ui_*` functions mark what they change: `ui_place` its page (and, for the place
+    shown, extras and the hourly days via `place_current`), `ui_air` the extras page, `ui_alerts`, `ui_ota`,
+    `ui_units_changed` and a new place count everything (`slide_cache_dirty(NULL)`), the minute tick every picture
+    but the shown one (`slide_cache_dirty_hidden()`); the radar marks its own screen in `show_live()`. New code that
     changes a screen while it isn't shown must do the same, or a drag shows stale content for a moment.
   - **Redraws that change nothing still make a picture out of date, and the next drag waits for it** (0.2–0.5 s:
     long enough for a quick drag to end before its first frame). A place switch sends the place shown, "no alerts"
@@ -153,14 +164,39 @@ order, and ~11 ms on the bus.
     date with `__builtin_return_address(0)`, and each redraw of the shown screen with its area and
     `esp_backtrace_print()` (decoded with `addr2line`). Measured with 10 place drags 1.5–20 s apart: before, 4 of 10
     waited 0.2–0.6 s; after, all started within 14–18 ms.
-  - Left: the minute tick makes every picture out of date (the clocks); a drag in the next ~1.5 s waits for its
-    pictures. Each data change does the same for its screens. Other places' pictures never show the alert pill of
+  - Left: the minute tick makes the other screens' pictures out of date (their clocks); a drag in the next ~2 s
+    waits ~0.13 s for its neighbour's (candidate: re-render only the clock's rows). Each data change does the same
+    for its screens. Other places' pictures never show the alert pill of
     the place shown (`drag_paint` hides it): a switch clears the alerts until the new place's are fetched.
+- **List scrolls** (`slide_scroll()`, from `drag_read` for a vertical drag on a scrollable object other than the
+  weather screen's places and the radar's zoom swipes: `slide_scroll_target()`): LVGL redrew all of a scrolling list
+  for every frame (35–50 ms: 17–22 fps). Here each frame moves the list's rows within the picture of the screen shown
+  (which matches the panel, see Cache), has LVGL render only the rows coming into view (into an 87 KB strip buffer),
+  and sends just the list's rectangle (`display_raw_area`); the move and the send are one pass
+  (`scroll_move_fill`), bottom up when the content goes down. LVGL's own scroll position is kept up to date with
+  `lv_obj_scroll_by()` so it renders those rows right; its redraw requests are dropped at the end (`inv_p` restored:
+  the panel and the picture already show the result).
+  - **`lv_obj_scroll_to_y()` stops at the ends**: past them (pulled, springing back) the picture moved while the list
+    didn't, and the rows rendered for it repeated the edge (the user saw the hourly graph's hour labels smeared and
+    a doubled last row). `lv_obj_scroll_by()` isn't bounded.
+  - Like LVGL: the list follows the finger, resists past an end (a third of the movement, at most a fifth of the
+    list) and springs back (ease out, 220 ms); after a flick it goes on and slows down (`v × e^(−t/300 ms)`: ~v ×
+    300 ms, as LVGL's 10% per frame; past an end it brakes in ~30 ms, then springs back); a touch stops it and
+    follows the finger again. The flick speed is measured over the last ~80 ms, starting with the press and the
+    16 px that made it a scroll (passed by `drag_read`): a quick flick can be over before the first frame.
+  - At the start LVGL lets go of the touch (`lv_indev_reset`: the row pressed under the finger, e.g. a Settings row
+    with a pressed colour) and `lv_refr_now()` draws that, into the panel and the picture. No exact picture of the
+    screen yet (just opened): `slide_scroll()` returns false and LVGL scrolls as before.
+  - Per frame (harness): hourly list 19 ms (render the new rows ~7.5, move and send ~11.3), Settings 14 ms, status
+    page 16 ms. The hourly rows cost more to render (icons drawn as shapes, five labels a row).
+  - `pictest` (test console) compares the picture of the screen shown with a fresh rendering, after drawing pending
+    redraws; the harness runs it after drags and scrolls. Snapshot `picture` (`GET /api/snapshot?screen=picture`)
+    returns the picture itself, to compare with the `current` snapshot pixel by pixel (how the smear was found).
 - **Memory:** `room_for(n)`: free PSRAM above 1 MB + 440 KB per picture, and a 900 KB block. 5 pictures = 2.2 MB.
   A slide may reuse cache slots (`force`) rather than fall back to the slow animation.
-- **Measured (v1.10.1, harness `perf`):** screen to screen 64–70 fps (was 10–15; one run measured 32 fps to the radar, the next 67), places 46 fps (66 with the
-  pictures ready; was 10), days 58 fps (was 11), drag start ~15 ms. The lists inside a screen (hourly hours,
-  Settings) still scroll with LVGL: 17–22 fps.
+- **Measured (v1.10.1, harness `perf`):** screen to screen 64–70 fps (was 10–15; one run measured 32 fps to the
+  radar, the next 67), places 46 fps (66 with the pictures ready; was 10), days 58 fps (was 11), drag start ~15 ms.
+  Lists (rc.4): hourly ~52 fps while moving (was 17.5), Settings ~70 (was 22), status page ~64.
 - Long-press opens the Settings screen (below). Its *More on your phone* row shows the overlay with a QR code
   (`lv_qrcode`) for `https://<ip>`.
 
@@ -633,8 +669,7 @@ allocates internal DMA bounce buffers, and that failed mid-response, which trunc
   sector now waits while `slide_screen_busy()` (a finger down in the last 0.5 s, a slide or drag running; at most
   10 s per map). Left: the boot preload still writes all 7 levels (~45 s), pausing for the user as above.
 - Taps can also be missed while LVGL redraws a whole screen (65–110 ms, e.g. when new data arrives).
-- The lists inside screens (hourly hours, Settings) still scroll with LVGL at 17–22 fps; only moves between screens,
-  places and days are drawn as pictures.
+- ~~Lists scrolled at 17–22 fps~~ (fixed in v1.10.1-rc.4: list scrolls by moving the picture, see Moves).
 - Internal RAM is tight: about 6.5 KB free while serving the page with the AP running. Watch
   `web: GET / (page), free internal …` in the log after adding features.
 - Phones hammer the portal with parallel connections (including HTTPS probes that fail the handshake, which is
