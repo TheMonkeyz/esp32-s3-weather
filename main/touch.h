@@ -9,3 +9,4 @@ void touch_inject(bool down, int x, int y);    // test console: simulated finger
 void touch_inject_end(void);                   // back to the real touch controller
 int touch_get(int *x, int *y);                 // finger now: 1 pressed, 0 up, -1 bus error (display lock held)
 void touch_forget(void);                       // the touch LVGL last saw is over (handled by a drag, slide.c)
+uint32_t touch_idle_ms(void);                  // ms since a finger was last down (any task)

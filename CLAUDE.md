@@ -146,8 +146,15 @@ Windows build gets both from `main/idf_component.yml`. `components/dns_server` *
     decodes failed. The radar now decodes row by row (`png_rows.c`, ROM inflate, ~50 KB). After a change that holds
     PSRAM, check the `radar: Frame` lines and the harness's `psram_min_kb`.
     (f) **Content changed while its screen isn't shown** must call `slide_cache_dirty()`, or a drag shows the old
-    picture for a moment.
-    (g) A drag must decide its axis like LVGL (larger axis after 16 px): a 2:1 rule missed curved swipes on the
+    picture for a moment. The reverse costs as much: **a redraw that changes nothing** (same label text, a flag already
+    set, a style set again, a theme transition, a layout left pending) also makes the picture out of date, and the
+    next drag waits 0.2–0.5 s. The user felt it at once on place drags after rc.2. Compare before setting, use
+    `set_hidden()`, and find the culprits with a throwaway build that logs each invalidation with a backtrace
+    (ARCHITECTURE "Moves", Cache).
+    (g) **Flash writes stall the whole chip** (PSRAM and code caches are off during an erase): the radar's map save
+    made drags crawl. Background flash writes wait for `slide_screen_busy()`. And check what a save stores: a
+    download for one place finishing after a switch was saved as the other place's map.
+    (h) A drag must decide its axis like LVGL (larger axis after 16 px): a 2:1 rule missed curved swipes on the
     round screen. Check drags with the harness (`navigation`, `perf`), then ask the user to try them: the
     harness's straight synthetic drags passed while real swipes were still missed.
 

@@ -136,12 +136,26 @@ order, and ~11 ms on the bus.
   once nothing has changed on screen for 0.8 s and no finger is down, or when a picture has been out of date for 2 s.
   A whole picture at once blocked LVGL for 60–180 ms, and a quick flick could start and end unseen.
   - Out of date: any LVGL redraw of the shown screen marks its picture (`LV_EVENT_INVALIDATE_AREA` on the display;
-    ignored right after a slide loaded it, until its first render). For the screens not shown, every `ui_*` function
-    that changes content calls `slide_cache_dirty(NULL)` (forecast, alerts, air quality, places, units, update, the
-    minute tick), and the radar marks its own screen in `show_live()`. New code that changes a screen while it isn't
-    shown must do the same, or a drag will show stale content for a moment.
-  - A drag whose picture isn't ready renders it first (0.1–0.2 s). That happens mostly right after a place switch,
-    because the new place's data arrives in several updates.
+    ignored right after a slide or drag loaded it until its first render, and during a drag's switch: the pager's
+    scroll redraws the page being left, which didn't change). For the screens not shown, the `ui_*` functions mark
+    what they change: `ui_place` its page (and, for the place shown, extras and the hourly days via
+    `place_current`), `ui_air` the extras page, `ui_alerts`, `ui_ota`, `ui_units_changed`, a new place count and the
+    minute tick everything (`slide_cache_dirty(NULL)`); the radar marks its own screen in `show_live()`. New code that
+    changes a screen while it isn't shown must do the same, or a drag shows stale content for a moment.
+  - **Redraws that change nothing still make a picture out of date, and the next drag waits for it** (0.2–0.5 s:
+    long enough for a quick drag to end before its first frame). A place switch sends the place shown, "no alerts"
+    and air quality again; each used to redraw. So: `ui_place`, `ui_alerts` and `ui_air` return early when nothing
+    changed; `set_hidden()` only touches a flag that changes (LVGL redraws an object even when the flag is already
+    right); `clock_tick` only sets labels whose text changed; `place_dots` remembers what it drew; `drag_paint` applies
+    the layout before it returns (the dots moved back after a neighbour's picture were redrawn at LVGL's next refresh,
+    for real); `CONFIG_LV_THEME_DEFAULT_TRANSITION_TIME=0` (the theme's 80 ms transition on our screens redrew the
+    whole weather screen ~0.1 s after every drag). Found with a throwaway build that logged each picture marked out of
+    date with `__builtin_return_address(0)`, and each redraw of the shown screen with its area and
+    `esp_backtrace_print()` (decoded with `addr2line`). Measured with 10 place drags 1.5–20 s apart: before, 4 of 10
+    waited 0.2–0.6 s; after, all started within 14–18 ms.
+  - Left: the minute tick makes every picture out of date (the clocks); a drag in the next ~1.5 s waits for its
+    pictures. Each data change does the same for its screens. Other places' pictures never show the alert pill of
+    the place shown (`drag_paint` hides it): a switch clears the alerts until the new place's are fetched.
 - **Memory:** `room_for(n)`: free PSRAM above 1 MB + 440 KB per picture, and a 900 KB block. 5 pictures = 2.2 MB.
   A slide may reuse cache slots (`force`) rather than fall back to the slow animation.
 - **Measured (v1.10.1, harness `perf`):** screen to screen 64–70 fps (was 10–15; one run measured 32 fps to the radar, the next 67), places 46 fps (66 with the
@@ -336,7 +350,8 @@ order, and ~11 ms on the bus.
 - **Basemap:** 3×3 OSM tiles (`tile.openstreetmap.org/<z>/x/y.png`, one keep-alive connection, 3 retries each),
   decoded with `png_rows.c` (below), dimmed and desaturated (`dim_map`, 55%), then saved to that zoom level's
   512 KB slot in the 4 MB `mapcache` partition (7 slots). The header (magic `MAP7`, zoom, view origin) makes a location change
-  download fresh tiles. Bump the magic to force a full re-download (useful for testing the preload).
+  download fresh tiles. Bump the magic to force a full re-download (useful for testing the preload). `cache_save()`
+  stores only the first place's view and waits between sectors while the screen is in use (see Known issues).
 - **Background preload:** `radar_preload_start()` (called by `main` after Wi-Fi connects) and every location change
   run `preload_all()` in the radar task. It checks each zoom level's cache header and downloads the missing levels
   (9 tiles each; all 7 take about 45 s). Meanwhile the weather screen works normally. The radar screen shows a
@@ -609,10 +624,14 @@ allocates internal DMA bounce buffers, and that failed mid-response, which trunc
 - The frame count is fixed at 15 and the radar layer is rain rate only (`RADAR_1KM_RRAI`). `Radar_1km_SfcPrecipType`
   would colour snow and rain separately.
 - One TLS key is shared by all builds (see README, Security notes).
-- When the radar saves a map to flash (`cache_save()`: back on the first place, or the background preload), flash
-  writes pause both cores in bursts for ~3 s per zoom level: a tap then can go unseen, and a drag can wait ~2 s for
-  its first frame and crawl at a few fps (seen in the harness on October 2). Older than v1.10.1 (LVGL's drags
-  stalled the same way). Candidate fix: `cache_save()` pauses between sectors while a finger is down or a move runs.
+- ~~Flash writes stalled drags~~ (fixed after v1.10.1-rc.2): a map saved to flash (`cache_save()`) pauses both
+  cores in bursts for ~3 s, and a drag then waited ~2 s for its first frame and crawled at 3–9 fps (the harness's
+  hourly swipe failed once). Two causes. (1) Every return to the first place wrote flash twice: the other place's
+  download, ending just after the switch, was saved in the first place's slot (the check was "which place is shown
+  now"), so the first place's map was lost and the preload downloaded and wrote it again. `cache_save()` now checks
+  the view the tiles were downloaded for against the first place's. (2) Writes didn't care about the user: each
+  sector now waits while `slide_screen_busy()` (a finger down in the last 0.5 s, a slide or drag running; at most
+  10 s per map). Left: the boot preload still writes all 7 levels (~45 s), pausing for the user as above.
 - Taps can also be missed while LVGL redraws a whole screen (65–110 ms, e.g. when new data arrives).
 - The lists inside screens (hourly hours, Settings) still scroll with LVGL at 17–22 fps; only moves between screens,
   places and days are drawn as pictures.

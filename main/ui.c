@@ -56,6 +56,7 @@ typedef struct {
     char name[48];
     int utc_offset;
     bool has_wx;                               // pw[i] holds this place's forecast
+    bool drawn;                                // ui_place() filled it at least once
 } place_page_t;
 static lv_obj_t *scr_main, *place_pager;
 static place_page_t pp[MAX_PLACES];
@@ -143,6 +144,14 @@ static lv_obj_t *blob(lv_obj_t *p, int x, int y, int w, int h, lv_color_t c, int
     lv_obj_remove_flag(o, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_flag(o, LV_OBJ_FLAG_EVENT_BUBBLE);
     return o;
+}
+
+// Hide or show, only if that changes something: LVGL redraws (and re-lays out) an object even when the flag is
+// already right, and any redraw makes the screen's cached picture (slide.c) out of date
+static void set_hidden(lv_obj_t *o, bool hide)
+{
+    if (lv_obj_has_flag(o, LV_OBJ_FLAG_HIDDEN) == hide) return;
+    if (hide) lv_obj_add_flag(o, LV_OBJ_FLAG_HIDDEN); else lv_obj_remove_flag(o, LV_OBJ_FLAG_HIDDEN);
 }
 
 // Let presses on decorative children reach the screen (long-press, swipe)
@@ -257,6 +266,9 @@ static void clock_tick(lv_timer_t *t)
     char buf[12];
     config_fmt_time(tm.tm_hour, tm.tm_min, buf, sizeof(buf));
     if (strcmp(buf, clock_shown)) {
+        static char minute[12];                             // the last minute ticked (clock_shown is also reset
+        bool new_minute = strcmp(buf, minute) != 0;         // to force a redraw after a place or forecast change)
+        strcpy(minute, buf);
         strcpy(clock_shown, buf);
         for (int i = 0; i < n_places; i++) {               // each page in its own time zone
             struct tm lt;
@@ -264,8 +276,14 @@ static void clock_tick(lv_timer_t *t)
             char b[12];
             if (i == cur_place || !pp[i].has_wx) strcpy(b, buf);
             else { gmtime_r(&lt_t, &lt); config_fmt_time(lt.tm_hour, lt.tm_min, b, sizeof(b)); }
-            lv_label_set_text(pp[i].time, b);
+            // Unchanged labels are left alone: setting them redraws the screen, which makes its cached picture
+            // (slide.c) out of date, and the next place drag waited ~0.2 s for new pictures after every switch
+            if (strcmp(lv_label_get_text(pp[i].time), b)) {
+                lv_label_set_text(pp[i].time, b);
+                if (!new_minute) slide_cache_dirty(pager_page(place_pager, i));
+            }
         }
+        if (!new_minute) return;
         ESP_LOGI("ui", "clock %s", buf);
         slide_cache_dirty(NULL);                            // clocks, ages, the sun: every picture is a minute old
         if (lv_screen_active() == scr_hour && tm.tm_min == 0) hour_fill(0);   // new hour
@@ -811,9 +829,20 @@ static bool drag_paint(const void *key, lv_draw_buf_t *dst, int y0, int y1)
         bool places = ip >= 0;
         lv_obj_t *pager = places ? place_pager : hr_pager;
         int i = places ? ip : ih, cur = pager_current(pager);
+        // Another place: drawn as it will look once shown, without the pill of this place's alerts (a switch
+        // clears them until the new place's are fetched)
+        bool pill = places && i != cur && !lv_obj_has_flag(al_pill, LV_OBJ_FLAG_HIDDEN);
         if (i != cur) { pager_peek(pager, i); if (places) place_dots(i); else set_dots(i); }
+        if (pill) lv_obj_add_flag(al_pill, LV_OBJ_FLAG_HIDDEN);      // (its city name is only hidden on the place shown)
         bool ok = slide_picture_rows(places ? scr_main : scr_hour, dst, y0, y1);
-        if (i != cur) { pager_peek(pager, cur); if (places) place_dots(cur); else set_dots(cur); }
+        if (pill) lv_obj_remove_flag(al_pill, LV_OBJ_FLAG_HIDDEN);
+        if (i != cur) {
+            pager_peek(pager, cur);
+            if (places) place_dots(cur); else set_dots(cur);
+            // Apply the dots' move back now, while slide.c ignores the redraws: left to LVGL's next refresh, it
+            // redrew them for real and made the picture of the screen shown out of date after every neighbour's
+            lv_obj_update_layout(places ? scr_main : scr_hour);
+        }
         return ok;
     }
     lv_obj_t *scr = (lv_obj_t *)key;
@@ -1187,9 +1216,25 @@ void ui_alert_map(uint16_t *buf, int w, int h)
 
 #define AL (i18n_lang() < ALERT_LANGS ? i18n_lang() : 0)    // alert texts exist in English and French
 
+static bool alerts_same(const alerts_t *a, const alerts_t *b)
+{
+    if (a->n != b->n) return false;
+    for (int i = 0; i < a->n; i++) {
+        const alert_t *x = &a->a[i], *y = &b->a[i];
+        if (strcmp(x->id, y->id) || x->colour != y->colour || x->ends != y->ends) return false;
+        for (int l = 0; l < ALERT_LANGS; l++)
+            if (strcmp(x->name[l], y->name[l]) || strcmp(x->area[l], y->area[l]) || strcmp(x->text[l], y->text[l]))
+                return false;
+    }
+    return true;
+}
+
 void ui_alerts(const alerts_t *al)
 {
     display_lock(-1);
+    // The same alerts again (each fetch, and "none" at every place switch): nothing to redraw, and the cached
+    // pictures for drags (slide.c) stay valid. al == &alerts: redraw anyway (language or units changed).
+    if (al != &alerts && alerts_same(al, &alerts)) { display_unlock(); return; }
     slide_cache_dirty(NULL);                        // new content: the cached pictures are out of date
     if (al != &alerts) alerts = *al;
     if (!alerts.n) {
@@ -1368,7 +1413,8 @@ static void extras_refresh(void)       // display lock held (LVGL task or caller
 void ui_air(const air_t *a)
 {
     display_lock(-1);
-    slide_cache_dirty(NULL);                        // new content: the cached pictures are out of date
+    if (have_air && !memcmp(&ex_air, a, sizeof(*a))) { display_unlock(); return; }   // the same (see ui_alerts)
+    slide_cache_dirty(scr_extras);                  // shown on the extras page only: its picture is out of date
     ex_air = *a;
     have_air = true;
     if (lv_screen_active() == scr_extras) extras_refresh();
@@ -1855,14 +1901,18 @@ static void place_page_create(int i, lv_obj_t *pg)
 
 static void place_dots(int active)
 {
+    static int drawn_active = -1, drawn_n = -1;          // as drawn: setting the same styles again redraws them
+    if (active == drawn_active && n_places == drawn_n) return;
+    drawn_active = active;
+    drawn_n = n_places;
     for (int i = 0; i < MAX_PLACES; i++) {
-        if (n_places < 2 || i >= n_places) { lv_obj_add_flag(pl_dot[i], LV_OBJ_FLAG_HIDDEN); continue; }
+        if (n_places < 2 || i >= n_places) { set_hidden(pl_dot[i], true); continue; }
         lv_obj_set_size(pl_dot[i], 7, i == active ? 18 : 7);
         lv_obj_set_style_bg_color(pl_dot[i], i == active ? C_TEXT : C_DIM, 0);
         lv_obj_set_style_bg_opa(pl_dot[i], i == active ? LV_OPA_COVER : LV_OPA_60, 0);
         lv_obj_align(pl_dot[i], LV_ALIGN_RIGHT_MID, -14,
                      (2 * i - (n_places - 1)) * 8 + (i < active ? -5 : i > active ? 5 : 0));
-        lv_obj_remove_flag(pl_dot[i], LV_OBJ_FLAG_HIDDEN);
+        set_hidden(pl_dot[i], false);
     }
 }
 
@@ -2312,16 +2362,16 @@ static void day_name(const char *date, int idx, char *out, size_t n)
 void ui_places(int n, int active)
 {
     display_lock(-1);
-    slide_cache_dirty(NULL);                        // new content: the cached pictures are out of date
+    // Called after every place switch too: only what changed is touched (see clock_tick), so the cached pictures of
+    // the places stay valid. Other pages' pictures never show the pill (drag_paint).
+    if (n != n_places) slide_cache_dirty(NULL);     // pages added or removed: other neighbours
     bool moved = active != cur_place;
     for (int i = 0; i < MAX_PLACES; i++) {
-        lv_obj_t *pg = pager_page(place_pager, i);
-        if (i < n) lv_obj_remove_flag(pg, LV_OBJ_FLAG_HIDDEN); else lv_obj_add_flag(pg, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_remove_flag(pp[i].city, LV_OBJ_FLAG_HIDDEN);     // the alert pill goes on the place shown
+        set_hidden(pager_page(place_pager, i), i >= n);
+        set_hidden(pp[i].city, alerts.n && i == active);       // the alert pill goes on the place shown
     }
     n_places = n;
     cur_place = active;
-    if (alerts.n) lv_obj_add_flag(pp[active].city, LV_OBJ_FLAG_HIDDEN);
     place_dots(active);
     if (pager_current(place_pager) != active) pager_go(place_pager, active, true);   // chosen on the settings page
     if (moved) {
@@ -2334,12 +2384,43 @@ void ui_places(int n, int active)
 
 void ui_on_place_select(void (*cb)(int i)) { place_select_cb = cb; }
 
+// The place shown's forecast also feeds the hourly view (and its graphs) and the extras page. force: redraw them even
+// if it's the same forecast (units or language changed).
+static void place_current(const weather_t *w, bool force)
+{
+    if (!w) {
+        have_wx = false;                 // the hourly view and extras wait for this place's forecast
+        if (lv_screen_active() == scr_hour || lv_screen_active() == scr_extras) lv_screen_load(scr_main);
+        return;
+    }
+    if (!force && have_wx && !memcmp(&wx, w, sizeof(wx))) return;
+    wx = *w;
+    have_wx = true;
+    wx_gen++;
+    slide_cache_dirty(scr_extras);                  // their pictures for drags (slide.c)
+    for (int d = 0; d < pager_count(hr_pager); d++) slide_cache_dirty(pager_page(hr_pager, d));
+    if (lv_screen_active() == scr_extras) extras_refresh();
+    if (lv_screen_active() == scr_hour) for (int d = 0; d < WX_DAYS; d++) hour_fill(d);
+    if (lv_screen_active() == scr_msg) lv_screen_load(scr_main);
+}
+
 void ui_place(int i, const char *name, const weather_t *w)
 {
     if (i < 0 || i >= MAX_PLACES) return;
     display_lock(-1);
-    slide_cache_dirty(NULL);                        // new content: the cached pictures are out of date
     place_page_t *p = &pp[i];
+    bool force = w && w == &pw[i];                  // ui_units_changed(): the same forecast in new units or language
+    // Every place switch sends the place shown again with the forecast it already has: then the page is left alone,
+    // so its picture for drags (slide.c) stays valid and the next drag starts at once
+    bool same = p->drawn && !force && !strcmp(p->name, name) &&
+                (w ? p->has_wx && !memcmp(&pw[i], w, sizeof(*w)) : !p->has_wx);
+    if (same) {
+        if (i == cur_place) place_current(w, false);
+        display_unlock();
+        return;
+    }
+    p->drawn = true;
+    slide_cache_dirty(pager_page(place_pager, i));  // this page's picture; the place shown's other screens: below
     strlcpy(p->name, name, sizeof(p->name));
     lv_label_set_text(p->city, name);
     if (!w) {                                                  // no forecast yet for this place
@@ -2354,10 +2435,7 @@ void ui_place(int i, const char *name, const weather_t *w)
             lv_label_set_text(p->fc_temp[k], "");
             lv_obj_add_flag(p->fc_icon[k], LV_OBJ_FLAG_HIDDEN);
         }
-        if (i == cur_place) {
-            have_wx = false;                 // the hourly view and extras wait for this place's forecast
-            if (lv_screen_active() == scr_hour || lv_screen_active() == scr_extras) lv_screen_load(scr_main);
-        }
+        if (i == cur_place) place_current(NULL, false);
         display_unlock();
         return;
     }
@@ -2394,14 +2472,7 @@ void ui_place(int i, const char *name, const weather_t *w)
             lv_obj_remove_flag(p->fc_icon[k], LV_OBJ_FLAG_HIDDEN);
         }
     }
-    if (i == cur_place) {                    // the hourly view, extras and graphs show this place
-        wx = *w;
-        have_wx = true;
-        wx_gen++;
-        if (lv_screen_active() == scr_extras) extras_refresh();
-        if (lv_screen_active() == scr_hour) for (int d = 0; d < WX_DAYS; d++) hour_fill(d);
-        if (lv_screen_active() == scr_msg) lv_screen_load(scr_main);
-    }
+    if (i == cur_place) place_current(w, force);
     clock_shown[0] = 0;
     clock_tick(NULL);
     display_unlock();

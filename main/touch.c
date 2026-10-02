@@ -5,6 +5,7 @@
 #include "driver/i2c_master.h"
 #include "driver/gpio.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "rom/ets_sys.h"
 #include "presence.h"
 
@@ -57,7 +58,20 @@ void touch_init(void)
 }
 
 // 1 = pressed, 0 = not pressed, -1 = bus error (keep previous state)
+static volatile int64_t last_down_us;   // touch_idle_ms(): when a finger was last seen down
+
+static int touch_read_chip(int *x, int *y);
+
 static int touch_read(int *x, int *y)
+{
+    int r = touch_read_chip(x, y);
+    if (r > 0) last_down_us = esp_timer_get_time();
+    return r;
+}
+
+uint32_t touch_idle_ms(void) { return (uint32_t)((esp_timer_get_time() - last_down_us) / 1000); }
+
+static int touch_read_chip(int *x, int *y)
 {
     if (inj_on) { *x = inj_x; *y = inj_y; return inj_down; }
     if (!ok) return 0;

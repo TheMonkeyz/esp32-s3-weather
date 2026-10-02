@@ -163,6 +163,7 @@ static int keep_n;
 static slide_paint_cb_t paint_cb;
 static slide_key_cb_t key_cb;
 static bool painting;                    // a page's picture: its pager moves there and back, not a change
+static bool committing;                  // a drag's switch: the pager scrolls to the new page, no content changes
 static int64_t last_change;              // last invalidation of the screen shown
 static const void *just_loaded;          // screen shown by a slide: its first repaint is that same picture
 
@@ -285,6 +286,7 @@ static const void *key_of(lv_obj_t *scr) { return key_cb ? key_cb(scr) : scr; }
 static void invalidated(lv_event_t *e)
 {
     if (painting) return;
+    if (committing) { last_change = esp_timer_get_time(); return; }
     const void *k = key_of(lv_screen_active());
     last_change = esp_timer_get_time();
     if (k != just_loaded) slide_cache_dirty(k);
@@ -375,6 +377,8 @@ static struct {
 } drag;
 
 static bool req_pending(void) { return req.queued || drag.queued; }
+
+bool slide_screen_busy(void) { return req_pending() || touch_idle_ms() < 500; }
 
 static void drag_run(void *unused);
 
@@ -482,16 +486,26 @@ static void drag_run(void *unused)
     slide_phase = 16;
     if ((go || blind) && drag.commit) {
         just_loaded = nkey[si];                              // its picture is what the panel shows now
+        // The switch scrolls the pager (SCROLL_BEGIN, layout): LVGL redraws the page being left, whose content didn't
+        // change. Counted as a change, its picture went out of date at every switch, and a drag back soon after
+        // waited ~0.2 s for it. Content changes made meanwhile still mark their pictures (slide_cache_dirty).
+        committing = true;
         drag.commit(side, drag.user);                        // loads the new screen / switches the page
+        committing = false;
         lv_obj_invalidate(lv_screen_active());
     } else {
         just_loaded = ckey;
         lv_obj_invalidate(cur);
     }
     touch_resync(true);
-    ESP_LOGI(TAG, "drag: first frame after %lld ms (%d pictures rendered), %d frames in %lld ms (%.0f fps), %s",
-             t_first ? (t_first - t0) / 1000 : -1, rendered, frames, (t1 - t0) / 1000, frames * 1e6f / (t1 - t0),
-             go || blind ? (side < 0 ? "to prev" : "to next") : "back");
+    // Frame rate from the first frame (the time before it, rendering pictures, is the "first frame after" figure).
+    // No frame while the finger was down: it lifted while the pictures were being rendered (a jump, not a drag).
+    int64_t ts = t_first ? t_first : t0;
+    if (t_first) ESP_LOGI(TAG, "drag: first frame after %lld ms (%d pictures rendered), %d frames in %lld ms (%.0f fps), %s",
+                          (t_first - t0) / 1000, rendered, frames, (t1 - ts) / 1000, frames * 1e6f / (t1 - ts),
+                          go || blind ? (side < 0 ? "to prev" : "to next") : "back");
+    else ESP_LOGW(TAG, "drag: finger up before the first frame (%d pictures rendered in %lld ms), %s", rendered,
+                  (t1 - t0) / 1000, go || blind ? (side < 0 ? "to prev" : "to next") : "back");
     drag.queued = false;
     slide_phase = 0;
 }

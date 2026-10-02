@@ -29,6 +29,9 @@ CONFIG_HTTPD_MAX_URI_LEN=600
 CONFIG_MBEDTLS_HARDWARE_AES=n
 CONFIG_COMPILER_OPTIMIZATION_PERF=y
 CONFIG_LV_DEF_REFR_PERIOD=15
+# No theme style transitions (80 ms fades on press): one ran on the weather screen after every drag and redrew it
+# whole, which made its cached picture for the next drag out of date (slide.c)
+CONFIG_LV_THEME_DEFAULT_TRANSITION_TIME=0
 CONFIG_LWIP_MAX_SOCKETS=16
 CONFIG_FREERTOS_USE_TRACE_FACILITY=y
 CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS=y

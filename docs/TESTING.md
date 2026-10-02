@@ -155,9 +155,9 @@ the window at the end.
 | Suite | What it proves |
 |---|---|
 | `smoke` | console answers, firmware version, Wi-Fi up, settings API |
-| `navigation` | swipes and taps land on the right screen (weather ↔ extras ↔ status, radar, Settings by long-press, hourly by tapping a day); the ends bounce back, a short slow drag snaps back; places (drag up / down, the first one bounces) and hourly days (left / right) change by one (`page`); snapshot of every screen incl. `settings1..3`, `phone`, `setup0/1`, `update` |
+| `navigation` | swipes and taps land on the right screen (weather ↔ extras ↔ status, radar, Settings by long-press, hourly by tapping a day); the ends bounce back, a short slow drag snaps back; places (from the first place: drag up / down, the first one bounces) and hourly days (left / right) change by one (`page`); snapshot of every screen incl. `settings1..3`, `phone`, `setup0/1`, `update` |
 | `web` | the Playwright suite (`tools/webtest`) and the live API on the board; the page must arrive whole |
-| `perf` | boot stage times and internal RAM, heap low points, full-screen render bench (best of 3), radar first frame and lightning, frame rate of each move (`fps`: screen to screen, places, days, the hourly list and Settings scrolling); compared with `tools/harness/baseline.json`. The radar animation plays at 3 fps by design: not measured |
+| `perf` | boot stage times and internal RAM, heap low points, full-screen render bench (best of 3), radar first frame and lightning, frame rate of each move (`fps`: screen to screen, places, days, the hourly list and Settings scrolling; for drags also `drag_fps` and `drag_start_ms` from slide.c's log line, and a place drag back 2 s after a switch); compared with `tools/harness/baseline.json`. The radar animation plays at 3 fps by design: not measured |
 | `wifi_runtime` | network lost while running: retries go on; long-press opens setup and **pauses them**; tap closes it; reconnects |
 | `wifi_setup` | start-up with the network unreachable (the October 1 path): setup after 30 s, no retries while open, **the PC joins the setup network like a phone** (DNS answers every name with 192.168.4.1, the Android check gets the 302, the page and `/api/config` load, the PC is not dropped for 15 s), Easy Connect listens on the router's 2.4 GHz channel as the PC sees it, the setup network works again after Easy Connect (DNS socket bug), tap → 30 s retry → setup again, network back → weather screen. `--phone` adds the real Easy Connect scan |
 
@@ -213,6 +213,10 @@ Pitfalls met while building it:
   tap then can go unseen, and a drag measured then crawled (3 fps, first frame after 2 s). `perf` waits until the
   radar has been quiet for 5 s with no map preload running (`radar_settled`), and taps the forecast twice if needed.
 - Drag tests check the result with `page`, not by the screen name: a place or day change stays on the same screen.
+  They must start where the move is possible: the board keeps the place shown across restarts, and from the last
+  place "drag up" bounced and the check still passed (October 2). `navigation` first goes back to the first place.
+- `swipe_fps` counts every frame less than 250 ms apart, LVGL's redraws after a move included (a new place's
+  data: 30 fps for a 57 fps drag). `drag_fps` (from the first frame) and `drag_start_ms` are the drag alone.
 - **Don't restart a board in the first 60 s after an update:** the new firmware is still "pending verify" and the
   bootloader rolls back to the previous one. On October 1 the harness restarted rc.2 right after the user installed
   it, then tested the old build and reported a pass. Now: `GET /api/update` has `pending_verify` and `uptime_s`; the
