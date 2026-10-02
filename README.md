@@ -243,6 +243,7 @@ main/
   presence.c    microphones (ES7210 over I2S) -> presence state machine -> screen brightness
   svc.c         health of the external services (last result per service) + checks run from the status page
   diag.c        "diag:" log lines: heap, frame timing, lock contention, CPU/stack per task, render bench
+  testcon.c     test console on USB (simulated touches, Wi-Fi test switches) for tools/harness
   lvgl_mem.c    LVGL's allocator, in PSRAM (keeps internal RAM for Wi-Fi, DMA and stacks)
   web/index.html  settings page (embedded)
   tlscert.c     per-device TLS certificate: generated on first boot, stored in NVS (see Security)

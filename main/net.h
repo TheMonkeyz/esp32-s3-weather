@@ -30,3 +30,8 @@ typedef void (*net_dpp_done_cb_t)(bool ok, const char *ssid);
 bool net_dpp_start(net_dpp_uri_cb_t on_uri, net_dpp_done_cb_t on_done);
 void net_dpp_stop(void);
 bool net_dpp_active(void);
+// Test console (testcon.c): pretend the saved network is unreachable, without changing the saved credentials
+void net_test_offline(void);             // now (until net_test_online or a restart)
+void net_test_offline_next_boot(void);   // next boot only (flag in RTC memory); the caller restarts
+void net_test_online(void);              // back to the saved network
+void net_test_info(char *out, size_t n); // one line: connected, station SSID, setup modes, clients, retries, channel

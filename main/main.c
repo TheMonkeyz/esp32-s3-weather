@@ -22,6 +22,7 @@
 #include "ota.h"
 #include "esp_timer.h"
 #include "i18n.h"
+#include "testcon.h"
 #include "sound.h"
 
 static const char *TAG = "app";
@@ -208,6 +209,7 @@ void app_main(void)
     ui_init();
     ota_start(ui_ota);          // update checks start once Wi-Fi is up; marks a new firmware valid after 60 s
     diag_mark("ui");
+    testcon_start();            // USB test console (tools/harness), ready before Wi-Fi so start-up can be tested
     ui_message(tr(T_WEATHER), tr(T_STARTING));
 
     if (boot_button_held()) {

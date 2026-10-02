@@ -470,9 +470,20 @@ static esp_err_t http_root_get(httpd_req_t *req)
     return redirect_to(req, loc);
 }
 
+// Test console only ("portal windows-quiet"), until restart: answer Windows' connectivity check as if online, so
+// the test PC joining the setup network doesn't pop a browser tab (Windows then opens msftconnecttest.com/redirect,
+// which lands on msn.com because the PC is online by Ethernet). Phones and other PCs still get the portal.
+static volatile bool windows_quiet;
+void web_test_windows_quiet(bool on) { windows_quiet = on; }
+
 static esp_err_t http_other_get(httpd_req_t *req)
 {
     if (from_setup_ap(req)) {
+        if (windows_quiet && !strcmp(req->uri, "/connecttest.txt")) {
+            ESP_LOGI(TAG, "captive: Windows check answered (test console)");
+            httpd_resp_set_type(req, "text/plain");
+            return httpd_resp_sendstr(req, "Microsoft Connect Test");
+        }
         ESP_LOGI(TAG, "captive: %.60s -> portal", req->uri);
         return redirect_to(req, "http://192.168.4.1/");
     }

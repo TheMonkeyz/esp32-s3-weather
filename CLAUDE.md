@@ -56,6 +56,10 @@ Windows build gets both from `main/idf_component.yml`. `components/dns_server` *
   before asking the user for a photo. The full routine is in **docs/TESTING.md**. (The first session dumped a
   1/3-scale framebuffer as base64 between `IMGDUMP` and `IMGEND` in the serial log; it found the PNG decoding bug and
   the CARTO "API KEY REQUIRED" tiles. That code is gone; the endpoint replaces it.)
+- **Harness: `python tools/harness/harness.py`** (docs/TESTING.md §6) runs everything without the user: screens by
+  simulated touch, the settings page, performance against `tools/harness/baseline.json`, and the offline Wi-Fi
+  setup paths with the PC's Wi-Fi card acting as a phone. Run it before calling a change done, and add a test when
+  a bug is fixed. Only Easy Connect's final phone scan needs a person (`--phone`).
 - **Settings page tests:** `cd tools/webtest && npm test` (Playwright + mock display, see docs/TESTING.md §5). Run
   them and look at `shots/` before building firmware with a page change. In the first session a headless test
   proved the page's JS was fine, which pointed at the device.
