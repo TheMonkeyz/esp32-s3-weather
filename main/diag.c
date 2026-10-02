@@ -110,6 +110,13 @@ static void bench_task(void *arg)
     vTaskDelete(NULL);
 }
 
+// Bench now, in its own task: rendering needs the LVGL task's stack size, not the caller's (the test console's
+// 4 KB overflowed and reset the board). Result in the log as usual ("diag: bench ..." or "bench postponed").
+void diag_bench_request(void)
+{
+    xTaskCreatePinnedToCore(bench_task, "bench", 10240, NULL, 4, NULL, 1);
+}
+
 static void diag_task(void *arg)
 {
     int period = (int)(intptr_t)arg;

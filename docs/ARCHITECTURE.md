@@ -481,6 +481,20 @@ the install button's `manifest` attribute when the channel changes. `new_install
 the first install. The firmware version (`esp_app_get_description()->version`) is logged by `diag.c` and returned
 by `GET /api/config` as `version`.
 
+## Test console (`testcon.c`)
+
+- Line commands on the USB serial port (USB-Serial-JTAG driver installed for input; the log keeps using the
+  secondary console for output). Answers are `test:` log lines. Task `testcon`: 3 KB stack in internal RAM, core 0,
+  priority 3 (a PSRAM stack crashed when a command read NVS, and heavy work such as the render bench must run in its
+  own task: `diag_bench_request()`).
+- Simulated finger: `touch_inject()` / `touch_inject_end()` in `touch.c` replace the controller's report, upstream
+  of the wake-swallow and gesture logic.
+- Wi-Fi test switches (`net_test_*` in `net.c`): a fake network name in the station config, never the saved
+  credentials; `offline-boot` uses an `RTC_NOINIT` flag (one boot). `web_test_windows_quiet()` answers
+  `/connecttest.txt` on the setup AP until restart.
+- In every build on purpose: USB access can already reflash the board, and the harness tests what ships.
+  See docs/TESTING.md §6.
+
 ## Memory budget (approximate)
 
 | Item | Where | Size |

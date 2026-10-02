@@ -2274,6 +2274,17 @@ void ui_units_changed(void)
     display_unlock();
 }
 
+// Name of what is on screen, for the test console (same names as ui_snapshot() where they exist)
+const char *ui_screen_name(void)
+{
+    lv_obj_t *s = lv_screen_active();
+    if (s == scr_main) return lv_obj_has_flag(overlay, LV_OBJ_FLAG_HIDDEN) ? "weather" : "phone";
+    if (s == scr_setup) return su_page ? "setup1" : "setup0";
+    return s == scr_extras ? "extras" : s == scr_status ? "status" : s == scr_radar ? "radar" :
+           s == scr_update ? "update" : s == scr_alert ? "alert" : s == scr_hour ? "hourly" :
+           s == scr_cfg ? "settings" : s == scr_msg ? "message" : "other";
+}
+
 lv_draw_buf_t *ui_snapshot(const char *screen)
 {
     lv_obj_t *s = !strcmp(screen, "weather") ? scr_main : !strcmp(screen, "extras") ? scr_extras :

@@ -5,3 +5,5 @@
 void touch_init(void);          // I2C + controller reset
 void touch_register_lvgl(void); // call with the display lock held
 i2c_master_bus_handle_t touch_i2c_bus(void);   // shared with the audio codec
+void touch_inject(bool down, int x, int y);    // test console: simulated finger (screen pixels)
+void touch_inject_end(void);                   // back to the real touch controller

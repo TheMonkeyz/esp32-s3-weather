@@ -19,6 +19,7 @@
 #include "dns_server.h"
 #include "esp_dpp.h"
 #include "esp_idf_version.h"
+#include "esp_attr.h"
 
 static const char *TAG = "net";
 static EventGroupHandle_t ev;
@@ -132,9 +133,66 @@ void net_clear_creds(void)
     ESP_LOGW(TAG, "Wi-Fi credentials cleared");
 }
 
+/* ---------------- test console hooks (testcon.c) ----------------
+ * "Saved network unreachable" without touching the saved credentials: the station is given a network name that
+ * doesn't exist. offline-boot keeps a flag in RTC memory (survives esp_restart, not a power cut) so the next boot
+ * takes the real start-up path (Connecting... -> 30 s -> offline setup), which is where the October 1 bugs were. */
+#define TEST_SSID "Weather-Test-Unreachable"
+#define TEST_MAGIC 0x0FF11E55u
+static RTC_NOINIT_ATTR uint32_t test_offline_boot;
+
+static void sta_config(const char *ssid, const char *pass)
+{
+    wifi_config_t wc = {0};
+    strlcpy((char *)wc.sta.ssid, ssid, sizeof(wc.sta.ssid));
+    strlcpy((char *)wc.sta.password, pass, sizeof(wc.sta.password));
+    wc.sta.threshold.authmode = pass[0] ? WIFI_AUTH_WPA_PSK : WIFI_AUTH_OPEN;
+    esp_wifi_set_config(WIFI_IF_STA, &wc);
+}
+
+void net_test_offline_next_boot(void) { test_offline_boot = TEST_MAGIC; }
+
+void net_test_offline(void)
+{
+    ESP_LOGW(TAG, "TEST: saved network replaced by \"" TEST_SSID "\" until 'wifi online' or a restart");
+    esp_timer_stop(retry_timer);
+    sta_config(TEST_SSID, "unreachable");
+    esp_wifi_disconnect();                        // the disconnect event schedules retries (to the fake network)
+}
+
+void net_test_online(void)
+{
+    char ssid[33] = "", pass[65] = "";
+    if (!net_load_creds(ssid, sizeof(ssid), pass, sizeof(pass))) return;
+    ESP_LOGW(TAG, "TEST: saved network \"%s\" restored", ssid);
+    sta_config(ssid, pass);
+    if (setup_on() || net_is_connected()) return;  // setup open: tried once it closes (resume_saved)
+    retries = 0;
+    esp_timer_stop(retry_timer);
+    esp_wifi_disconnect();
+    esp_wifi_connect();
+}
+
+void net_test_info(char *out, size_t n)
+{
+    wifi_config_t wc = {0};
+    esp_wifi_get_config(WIFI_IF_STA, &wc);
+    uint8_t ch = 0; wifi_second_chan_t sc;
+    esp_wifi_get_channel(&ch, &sc);
+    snprintf(out, n, "connected=%d sta_ssid=%s portal=%d ap=%d ap_clients=%d dpp=%d retries=%d channel=%u",
+             net_is_connected(), (char *)wc.sta.ssid, portal_mode, ap_active, net_ap_clients(), dpp_active,
+             retries, ch);
+}
+
 void net_begin(const char *ssid, const char *pass)
 {
     if (!sta_netif) sta_netif = esp_netif_create_default_wifi_sta();
+    if (test_offline_boot == TEST_MAGIC) {        // one boot only
+        test_offline_boot = 0;
+        ESP_LOGW(TAG, "TEST: this boot uses \"" TEST_SSID "\" instead of \"%s\"", ssid);
+        ssid = TEST_SSID;
+        pass = "unreachable";
+    }
     wifi_config_t wc = {0};
     strlcpy((char *)wc.sta.ssid, ssid, sizeof(wc.sta.ssid));
     strlcpy((char *)wc.sta.password, pass, sizeof(wc.sta.password));

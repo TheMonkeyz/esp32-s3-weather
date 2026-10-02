@@ -20,6 +20,20 @@ static i2c_master_dev_handle_t dev;
 static i2c_master_bus_handle_t bus;
 static bool ok;
 static int n_ok, n_err;
+// Simulated finger from the test console (testcon.c): replaces the controller's report while active, so wake-up,
+// long-press and gestures go through exactly the same code as a real touch.
+static volatile bool inj_on, inj_down;
+static volatile int inj_x, inj_y;
+
+void touch_inject(bool down, int x, int y)
+{
+    inj_x = x < 0 ? 0 : x >= RES ? RES - 1 : x;
+    inj_y = y < 0 ? 0 : y >= RES ? RES - 1 : y;
+    inj_down = down;
+    inj_on = true;
+}
+
+void touch_inject_end(void) { inj_down = false; inj_on = false; }
 
 void touch_init(void)
 {
@@ -45,6 +59,7 @@ void touch_init(void)
 // 1 = pressed, 0 = not pressed, -1 = bus error (keep previous state)
 static int touch_read(int *x, int *y)
 {
+    if (inj_on) { *x = inj_x; *y = inj_y; return inj_down; }
     if (!ok) return 0;
     uint8_t reg[2] = {0xD0, 0x00};
     uint8_t d[10] = {0};

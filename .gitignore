@@ -24,6 +24,12 @@ flash.done
 flash.status
 flash_helper.log
 stop.request
+serial_live.txt
+serial.send
+serial.send.tmp
+harness.ask
+tools/harness/reports/
+tools/harness/__pycache__/
 snapshot_*.png
 
 # Web flasher / CI outputs

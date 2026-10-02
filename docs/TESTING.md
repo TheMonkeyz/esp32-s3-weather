@@ -133,3 +133,63 @@ npm test
   started before the install doesn't find `npx`.
 - Don't name a custom fixture option `offline`: it's Playwright's own option and takes the whole browser offline,
   mock display included.
+
+## 6. Harness (`tools/harness/`): everything, without a person
+
+One command tests the board end to end: screens, settings page, performance, and the Wi-Fi setup paths that broke
+on October 1. Needs the flash helper running; the board's firmware must have the test console (every build since
+v1.10.0).
+
+```bash
+python tools/harness/harness.py                       # all suites, on the firmware already on the board (~6 min)
+python tools/harness/harness.py --flash build/v55/weather_amoled.bin   # flash a build first
+python tools/harness/harness.py smoke wifi_runtime    # some suites
+python tools/harness/harness.py wifi_setup --phone    # + Easy Connect with a real phone (asks the user)
+```
+
+Exit code 0 = all passed and no performance regression. The report is `tools/harness/reports/<date>/report.md`
+(git-ignored) with screenshots, `results.json`, and the log of each failed test. If the flash helper is already
+logging, the harness reuses that window; otherwise it restarts the board (`reboot.request`, 40 min window) and stops
+the window at the end.
+
+| Suite | What it proves |
+|---|---|
+| `smoke` | console answers, firmware version, Wi-Fi up, settings API |
+| `navigation` | swipes and taps land on the right screen (weather ↔ extras ↔ status, radar, Settings by long-press, hourly by tapping a day); snapshot of every screen incl. `settings1..3`, `phone`, `setup0/1`, `update` |
+| `web` | the Playwright suite (`tools/webtest`) and the live API on the board; the page must arrive whole |
+| `perf` | boot stage times and internal RAM, heap low points, full-screen render bench, radar first frame and animation fps; compared with `tools/harness/baseline.json` |
+| `wifi_runtime` | network lost while running: retries go on; long-press opens setup and **pauses them**; tap closes it; reconnects |
+| `wifi_setup` | start-up with the network unreachable (the October 1 path): setup after 30 s, no retries while open, **the PC joins the setup network like a phone** (DNS answers every name with 192.168.4.1, the Android check gets the 302, the page and `/api/config` load, the PC is not dropped for 15 s), Easy Connect listens on the router's 2.4 GHz channel as the PC sees it, the setup network works again after Easy Connect (DNS socket bug), tap → 30 s retry → setup again, network back → weather screen. `--phone` adds the real Easy Connect scan |
+
+How it works:
+
+- **Test console** (`main/testcon.c`, USB only): `ping`, `screen`, `tap X Y`, `press X Y [ms]`, `swipe
+  left|right|up|down`, `drag …`, `wake`, `presence`, `wifi status|offline|offline-boot|online`, `portal
+  windows-quiet`, `heap`, `bench`, `reboot`, `help`. Answers are log lines `test: …`. Simulated touches enter at the
+  touch controller read (`touch_inject()`), so wake-up, long-press and gestures run the real code. `wifi offline`
+  points the station at a network that doesn't exist (saved credentials untouched); `offline-boot` does it for the
+  next boot only (flag in RTC memory) so the real start-up path runs.
+- **Flash helper link** (`monitor.ps1`): it writes `serial_live.txt` line by line and sends each line of
+  `serial.send` to the board (echoed as `> command`). You can use it by hand:
+  `echo screen > serial.send`, then read `serial_live.txt`.
+- **PC Wi-Fi as a phone** (`board.PCWifi`): `netsh wlan` adds a profile for Weather-Setup, connects, and deletes it
+  afterwards. The PC stays online through Ethernet. Before joining, the harness sends `portal windows-quiet` so
+  the display answers Windows' own connectivity check: otherwise Windows opens a browser tab (msftconnecttest →
+  msn.com, because the PC is online). Until restart, and only that one URL; phones still get the portal.
+- **Baseline:** `perf` metrics are checked against `baseline.json` (`min`/`max` per metric, `ref` = value when it
+  was set). After an intended change, `--update-baseline` rewrites it (limits ±25–40 %; adjust by hand, as the
+  first one was: network timings get generous limits, render times 25 %).
+
+Pitfalls met while building it:
+
+- **Microsoft Store Python** virtualises `AppData\Local` for itself and its child processes: Playwright started from
+  the harness couldn't see its browsers. The web suite uses a copy in `tools/webtest/.browsers` (git-ignored; copy
+  `%LOCALAPPDATA%\ms-playwright\chromium_headless_shell-*` there after a Playwright update).
+- A console command must never run heavy work on the console task: `bench` on its 3 KB stack reset the board; it
+  now starts the bench task. A **PSRAM stack** crashed on `wifi online` (NVS read = flash busy): keep it internal.
+- `flash.status` says `logging` ~2 s before `serial_live.txt` is recreated: the harness deletes the old one first.
+- An event can be logged *before* the console's reply to the command that caused it: replies are matched from the
+  command's own position, events from the test's read position (`Log.wait(start=…)`).
+- The setup screens can't be snapshot while the display is offline (snapshots use the home network); the
+  navigation suite captures them with the `setup0/1` pseudo-screens.
+- Unexpected restarts fail the test even if every check passed (panic text goes to the UART, not this USB log).
