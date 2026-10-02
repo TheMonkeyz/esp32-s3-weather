@@ -316,9 +316,9 @@ X(T_WIFI_JOIN,      "Scan to join %s\n(password %s).\nAndroid? Swipe left to ski
                     "ᐊᔾᔨᓕᐅᕐᓕ ᑲᓱᕐᓗᒍ %s\n(ᐃᓯᕈᑦ %s).\nAndroid? ᓂᕈᓗᓪᓕ ᓴᐅᒥᒧᑦ\nᐃᓯᕈᑦ ᐲᖅᓗᒍ")
 X(T_WIFI_DPP_TITLE, "Android: Easy Connect",       "Android : Easy Connect",
                     "Android: Easy Connect")
-X(T_WIFI_DPP_HOW,   "In Wi-Fi settings, tap the QR icon\nand scan this.\nYour phone sends its network.\nSwipe right for other phones",
-                    "Dans les réglages Wi-Fi, touchez\nl'icône QR et balayez ce code.\nVotre téléphone envoie son réseau.\nGlissez à droite : autres téléphones",
-                    "Wi-Fi ᐋᖅᑭᔅᓯᒪᐅᑎᓂ ᓇᕿᓪᓕ QR\nᐊᒻᒪᓗ ᐊᔾᔨᓕᐅᕐᓗᒍ.\nᐅᖄᓚᐅᑎᕋᓛᖅ ᑲᓱᖃᑎᒌᓐᓂᒃ ᑐᓃᔪᖅ.\nᓂᕈᓗᓪᓕ ᑕᓕᖅᐱᒧᑦ: ᐊᓯᖏᑦ")
+X(T_WIFI_DPP_HOW,   "With your phone on your Wi-Fi,\nscan this (camera or any QR app).\nYour phone sends its network.\nSwipe right for other phones",
+                    "Téléphone connecté à votre Wi-Fi,\nbalayez ce code (caméra, appli QR).\nVotre téléphone envoie son réseau.\nGlissez à droite : autres téléphones",
+                    "ᐊᔾᔨᓕᐅᕐᓕ ᐅᖄᓚᐅᑎᕋᓛᕐᒧᑦ\nWi-Fi-ᒦᑦᑐᒧᑦ.\nᐅᖄᓚᐅᑎᕋᓛᖅ ᑲᓱᖃᑎᒌᓐᓂᒃ ᑐᓃᔪᖅ.\nᓂᕈᓗᓪᓕ ᑕᓕᖅᐱᒧᑦ: ᐊᓯᖏᑦ")
 X(T_WIFI_DPP_NONE,  "Easy Connect isn't available.\nSwipe right for other phones.",
                     "Easy Connect n'est pas offert.\nGlissez à droite : autres téléphones.",
                     "Easy Connect ᐊᑐᐃᓐᓇᐅᙱᑦᑐᖅ.\nᓂᕈᓗᓪᓕ ᑕᓕᖅᐱᒧᑦ: ᐊᓯᖏᑦ.")

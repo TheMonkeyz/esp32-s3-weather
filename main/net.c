@@ -318,7 +318,7 @@ void net_setup_ap_stop(void)
 void net_setup_ap_stop_any(void) { ap_down(); }
 
 /* ---------------- Wi-Fi Easy Connect (DPP enrollee) ----------------
- * The display shows a DPP QR code; an Android phone (10+) scans it from its Wi-Fi settings and sends
+ * The display shows a DPP QR code; an Android phone (10+) scans it (camera or any QR scanner) and sends
  * the network it's connected to (SSID + password). Needs STA mode without connection attempts, so the
  * setup AP and our reconnects are paused while it listens. */
 
