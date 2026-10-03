@@ -26,8 +26,10 @@ idf.py -B build\v55 -D SDKCONFIG=build\v55\sdkconfig build
   higher (e.g. `v1.5.0-graph.3` vs `v1.4.0-rc.2`), flash an older test build from `firmware\in\` first (with a new
   unique name) and let the board offer the rc.
 - **Settings can be driven from the PC** for tests, e.g.
-  `curl -sk -X POST -H 'Content-Type: application/json' -d '{"temp":"f"}' https://<ip>/api/units`, then snapshot.
-  Put the user's settings back afterwards.
+  `curl -sk -X POST -H 'Content-Type: application/json' -H "X-Key: $KEY" -d '{"temp":"f"}' https://<ip>/api/units`,
+  then snapshot. Since v1.12.0 a change needs the display's key: `echo key > serial.send` and read `test: key …` in
+  `serial_live.txt` (the harness does it and saves it in `tools/harness/.display_key`, git-ignored). Put the user's
+  settings back afterwards.
 - After changing `sdkconfig.defaults`, delete `build\v55\sdkconfig` and run `idf.py ... reconfigure`: an existing
   sdkconfig keeps its old values (an option that exists as "not set" ignores the new default).
 - **Keep the PC and CI on the same ESP-IDF.** Until v1.9.0 CI used v5.4.2 while the PC had v5.5.4, so test builds
@@ -70,6 +72,7 @@ has to swipe:
 ```bash
 python tools/snapshot.py 192.168.1.156 status            # -> snapshot_status.png
 python tools/snapshot.py 192.168.1.156 weather out.png
+python tools/snapshot.py 192.168.1.156 weather --key <key>   # the key: see §1 (else $WEATHER_KEY, else the harness's file)
 ```
 
 - Screens: `weather`, `extras`, `status`, `radar`, `update`, `alert`, `settings`, `hourly0`…`hourly6` (the hourly view of that
@@ -167,11 +170,12 @@ the window at the end.
 |---|---|
 | `smoke` | console answers, firmware version, Wi-Fi up, settings API |
 | `navigation` | swipes and taps land on the right screen (weather ↔ extras ↔ status, radar, Settings by long-press, hourly by tapping a day); the ends bounce back, a short slow drag snaps back; places (from the first place: drag up / down, the first one bounces) and hourly days (left / right) change by one (`page`); snapshot of every screen incl. `settings1..3`, `phone`, `setup0/1`, `update` |
-| `web` | the Playwright suite (`tools/webtest`) and the live API on the board; the page must arrive whole |
+| `web` | the Playwright suite (`tools/webtest`) and the live API on the board; the page must arrive whole; who may change things (`main/web.c`): 403 for a POST over plain HTTP, 302 to the device itself, 401 without or with a wrong key, 415 for a non-JSON POST, 421 for another Host, 401 for a snapshot without the key, 200 with it |
 | `perf` | boot stage times and internal RAM, heap low points, full-screen render bench (best of 3), radar first frame and lightning, frame rate of each move (`fps`: screen to screen, places, days, the hourly list and Settings scrolling; for drags also `drag_fps` and `drag_start_ms` from slide.c's log line, and a place drag back 2 s after a switch); compared with `tools/harness/baseline.json`. The radar animation plays at 3 fps by design: not measured |
 | `presence` | dim, off and wake with short delays set through the API (the user's put back after, even on a failure): ACTIVE → DIM → OFF → `wake`; three fades up during a swipe (the brightness command from core 0 while LVGL sends bands from core 1), and `where` must show `raw_phase=0` after each |
-| `wifi_runtime` | network lost while running: retries go on; long-press opens setup and **pauses them**; tap closes it; reconnects |
-| `wifi_setup` | start-up with the network unreachable (the October 1 path): setup after 30 s, no retries while open, **the PC joins the setup network like a phone** (DNS answers every name with 192.168.4.1, the Android check gets the 302, the page and `/api/config` load, the PC is not dropped for 15 s), Easy Connect listens on the router's 2.4 GHz channel as the PC sees it, the setup network works again after Easy Connect (DNS socket bug), tap → 30 s retry → setup again, network back → weather screen. `--phone` adds the real Easy Connect scan |
+| `wifi_runtime` | network lost while running: retries go on; long-press opens setup and **pauses them**; tap closes it; reconnects, and an update check follows at once |
+| `wifi_setup` | start-up with the network unreachable (the October 1 path): setup after 30 s, no retries while open, **the PC joins the setup network like a phone** (DNS answers every name with 192.168.4.1, the Android check gets the 302, the page and `/api/config` load without the places' coordinates, the Sound card's API answers, a snapshot is refused, the PC is not dropped for 15 s; it joins with this display's own password, read from `wifi status`), Easy Connect listens on the router's 2.4 GHz channel as the PC sees it, the setup network works again after Easy Connect (DNS socket bug), tap → 30 s retry → setup again, network back → weather screen. `--phone` adds the real Easy Connect scan |
+| `wifi_setup` (2) | `setup_stops_opening_by_itself`: a boot that can't reach the network with a 60 s automatic-setup window (`wifi offline-boot-short`; 15 min normally): setup opens by itself, then no longer after the window (*Still trying*), a long-press still opens it, recovery |
 
 How it works:
 

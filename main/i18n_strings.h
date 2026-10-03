@@ -223,6 +223,11 @@ X(T_OTA_WRONG,      "Wrong firmware image",        "Mauvaise image de micrologic
                     "ᐃᓕᑕᒃᓴᖅ ᑕᒻᒪᖅᑐᖅ")
 X(T_OTA_INTERRUPTED,"Download interrupted",        "Téléchargement interrompu",
                     "ᒥᓇᕐᓂᖅ ᓄᖅᑲᖅᑐᖅ")
+X(T_OTA_BAD_SITE,   "Unexpected reply from the update site", "Réponse inattendue du site des mises à jour",
+                    "")
+X(T_OTA_ROLLED_BACK,"%s was undone: the display restarted before it was confirmed",
+                    "%s annulée : l'afficheur a redémarré avant de la confirmer",
+                    "")
 X(T_OTA_INVALID,    "Downloaded image is invalid", "Image téléchargée invalide",
                     "ᒥᓇᖅ ᐊᑐᔪᓐᓇᙱᑦᑐᖅ")
 
@@ -340,6 +345,9 @@ X(T_CONNECTED,      "Connected",                   "Connecté",
                     "ᑲᓱᖅᓯᒪᔪᖅ")
 X(T_CANT_REACH,     "Can't reach %s\nTap to try again", "%s injoignable\nTouchez pour réessayer",
                     "%s ᑲᓱᕈᓐᓇᙱᑦᑐᖅ\nᓇᕿᓪᓕ: ᑲᓱᒃᑲᓐᓂᕐᓕ")
+X(T_STILL_TRYING,   "Can't reach %s\nStill trying\n\nLong-press for Wi-Fi setup",
+                    "%s injoignable\nNouvel essai en cours\n\nAppuyez longuement pour le Wi-Fi",
+                    "%s ᑲᓱᕈᓐᓇᙱᑦᑐᖅ\nᑲᓱᒃᑲᓐᓂᖅᑐᖅ\n\nᓇᕿᓪᓗᒍ ᓇᕿᒻᒥᓕ: Wi-Fi")
 X(T_FIRST_SETUP,    "First-time setup",            "Première configuration",
                     "ᓯᕗᓪᓕᖅ ᐋᖅᑭᒃᓱᐃᓂᖅ")
 

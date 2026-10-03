@@ -15,6 +15,7 @@
 #include "esp_timer.h"
 #include "svc.h"
 #include "i18n.h"
+#include "utf8.h"
 
 static const char *TAG = "alerts";
 
@@ -90,13 +91,13 @@ static void parse_features(cJSON *features, time_t now, alerts_t *out)
         for (int l = 0; l < ALERT_LANGS; l++) {                 // both languages, so a switch is instant
             char k[24];
             snprintf(k, sizeof(k), "alert_name_%s", suffix[l]);
-            strlcpy(a->name[l], l == 0 ? name : str(p, k), sizeof(a->name[l]));
-            if (!a->name[l][0]) strlcpy(a->name[l], name, sizeof(a->name[l]));
+            utf8_copy(a->name[l], l == 0 ? name : str(p, k), sizeof(a->name[l]));
+            if (!a->name[l][0]) utf8_copy(a->name[l], name, sizeof(a->name[l]));
             a->name[l][0] = toupper((unsigned char)a->name[l][0]);   // ASCII only: "avis de gel" -> "Avis de gel"
             snprintf(k, sizeof(k), "feature_name_%s", suffix[l]);
-            strlcpy(a->area[l], str(p, k), sizeof(a->area[l]));
+            utf8_copy(a->area[l], str(p, k), sizeof(a->area[l]));
             snprintf(k, sizeof(k), "alert_text_%s", suffix[l]);
-            strlcpy(a->text[l], str(p, k), sizeof(a->text[l]));
+            utf8_copy(a->text[l], str(p, k), sizeof(a->text[l]));
             char *boiler = strstr(a->text[l], l == 0 ? "\n\nPlease continue to monitor" : "\n\nVeuillez continuer");
             if (boiler) *boiler = 0;                                // standard closing paragraph
         }
@@ -250,7 +251,7 @@ uint16_t *alerts_map(const alert_t *a, double lat, double lon, int w, int h)
     if (!a->id[0]) return NULL;
     char url[200];
     snprintf(url, sizeof(url), "https://api.weather.gc.ca/collections/weather-alerts/items/%s?f=json", a->id);
-    rx_t rx = { .cap = 512 * 1024 };
+    rx_t rx = { .cap = 160 * 1024 };      // a county is ~4 KB; MAX_PTS points fit (512 KB until v1.12.0)
     rx.buf = heap_caps_calloc(1, rx.cap, MALLOC_CAP_SPIRAM);
     float *plon = heap_caps_malloc(MAX_PTS * sizeof(float) * 4, MALLOC_CAP_SPIRAM);
     int ring_end[64];
@@ -259,6 +260,9 @@ uint16_t *alerts_map(const alert_t *a, double lat, double lon, int w, int h)
     uint16_t *img = heap_caps_malloc(w * h * 2, MALLOC_CAP_SPIRAM);
     float *xs = heap_caps_malloc(MAX_PTS * sizeof(float), MALLOC_CAP_SPIRAM);
     bool ok = rx.buf && plon && full && img && xs;
+    if (!ok) ESP_LOGW(TAG, "region map: no memory (%u KB of PSRAM free, largest %u KB)",
+                      (unsigned)(heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024),
+                      (unsigned)(heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM) / 1024));
     float *plat = plon + MAX_PTS;
     if (ok) {
         esp_http_client_config_t cfg = {

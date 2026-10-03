@@ -8,3 +8,5 @@
 #define heap_caps_malloc(n, caps) malloc(n)
 #define heap_caps_calloc(n, s, caps) calloc(n, s)
 #define heap_caps_realloc(p, n, caps) realloc(p, n)
+#define heap_caps_get_free_size(caps) ((size_t)0)
+#define heap_caps_get_largest_free_block(caps) ((size_t)0)

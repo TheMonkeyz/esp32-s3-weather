@@ -1,4 +1,6 @@
-// Settings web UI: HTTPS on 443 (needed for phone GPS), plain HTTP on 80 redirects to it.
+// Settings web UI. HTTPS on 443 (phone GPS needs a secure page) on the home network; plain HTTP on 80 is the captive
+// portal on the setup network and only redirects to HTTPS on the home network. Changes need the device's key (see
+// "Who may change things").
 #include "web.h"
 #include <string.h>
 #include <stdlib.h>
@@ -23,6 +25,9 @@
 #include "i18n.h"
 #include "sound.h"
 #include "lwip/sockets.h"
+#include "utf8.h"
+#include "nvs.h"
+#include "esp_random.h"
 
 static const char *TAG = "web";
 
@@ -30,6 +35,7 @@ extern const uint8_t index_html_start[] asm("_binary_index_html_start");
 extern const uint8_t index_html_end[]   asm("_binary_index_html_end");
 
 static web_location_cb_t loc_cb;
+static bool from_setup_ap(httpd_req_t *req);
 
 static esp_err_t send_json(httpd_req_t *req, cJSON *j)
 {
@@ -79,12 +85,14 @@ static esp_err_t config_get(httpd_req_t *req)
     ESP_LOGI(TAG, "GET /api/config");
     location_t loc;
     config_get_location(&loc);
+    // On the setup network (anyone with its password, during an outage too) no coordinates and no saved network
+    bool ap = from_setup_ap(req);
     char ssid[33] = "";
-    if (!net_in_portal()) net_get_ssid(ssid, sizeof(ssid));
+    if (!net_in_portal() && !ap) net_get_ssid(ssid, sizeof(ssid));
     cJSON *j = cJSON_CreateObject();
     cJSON_AddStringToObject(j, "name", loc.name);
-    cJSON_AddNumberToObject(j, "lat", loc.lat);
-    cJSON_AddNumberToObject(j, "lon", loc.lon);
+    if (!ap) cJSON_AddNumberToObject(j, "lat", loc.lat);
+    if (!ap) cJSON_AddNumberToObject(j, "lon", loc.lon);
     cJSON_AddStringToObject(j, "ssid", ssid);
     cJSON_AddStringToObject(j, "version", esp_app_get_description()->version);
     cJSON *pl = cJSON_AddArrayToObject(j, "places");
@@ -93,8 +101,8 @@ static esp_err_t config_get(httpd_req_t *req)
         config_get_place(i, &p);
         cJSON *o = cJSON_CreateObject();
         cJSON_AddStringToObject(o, "name", p.name);
-        cJSON_AddNumberToObject(o, "lat", p.lat);
-        cJSON_AddNumberToObject(o, "lon", p.lon);
+        if (!ap) cJSON_AddNumberToObject(o, "lat", p.lat);
+        if (!ap) cJSON_AddNumberToObject(o, "lon", p.lon);
         cJSON_AddItemToArray(pl, o);
     }
     cJSON_AddNumberToObject(j, "active", config_active_place());
@@ -157,8 +165,9 @@ static esp_err_t sound_post(httpd_req_t *req)
         c.volume = (int)num_or(j, "volume", c.volume);
         c.quiet_from = hhmm_or(j, "quiet_from", c.quiet_from);
         c.quiet_to = hhmm_or(j, "quiet_to", c.quiet_to);
-        sound_set_config(&c);
+        bool saved = sound_set_config(&c);
         ui_settings_changed();
+        if (!saved) { cJSON_Delete(j); return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "not saved"); }
     }
     cJSON_Delete(j);
     return sound_get(req);
@@ -246,7 +255,7 @@ static esp_err_t location_post(httpd_req_t *req)
     location_t loc = {0};
     bool ok = cJSON_IsNumber(lat) && cJSON_IsNumber(lon);
     if (ok) {
-        strlcpy(loc.name, cJSON_IsString(name) && name->valuestring[0] ? name->valuestring : "My location", sizeof(loc.name));
+        utf8_copy(loc.name, cJSON_IsString(name) && name->valuestring[0] ? name->valuestring : "My location", sizeof(loc.name));
         loc.lat = lat->valuedouble;
         loc.lon = lon->valuedouble;
         ok = config_set_place(cJSON_IsNumber(idx) ? idx->valueint : config_active_place(), &loc);
@@ -316,8 +325,9 @@ static esp_err_t presence_post(httpd_req_t *req)
     if (cJSON_IsBool(mw) || cJSON_IsNumber(cJSON_GetObjectItem(j, "motion_thr")))
         presence_set_motion(cJSON_IsBool(mw) ? cJSON_IsTrue(mw) : presence_motion_wake(), num_or(j, "motion_thr", ps.motion_thr));
     cJSON_Delete(j);
-    presence_set_config(&c);
+    bool saved = presence_set_config(&c);
     ui_settings_changed();
+    if (!saved) return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "not saved");
     return presence_get(req);
 }
 
@@ -346,6 +356,7 @@ static esp_err_t update_get(httpd_req_t *req)
     cJSON_AddBoolToObject(j, "pending_verify", esp_ota_get_state_partition(esp_ota_get_running_partition(), &st) ==
                                                ESP_OK && st == ESP_OTA_IMG_PENDING_VERIFY);
     cJSON_AddNumberToObject(j, "uptime_s", (double)(esp_timer_get_time() / 1000000));
+    if (o.rolled_back[0]) cJSON_AddStringToObject(j, "rolled_back", o.rolled_back);
     if (o.state == OTA_AVAILABLE) {
         char *notes = heap_caps_malloc(3072, MALLOC_CAP_SPIRAM);
         if (notes) {
@@ -397,7 +408,8 @@ static esp_err_t snapshot_get(httpd_req_t *req)
     display_lock(-1);
     lv_draw_buf_destroy(db);
     display_unlock();
-    ESP_LOGI(TAG, "snapshot %s %dx%d %s", name, w, h, err == ESP_OK ? "sent" : "failed");
+    ESP_LOGI(TAG, "snapshot %s %dx%d %s, stack %u B spare", name, w, h, err == ESP_OK ? "sent" : "failed",
+             (unsigned)uxTaskGetStackHighWaterMark(NULL));
     return err == ESP_OK ? httpd_resp_send_chunk(req, NULL, 0) : ESP_FAIL;
 }
 
@@ -424,19 +436,17 @@ static esp_err_t calibrate_post(httpd_req_t *req)
     return presence_get(req);
 }
 
-static void restart_task(void *a) { vTaskDelay(pdMS_TO_TICKS(1500)); esp_restart(); }
-
 static esp_err_t wifi_post(httpd_req_t *req)
 {
     cJSON *j = read_json(req);
     cJSON *ssid = j ? cJSON_GetObjectItem(j, "ssid") : NULL;
     cJSON *pass = j ? cJSON_GetObjectItem(j, "pass") : NULL;
-    bool ok = cJSON_IsString(ssid) && strlen(ssid->valuestring) < 33 &&
-              net_save_creds(ssid->valuestring, cJSON_IsString(pass) ? pass->valuestring : "");
+    const char *p = cJSON_IsString(pass) ? pass->valuestring : "";
+    bool ok = cJSON_IsString(ssid) && net_creds_valid(ssid->valuestring, p) && net_save_creds(ssid->valuestring, p);
     cJSON_Delete(j);
     if (!ok) return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "bad wifi");
     httpd_resp_sendstr(req, "{\"ok\":true}");
-    xTaskCreate(restart_task, "rst", 2048, NULL, 5, NULL);
+    ota_restart_when_safe();                               // after the answer; not in an update's first minute
     return ESP_OK;
 }
 
@@ -474,9 +484,9 @@ static esp_err_t redirect_to(httpd_req_t *req, const char *loc)
 static esp_err_t http_root_get(httpd_req_t *req)
 {
     if (from_setup_ap(req)) return index_get(req);
-    char host[64] = "", loc[96];
-    httpd_req_get_hdr_value_str(req, "Host", host, sizeof(host));
-    snprintf(loc, sizeof(loc), "https://%s/", host);
+    char ip[20] = "", loc[40];
+    if (!net_get_ip(ip, sizeof(ip))) return httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "no address yet");
+    snprintf(loc, sizeof(loc), "https://%s/", ip);       // the device's own address, never the Host header
     return redirect_to(req, loc);
 }
 
@@ -500,6 +510,116 @@ static esp_err_t http_other_get(httpd_req_t *req)
     return http_root_get(req);
 }
 
+/* ---------- Who may change things ----------
+ * Anyone on the home network could change every setting, the saved Wi-Fi included, and start an update: no password,
+ * and the same API on plain HTTP, where a web page in any browser on the network could POST to it. Now:
+ *  - every /api request must name the device itself in Host (a DNS-rebinding name is refused: 421);
+ *  - on the home network the API is HTTPS only (port 80: GET -> 302 to the HTTPS page, POST -> 403);
+ *  - a change (POST) must be JSON (415) and carry the device's key in X-Key (401), as must a snapshot. The key is
+ *    random, made at the first start (NVS "web"/"key"), and travels in the settings QR code on the display
+ *    (https://<ip>/#k=<key>: a fragment, never sent to a server); the page keeps it. Scanning the code proves you
+ *    can see the display. A custom header also makes a browser ask first (CORS preflight), which this server never
+ *    answers: another site's page can't send one.
+ *  - on the setup network no key is needed: its password is shown on the display too. */
+#define KEY_LEN 16
+static char key[KEY_LEN + 1];
+
+static void key_init(void)
+{
+    nvs_handle_t h;
+    size_t n = sizeof(key);
+    bool open = nvs_open("web", NVS_READWRITE, &h) == ESP_OK;
+    if (open && nvs_get_str(h, "key", key, &n) == ESP_OK && strlen(key) == KEY_LEN) { nvs_close(h); return; }
+    uint8_t r[KEY_LEN / 2];
+    esp_fill_random(r, sizeof(r));
+    for (int i = 0; i < KEY_LEN / 2; i++) snprintf(key + 2 * i, 3, "%02x", r[i]);
+    bool saved = open && nvs_set_str(h, "key", key) == ESP_OK && nvs_commit(h) == ESP_OK;
+    if (open) nvs_close(h);
+    ESP_LOGI(TAG, "new settings key%s", saved ? "" : " (not saved: a new one after a restart)");
+}
+
+const char *web_key(void) { return key; }
+
+static bool own_host(httpd_req_t *req)
+{
+    char host[64] = "", ip[20];
+    httpd_req_get_hdr_value_str(req, "Host", host, sizeof(host));
+    char *colon = strchr(host, ':');
+    if (colon) *colon = 0;                               // a port
+    if (from_setup_ap(req)) return !strcmp(host, "192.168.4.1");
+    return net_get_ip(ip, sizeof(ip)) && !strcmp(host, ip);
+}
+
+static esp_err_t refuse(httpd_req_t *req, const char *status, const char *why)
+{
+    ESP_LOGW(TAG, "%s %.40s refused: %s", req->method == HTTP_POST ? "POST" : "GET", req->uri, status);
+    httpd_resp_set_status(req, status);
+    httpd_resp_set_type(req, "application/json");
+    char b[64];
+    snprintf(b, sizeof(b), "{\"error\":\"%s\"}", why);
+    return httpd_resp_sendstr(req, b);
+}
+
+typedef struct {
+    esp_err_t (*fn)(httpd_req_t *);
+    bool keyed;         // a change or a snapshot: JSON (POST) and the key, unless on the setup network
+    bool plain;         // registered on the port-80 server
+    bool not_ap;        // never on the setup network (a snapshot of the screen)
+} route_t;
+
+// The API: both servers (the port-80 copies get .plain set), the snapshot on HTTPS only
+static const struct { const char *uri; httpd_method_t m; route_t r; } api[] = {
+    { "/api/config",    HTTP_GET,  { .fn = config_get } },
+    { "/api/scan",      HTTP_GET,  { .fn = scan_get } },
+    { "/api/presence",  HTTP_GET,  { .fn = presence_get } },
+    { "/api/update",    HTTP_GET,  { .fn = update_get } },
+    { "/api/sound",     HTTP_GET,  { .fn = sound_get } },
+    { "/api/location",  HTTP_POST, { .fn = location_post, .keyed = true } },
+    { "/api/units",     HTTP_POST, { .fn = units_post, .keyed = true } },
+    { "/api/places",    HTTP_POST, { .fn = places_post, .keyed = true } },
+    { "/api/wifi",      HTTP_POST, { .fn = wifi_post, .keyed = true } },
+    { "/api/presence",  HTTP_POST, { .fn = presence_post, .keyed = true } },
+    { "/api/calibrate", HTTP_POST, { .fn = calibrate_post, .keyed = true } },
+    { "/api/update",    HTTP_POST, { .fn = update_post, .keyed = true } },
+    { "/api/sound",     HTTP_POST, { .fn = sound_post, .keyed = true } },
+    { "/api/snapshot",  HTTP_GET,  { .fn = snapshot_get, .keyed = true, .not_ap = true } },
+};
+#define API_N (sizeof(api) / sizeof(api[0]))
+
+static esp_err_t guarded(httpd_req_t *req)
+{
+    const route_t *r = req->user_ctx;
+    bool ap = from_setup_ap(req);
+    if (r->plain && !ap) {                               // home network over plain HTTP: HTTPS only
+        if (req->method == HTTP_POST) return refuse(req, "403 Forbidden", "https");
+        char ip[20], loc[40];
+        if (!net_get_ip(ip, sizeof(ip))) return refuse(req, "403 Forbidden", "https");
+        snprintf(loc, sizeof(loc), "https://%s/", ip);
+        return redirect_to(req, loc);
+    }
+    if (r->not_ap && ap) return refuse(req, "403 Forbidden", "setup");
+    if (!own_host(req)) return refuse(req, "421 Misdirected Request", "host");
+    if (r->keyed && req->method == HTTP_POST) {
+        char ct[48] = "";
+        httpd_req_get_hdr_value_str(req, "Content-Type", ct, sizeof(ct));
+        if (strncmp(ct, "application/json", 16)) return refuse(req, "415 Unsupported Media Type", "json");
+    }
+    if (r->keyed && !ap) {
+        char k[KEY_LEN + 2] = "";
+        httpd_req_get_hdr_value_str(req, "X-Key", k, sizeof(k));
+        uint8_t diff = strlen(k) != KEY_LEN;
+        for (int i = 0; i < KEY_LEN; i++) diff |= k[i] ^ key[i];      // same time whatever matches
+        if (diff) return refuse(req, "401 Unauthorized", "key");
+    }
+    return r->fn(req);
+}
+
+static void add(httpd_handle_t s, const char *uri, httpd_method_t m, const route_t *r)
+{
+    httpd_uri_t u = { .uri = uri, .method = m, .handler = guarded, .user_ctx = (void *)r };
+    if (httpd_register_uri_handler(s, &u) != ESP_OK) ESP_LOGE(TAG, "route %s not registered", uri);
+}
+
 static void start_https(void)
 {
     const char *cert, *key;
@@ -511,30 +631,16 @@ static void start_https(void)
     conf.servercert_len = cert_len;
     conf.prvtkey_pem = (const uint8_t *)key;
     conf.prvtkey_len = key_len;
-    conf.httpd.max_uri_handlers = 18;
-    conf.httpd.stack_size = 7168;      // measured peak ~3.3 KB (TLS handshake)
+    conf.httpd.max_uri_handlers = API_N + 2;
+    conf.httpd.stack_size = 10240;     // TLS handshake ~3.3 KB, and GET /api/snapshot renders a whole screen here
+                                       // (992 B spare seen with 7 KB): "web: snapshot ... stack N B spare" in the log
     conf.httpd.max_open_sockets = 5;
     conf.httpd.lru_purge_enable = true;
     httpd_handle_t s = NULL;
     if (httpd_ssl_start(&s, &conf) != ESP_OK) { ESP_LOGE(TAG, "HTTPS server failed to start"); return; }
-    httpd_uri_t uris[] = {
-        { .uri = "/",             .method = HTTP_GET,  .handler = index_get },
-        { .uri = "/api/config",   .method = HTTP_GET,  .handler = config_get },
-        { .uri = "/api/scan",     .method = HTTP_GET,  .handler = scan_get },
-        { .uri = "/api/location", .method = HTTP_POST, .handler = location_post },
-        { .uri = "/api/units",    .method = HTTP_POST, .handler = units_post },
-        { .uri = "/api/places",   .method = HTTP_POST, .handler = places_post },
-        { .uri = "/api/wifi",     .method = HTTP_POST, .handler = wifi_post },
-        { .uri = "/api/presence", .method = HTTP_GET,  .handler = presence_get },
-        { .uri = "/api/presence", .method = HTTP_POST, .handler = presence_post },
-        { .uri = "/api/calibrate", .method = HTTP_POST, .handler = calibrate_post },
-        { .uri = "/api/update",   .method = HTTP_GET,  .handler = update_get },
-        { .uri = "/api/update",   .method = HTTP_POST, .handler = update_post },
-        { .uri = "/api/snapshot", .method = HTTP_GET,  .handler = snapshot_get },
-        { .uri = "/api/sound",    .method = HTTP_GET,  .handler = sound_get },
-        { .uri = "/api/sound",    .method = HTTP_POST, .handler = sound_post },
-    };
-    for (int i = 0; i < sizeof(uris) / sizeof(uris[0]); i++) httpd_register_uri_handler(s, &uris[i]);
+    httpd_uri_t page = { .uri = "/", .method = HTTP_GET, .handler = index_get };
+    httpd_register_uri_handler(s, &page);
+    for (int i = 0; i < sizeof(api) / sizeof(api[0]); i++) add(s, api[i].uri, api[i].m, &api[i].r);
 }
 
 void web_start(web_location_cb_t on_location_changed)
@@ -543,33 +649,30 @@ void web_start(web_location_cb_t on_location_changed)
     loc_cb = on_location_changed;
     if (started) return;
     started = true;
+    key_init();
 
     start_https();
 
     httpd_config_t hc = HTTPD_DEFAULT_CONFIG();
     hc.uri_match_fn = httpd_uri_match_wildcard;
-    hc.max_uri_handlers = 14;
+    hc.max_uri_handlers = API_N + 2;
     hc.max_open_sockets = 6;
     hc.lru_purge_enable = true;
-    hc.stack_size = 4096;              // measured peak ~1.2 KB
+    hc.stack_size = 6144;              // idle ~1.2 KB; serving the portal's page left 1144 B of 4096
     httpd_handle_t h = NULL;
     if (httpd_start(&h, &hc) == ESP_OK) {
-        httpd_uri_t huris[] = {        // specific routes first; the wildcard catches everything else
-            { .uri = "/",             .method = HTTP_GET,  .handler = http_root_get },
-            { .uri = "/api/config",   .method = HTTP_GET,  .handler = config_get },
-            { .uri = "/api/scan",     .method = HTTP_GET,  .handler = scan_get },
-            { .uri = "/api/location", .method = HTTP_POST, .handler = location_post },
-            { .uri = "/api/units",    .method = HTTP_POST, .handler = units_post },
-            { .uri = "/api/places",   .method = HTTP_POST, .handler = places_post },
-            { .uri = "/api/wifi",     .method = HTTP_POST, .handler = wifi_post },
-            { .uri = "/api/presence", .method = HTTP_GET,  .handler = presence_get },
-            { .uri = "/api/presence", .method = HTTP_POST, .handler = presence_post },
-            { .uri = "/api/calibrate", .method = HTTP_POST, .handler = calibrate_post },
-            { .uri = "/api/update",   .method = HTTP_GET,  .handler = update_get },
-            { .uri = "/api/update",   .method = HTTP_POST, .handler = update_post },
-            { .uri = "/*",            .method = HTTP_GET,  .handler = http_other_get },
-        };
-        for (int i = 0; i < sizeof(huris) / sizeof(huris[0]); i++) httpd_register_uri_handler(h, &huris[i]);
+        // Specific routes first; the wildcard catches everything else. The API is served here only to the setup
+        // network (the captive portal's page); the home network is redirected to HTTPS (guarded()).
+        static route_t plain[API_N];
+        httpd_uri_t root = { .uri = "/", .method = HTTP_GET, .handler = http_root_get };
+        httpd_register_uri_handler(h, &root);
+        for (int i = 0; i < API_N; i++) {
+            plain[i] = api[i].r;
+            plain[i].plain = true;
+            add(h, api[i].uri, api[i].m, &plain[i]);
+        }
+        httpd_uri_t other = { .uri = "/*", .method = HTTP_GET, .handler = http_other_get };
+        httpd_register_uri_handler(h, &other);
     }
     char ip[20];
     if (net_get_ip(ip, sizeof(ip))) ESP_LOGI(TAG, "Settings page: https://%s/", ip);

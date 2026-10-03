@@ -26,7 +26,7 @@ typedef struct {
 
 void presence_start(void);                          // after touch_init (shares its I2C bus)
 void presence_get_config(presence_cfg_t *out);
-void presence_set_config(const presence_cfg_t *in); // saves to NVS (baseline is kept)
+bool presence_set_config(const presence_cfg_t *in); // saves to NVS (baseline is kept); false = not saved
 void presence_get_status(presence_status_t *st);
 bool presence_calibrate(int seconds);               // measure background noise; keep quiet meanwhile
 void presence_wake(void);

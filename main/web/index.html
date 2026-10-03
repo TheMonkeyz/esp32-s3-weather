@@ -41,6 +41,7 @@ details.coords{margin-top:10px;font-size:14px;color:var(--dim)}details.coords su
 #msg{min-height:20px;margin-top:10px;font-size:14px}.ok{color:#6fd08c}.err{color:#ff7a7a}
 </style></head><body>
 <h1 data-i18n="title">Weather display</h1>
+<div id="keyNote" class="card err" style="display:none"></div>
 
 <div class="card" id="locCard">
   <h2 data-i18n="places">Places</h2>
@@ -161,7 +162,7 @@ details.coords{margin-top:10px;font-size:14px;color:var(--dim)}details.coords su
   <button class="sec" id="scanBtn" data-i18n="scan"></button>
   <div id="nets"></div>
   <label for="ssid" data-i18n="netName"></label>
-  <input id="ssid" autocomplete="off" data-i18n-ph="netPh">
+  <input id="ssid" maxlength="32" autocomplete="off" data-i18n-ph="netPh">
   <label for="pass" data-i18n="password"></label>
   <div class="pw"><input id="pass" type="password" autocomplete="off" autocapitalize="off" spellcheck="false">
     <button type="button" id="showPw" class="eye"></button></div>
@@ -191,6 +192,24 @@ details.coords{margin-top:10px;font-size:14px;color:var(--dim)}details.coords su
 <script>
 window.onerror = (m, src, line) => { const e = document.getElementById('msg'); if (e) { e.textContent = (typeof t === 'function' ? t('pageError', m, line) : 'Page error: ' + m); e.className = 'err'; } };
 const $ = id => document.getElementById(id);
+// The display's key (web.c, "Who may change things"): it comes in the settings QR code (https://<ip>/#k=<key>) and
+// this phone keeps it. Every request to the display carries it; without it the display refuses changes (401).
+let KEY = '';
+try { KEY = localStorage.getItem('key') || ''; } catch(e) {}
+const keyIn = location.hash.match(/[#&]k=([0-9a-f]{16})/);
+if (keyIn) {
+  KEY = keyIn[1];
+  try { localStorage.setItem('key', KEY); } catch(e) {}
+  history.replaceState(null, '', location.pathname);           // not left in the address bar or the history
+}
+const fetchRaw = window.fetch.bind(window);
+window.fetch = async (url, opt = {}) => {
+  if (typeof url === 'string' && url.startsWith('/api/') && KEY)
+    opt = {...opt, headers: {...(opt.headers || {}), 'X-Key': KEY}};
+  const r = await fetchRaw(url, opt);
+  if (r.status === 401) { const n = $('keyNote'); n.textContent = t('needKey'); n.style.display = 'block'; }
+  return r;
+};
 // Texts in English and Canadian French (Québec usage). Static elements carry data-i18n (text), data-i18n-html
 // (trusted markup from this table) or data-i18n-ph (placeholder); scripts call t('key', args...) ({0}, {1}...).
 // The language is the display's (GET /api/config units.lang) and is changed with it (POST /api/units {lang}).
@@ -232,7 +251,7 @@ const I18N = {
   needSecure: 'Phone location needs the secure page (link above).', gettingLoc: 'Getting your location…',
   gotIt: 'Got it. Check the pin, then tap Save.', locUnavail: 'Location unavailable: {0}',
   cityPicked: '{0}: move the pin if needed, then tap Save.', searchNoNet: 'City search needs internet on this phone.',
-  badCoords: 'Pick a spot on the map or enter valid coordinates.', savedUpdating: 'Saved. The display is updating.',
+  badCoords: 'Pick a spot on the map or enter valid coordinates.', nameLong: 'This name is too long for the display. Shorten it.', savedUpdating: 'Saved. The display is updating.',
   addedPlace: 'Added {0}. Drag up or down on the display to see it.',
   savedPlace: 'Saved {0}. Drag up or down on the display to see it.', saveFailed: 'Save failed.',
   chooseNet: 'Choose a network.', wifiSaved: 'Saved. The display is restarting.',
@@ -246,14 +265,15 @@ const I18N = {
   fwIdle: 'Checks for updates a minute after start-up, then every 6 hours.', fwChecking: 'Checking…',
   fwUpToDate: 'Up to date{0}.', fwLatest: ' (latest: {0})', fwAvailable: 'Version {0} is available.',
   fwDownloading: 'Downloading {0}… {1} %. Keep the display plugged in.', fwDone: 'Installed. The display is restarting…',
-  fwFailed: 'Update check failed: {0}.', unknownErr: 'unknown error', installX: 'Install {0}', theUpdate: 'update',
+  fwFailed: 'Update check failed: {0}.', fwRolledBack: '{0} was undone: the display restarted before it was confirmed.', unknownErr: 'unknown error', installX: 'Install {0}', theUpdate: 'update',
   installConfirm: 'Install {0}? The display restarts when it is done; settings are kept.',
   noAnswer: 'The display did not answer', whatsNew: "What's new", pageError: 'Page error: {0} (line {1})',
   soundTitle: 'Sound', chimeFor: 'Chime for new weather alerts', lvOff: 'Off', lvRed: 'Red alerts only',
   lvOrange: 'Orange and red alerts', lvAll: 'All alerts (yellow and statements too)', volume: 'Volume',
   quietFrom: 'Quiet from', quietTo: 'Until', testChime: '🔔 Test the chime',
-  quietNote: 'No chime during quiet hours, except for red alerts. Each alert chimes once.',
+  quietNote: 'No sound during quiet hours, except for red alerts. Each warning sounds once, and again if it gets worse. The same start and end time means no quiet hours.',
   noSpeaker: 'No speaker found on this display.',
+  needKey: 'To change settings, scan the code on the display: press and hold the weather screen. This phone then remembers it.',
  },
  fr: {
   title: 'Afficheur météo', places: 'Endroits',
@@ -281,6 +301,7 @@ const I18N = {
   showPw: 'Afficher le mot de passe', hidePw: 'Masquer le mot de passe',
   pwTip: 'Mot de passe enregistré sur votre téléphone? Copiez-le',
   pwTipList: "<li><b>iPhone</b> (iOS 16+) : Réglages → Wi-Fi → touchez <b>ⓘ</b> à côté de votre réseau → touchez <b>Mot de passe</b> (Face ID) → <b>Copier</b>, puis revenez ici et collez-le.</li><li><b>Android</b> 10+ : rien à taper. Sur l'écran de configuration Wi-Fi de l'afficheur, glissez vers la gauche pour <b>Easy Connect</b> et balayez son code avec la caméra du téléphone ou un lecteur QR pendant que le téléphone est connecté à votre Wi-Fi. Ou Paramètres → Wi-Fi → votre réseau → <b>Partager</b> : le mot de passe est sous le code QR.</li>",
+  needKey: "Pour modifier les réglages, balayez le code QR de l'afficheur : appuyez longuement sur l'écran météo. Ce téléphone s'en souviendra ensuite.",
   saveWifi: 'Enregistrer le Wi-Fi et redémarrer', firmware: 'Micrologiciel', installed: 'Installé : ',
   updatesLbl: 'Mises à jour', chStable: 'Versions stables', chBeta: 'Bêta (versions candidates)',
   checkUpd: 'Vérifier les mises à jour',
@@ -296,7 +317,7 @@ const I18N = {
   gotIt: "Position trouvée. Vérifiez l'épingle, puis touchez Enregistrer.", locUnavail: 'Position non disponible : {0}',
   cityPicked: "{0} : déplacez l'épingle au besoin, puis touchez Enregistrer.",
   searchNoNet: "La recherche de ville a besoin d'Internet sur ce téléphone.",
-  badCoords: 'Choisissez un endroit sur la carte ou entrez des coordonnées valides.',
+  badCoords: 'Choisissez un endroit sur la carte ou entrez des coordonnées valides.', nameLong: "Ce nom est trop long pour l'afficheur. Raccourcissez-le.",
   savedUpdating: "Enregistré. L'afficheur se met à jour.",
   addedPlace: "{0} ajouté. Glissez vers le haut ou le bas sur l'afficheur pour le voir.",
   savedPlace: "{0} enregistré. Glissez vers le haut ou le bas sur l'afficheur pour le voir.",
@@ -311,13 +332,13 @@ const I18N = {
   fwIdle: 'Vérifie les mises à jour une minute après le démarrage, puis toutes les 6 heures.', fwChecking: 'Vérification…',
   fwUpToDate: 'À jour{0}.', fwLatest: ' (dernière : {0})', fwAvailable: 'La version {0} est disponible.',
   fwDownloading: "Téléchargement de {0}… {1} %. Laissez l'afficheur branché.", fwDone: "Installée. L'afficheur redémarre…",
-  fwFailed: 'La vérification a échoué : {0}.', unknownErr: 'erreur inconnue', installX: 'Installer {0}',
+  fwFailed: 'La vérification a échoué : {0}.', fwRolledBack: "{0} annulée : l'afficheur a redémarré avant de la confirmer.", unknownErr: 'erreur inconnue', installX: 'Installer {0}',
   theUpdate: 'la mise à jour', installConfirm: "Installer {0}? L'afficheur redémarre ensuite; les réglages sont conservés.",
   noAnswer: "L'afficheur n'a pas répondu", whatsNew: 'Nouveautés', pageError: 'Erreur dans la page : {0} (ligne {1})',
   soundTitle: 'Son', chimeFor: 'Alerte sonore pour les nouvelles alertes météo', lvOff: 'Non',
   lvRed: 'Alertes rouges seulement', lvOrange: 'Alertes orange et rouges', lvAll: 'Toutes les alertes (jaunes et bulletins aussi)',
   volume: 'Volume', quietFrom: 'Silence de', quietTo: 'Jusqu\'à', testChime: '🔔 Essayer le son',
-  quietNote: 'Aucun son pendant les heures de silence, sauf pour les alertes rouges. Chaque alerte sonne une seule fois.',
+  quietNote: "Aucun son pendant les heures de silence, sauf pour les alertes rouges. Chaque alerte sonne une fois, puis de nouveau si elle s'aggrave. La même heure de début et de fin signifie : pas d'heures de silence.",
   noSpeaker: "Aucun haut-parleur trouvé sur cet afficheur.",
  },
  iu: {
@@ -462,6 +483,7 @@ const I18N = {
   testChime: '🔔 ᓈᓚᒍᒃ ᓂᐱ',
   quietNote: 'ᓂᐸᐃᑦᑐᒥ ᓂᐱᖃᙱᑦᑐᖅ, ᐊᐅᐸᓗᒃᑐᑦ ᑭᓯᐊᓂ. ᐃᓂᕐᑎᕈᑎ ᐊᑕᐅᓯᐊᖅ ᓂᐱᖃᖅᑐᖅ.',
   noSpeaker: 'ᓂᐱᖃᐅᑦ ᐱᖃᙱᑦᑐᖅ.',
+  needKey: 'ᐋᖅᑭᔅᓯᒪᐅᑎᑦ ᐊᓯᔾᔨᖅᓱᖅᑯᓐᓇᑎᑦ, ᐊᔾᔨᓕᐅᕐᓕ ᑎᑎᕋᐅᔭᒧᑦ ᓴᖅᑭᖅᑐᒥ: ᓇᕿᓪᓗᒍ ᓇᕿᒻᒥᓕ ᓯᓚᒧᑦ. ᐅᖄᓚᐅᑎᕋᓛᕐᒧᑦ ᐳᐃᒍᖅᑕᐃᓕᓗᒍ.',
  },
 };
 let LANG = 'en';
@@ -509,7 +531,7 @@ function showPlaces(){
     const d = document.createElement('div'); d.className = 'pl';
     const n = document.createElement('div'); n.className = 'pn';
     const b = document.createElement('b'); b.textContent = p.name;
-    const m = document.createElement('span'); m.className = 'muted'; m.textContent = p.lat.toFixed(4) + ', ' + p.lon.toFixed(4);
+    const m = document.createElement('span'); m.className = 'muted'; m.textContent = typeof p.lat === 'number' ? p.lat.toFixed(4) + ', ' + p.lon.toFixed(4) : '';   // (setup network: none)
     n.append(b, m); d.append(n);
     if (i === cfg.active) { const o = document.createElement('span'); o.className = 'on'; o.textContent = t('onScreen'); d.append(o); }
     else {
@@ -533,8 +555,12 @@ function openEditor(i){
   $('delPlace').style.display = !isNew && cfg.places.length > 1 ? '' : 'none';
   $('msg').textContent = '';
   setView(false);
-  setPos(p.lat, p.lon, false);
-  showMap(p.lat, p.lon, isNew ? 8 : 11);
+  // On the setup network the display doesn't tell where its places are: the map starts wide, the coordinates empty
+  // (saving without picking a spot asks for one, rather than moving the place)
+  const known = typeof p.lat === 'number', lat = known ? p.lat : 56, lon = known ? p.lon : -96;
+  setPos(lat, lon, false);
+  if (!known) { $('lat').value = ''; $('lon').value = ''; }
+  showMap(lat, lon, !known ? 3 : isNew ? 8 : 11);
 }
 function closeEditor(){ editing = -1; setView(true); }
 function setPos(lat, lon, picked){                 // picked: chosen on the map or by GPS -> suggest a name
@@ -693,6 +719,8 @@ $('q').oninput = () => {
 async function savePlace(){
   const index = editing, isNew = index >= cfg.places.length;
   const body = {name: $('name').value.trim() || t('myPlace'), lat: parseFloat($('lat').value), lon: parseFloat($('lon').value), index};
+  // The display keeps 47 bytes of a name: 40 letters, but only 15 syllabics (3 bytes each)
+  if (new TextEncoder().encode(body.name).length > 47) { say($('msg'), t('nameLong'), false); return; }
   if (!isFinite(body.lat) || !isFinite(body.lon) || Math.abs(body.lat) > 85 || Math.abs(body.lon) > 180){
     say($('msg'), t('badCoords'), false); $('coords').open = true; return;
   }
@@ -710,8 +738,8 @@ $('saveWifi').onclick = async () => {
   const body = {ssid: $('ssid').value, pass: $('pass').value};
   if (!body.ssid){ say($('wmsg'), t('chooseNet'), false); return; }
   try{
-    await fetch('/api/wifi', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
-    say($('wmsg'), t('wifiSaved'), true);
+    const r = await fetch('/api/wifi', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    say($('wmsg'), r.ok ? t('wifiSaved') : t('notSaved', r.status), r.ok);
   }catch(e){ say($('wmsg'), t('saveFailed'), false); }
 };
 
@@ -820,7 +848,8 @@ function fwShow(u){
     done: t('fwDone'),
     failed: t('fwFailed', u.error || t('unknownErr'))
   }[u.state] || u.state;
-  $('fwState').textContent = txt;
+  $('fwState').textContent = (u.rolled_back && !busy ? t('fwRolledBack', u.rolled_back) + ' ' : '') +
+    (u.state === 'available' && u.error ? t('fwAvailable', u.latest) + ' ' + u.error + '.' : txt);
   fwNotes(u.state === 'available' ? u.notes : '');
   $('fwMeter').style.display = u.state === 'downloading' || u.state === 'done' ? 'block' : 'none';
   $('fwBar').style.width = (u.state === 'done' ? 100 : u.progress) + '%';

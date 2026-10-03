@@ -10,6 +10,9 @@ typedef struct {
 // Places: up to MAX_PLACES; the "location" everything uses (forecast, alerts, radar...) is the one shown.
 #define MAX_PLACES 4
 void config_get_location(location_t *out);          // the place shown; defaults to Québec City
+// An NVS write's result: false (and a log line naming `what`) if it failed. Savers chain these and report "not saved".
+#include "esp_err.h"
+bool nvs_check(esp_err_t err, const char *what);
 bool config_set_location(const location_t *loc);    // edits the place shown; saves to NVS
 int config_place_count(void);
 int config_active_place(void);

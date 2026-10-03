@@ -39,3 +39,6 @@ version.txt
 
 # Files copied in by Claude sessions
 firmware/in/
+tools/harness/.display_key
+tools/harness/.setup_profile.xml
+tools/harness/baseline.proposed.json

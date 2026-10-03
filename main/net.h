@@ -3,7 +3,14 @@
 #include <stddef.h>
 
 #define SETUP_AP_SSID "Weather-Setup"
-#define SETUP_AP_PASS "meteo1234"
+// The setup network's password: this display's own, made at the first start (NVS "setup"/"pass"), shown on the
+// setup screen and in its QR code. (Until v1.12.0 every display had the same published one.)
+const char *net_setup_ap_pass(void);
+// Copy a network name (at most 32 bytes, as in a Wi-Fi frame) or a password (at most 64) into the driver's fixed
+// fields, which aren't NUL-terminated when full
+#define NET_SSID_MAX 32
+#define NET_PASS_MAX 64
+bool net_creds_valid(const char *ssid, const char *pass);   // 1-32 byte name; password empty, 8-63 chars or 64 hex
 
 void net_init(void);
 bool net_load_creds(char *ssid, size_t sl, char *pass, size_t pl);
@@ -32,6 +39,7 @@ void net_dpp_stop(void);
 bool net_dpp_active(void);
 // Test console (testcon.c): pretend the saved network is unreachable, without changing the saved credentials
 void net_test_offline(void);             // now (until net_test_online or a restart)
-void net_test_offline_next_boot(void);   // next boot only (flag in RTC memory); the caller restarts
+void net_test_offline_next_boot(bool short_setup);   // next boot only (RTC flag); short: auto setup for 60 s only
+bool net_test_short_setup(void);         // this boot was started that way (offline_setup in main.c)
 void net_test_online(void);              // back to the saved network
 void net_test_info(char *out, size_t n); // one line: connected, station SSID, setup modes, clients, retries, channel

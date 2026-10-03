@@ -6,7 +6,7 @@ import re
 import subprocess
 import time
 
-from board import Fail, SETUP_IP, dns_query, http_get, ROOT
+from board import Fail, OLD_SETUP_PASS, SETUP_IP, dns_query, http_get, ROOT
 
 SUITES = {}
 
@@ -55,6 +55,10 @@ def console_and_network(ctx):
     check(w['connected'] == '1', f'not connected to Wi-Fi: {w}')
     cfg = b.api('/api/config')
     check('units' in cfg and 'languages' in cfg, 'GET /api/config lacks units/languages')
+    before = getattr(ctx, 'places_before', None)
+    if before is not None:                             # (places 2-4 moved from blobs to typed keys in v1.12.0)
+        check(len(cfg['places']) == before, f'{before} places before the restart, {len(cfg["places"])} after')
+        ctx.note(f'{before} places kept across the restart')
     ctx.note(f'Wi-Fi "{w["sta_ssid"]}" channel {w["channel"]}, settings API answers')
 
 
@@ -159,6 +163,50 @@ def live_api(ctx):
         page = r.read()
     check(b'</html>' in page[-200:], 'settings page arrived truncated (hardware-AES bug class)')
     ctx.metric('page_kb', len(page) // 1024)
+
+
+@test('web')
+def who_may_change(ctx):
+    """main/web.c "Who may change things": HTTPS only on the home network, the device's own Host, JSON, the key."""
+    b = ctx.board
+    if not b.key():
+        ctx.note('firmware without a settings key: rules not checked')
+        return
+    import http.client
+    import ssl as _ssl
+
+    def req(method, path, body=None, headers=None, tls=True, host=None):
+        c = (http.client.HTTPSConnection(b.ip, 443, context=b.ctx, timeout=10) if tls
+             else http.client.HTTPConnection(b.ip, 80, timeout=10))
+        h = {'Host': host or b.ip}
+        h.update(headers or {})
+        c.request(method, path, body=body, headers=h)
+        r = c.getresponse()
+        r.read()
+        c.close()
+        return r.status, r.getheader('Location')
+
+    js = {'Content-Type': 'application/json'}
+    k = {'X-Key': b.key()}
+    st, _ = req('POST', '/api/units', '{}', js, tls=False)
+    check(st == 403, f'POST over plain HTTP on the home network: {st}, expected 403')
+    st, loc = req('GET', '/api/config', tls=False)
+    check(st == 302 and loc == f'https://{b.ip}/', f'GET /api over plain HTTP: {st} {loc}, expected 302 to the page')
+    st, loc = req('GET', '/', tls=False, host='evil.example')
+    check(loc == f'https://{b.ip}/', f'the HTTP redirect follows the Host header ({loc})')
+    st, _ = req('POST', '/api/units', '{}', js)
+    check(st == 401, f'POST without the key: {st}, expected 401')
+    st, _ = req('POST', '/api/units', '{}', {**js, 'X-Key': '0' * 16})
+    check(st == 401, f'POST with a wrong key: {st}, expected 401')
+    st, _ = req('POST', '/api/units', '{}', {'Content-Type': 'text/plain', **k})
+    check(st == 415, f'POST as text/plain: {st}, expected 415')
+    st, _ = req('GET', '/api/config', host='rebind.example')
+    check(st == 421, f'GET with another Host (DNS rebinding): {st}, expected 421')
+    st, _ = req('GET', '/api/snapshot?screen=current')
+    check(st == 401, f'snapshot without the key: {st}, expected 401')
+    st, _ = req('POST', '/api/units', '{}', {**js, **k})
+    check(st == 200, f'POST with the key: {st}, expected 200')
+    ctx.note('settings API: 403 over HTTP, 302 to the device itself, 401 without/with a wrong key, 415, 421, 200')
 
 
 # ---------------------------------------------------------------- performance
@@ -414,12 +462,15 @@ def lose_and_recover(ctx):
     check(w1['ap'] == '1', 'setup network not up')
     b.cmd('tap 233 233')                             # close: "Tap to try again"
     ctx.log.wait(r'Setup closed: trying the saved network again', 5)
+    back = len(ctx.log.lines())
     b.cmd('wifi online', r'test: wifi (.*)')
     end = time.time() + 40
     while b.wifi()['connected'] != '1':
         if time.time() > end:
             raise Fail('did not reconnect within 40 s after the network came back')
         time.sleep(1)
+    if b.key():                                      # since v1.12.0: Wi-Fi back -> an update check at once
+        ctx.log.wait(r'ota: checking', 30, 'an update check when Wi-Fi came back', start=back)
     ctx.note(f'retries paused at {w0["retries"]} while setup was open; reconnected after "wifi online"')
 
 
@@ -429,7 +480,7 @@ def phone_check(ctx, ap_seen_by_pc=True):
     """The PC joins the setup network like a phone: DNS, captive-portal redirect, setup page, stays connected."""
     w = ctx.wifi
     ctx.board.cmd('portal windows-quiet')            # no msn.com tab on this PC (see main/web.c)
-    w.join_setup()
+    w.join_setup(ctx.board.wifi().get('ap_pass', OLD_SETUP_PASS))   # this display's own password
     try:
         ctx.log.wait(r'wifi:station: .* join', 15, 'the board sees the PC join')
         for name in ('connectivitycheck.gstatic.com', 'captive.apple.com', 'example.org'):
@@ -442,6 +493,12 @@ def phone_check(ctx, ap_seen_by_pc=True):
         check(st == 200 and b'</html>' in body[-300:], f'setup page: HTTP {st}, {len(body)} bytes')
         st, _, body = http_get(SETUP_IP, '/api/config', SETUP_IP)
         check(st == 200 and b'"units"' in body, f'GET /api/config on the setup network: HTTP {st}')
+        if ctx.board.key():                           # since v1.12.0 (main/web.c, "Who may change things")
+            check(b'"lat"' not in body, 'the setup network gets the coordinates of the places')
+            st, _, body = http_get(SETUP_IP, '/api/sound', SETUP_IP)
+            check(st == 200 and b'"level"' in body, f'GET /api/sound on the setup network (the Sound card): HTTP {st}')
+            st, _, _ = http_get(SETUP_IP, '/api/snapshot', SETUP_IP)
+            check(st == 403, f'snapshot on the setup network: HTTP {st}, expected 403')
         at = len(ctx.log.lines())
         time.sleep(15)                               # a reconnect attempt used to knock phones off here
         state, ssid = w.state()
@@ -570,3 +627,35 @@ def dim_off_wake(ctx):
     finally:
         b.api('/api/presence', orig)
         b.cmd('wake')
+
+
+@test('wifi_setup')
+def setup_stops_opening_by_itself(ctx):
+    """Router out for long: the setup network opens by itself for 15 min only (the owner's choice), then the display
+    just keeps trying, and a long-press still opens setup. 'offline-boot-short' makes that 60 s for one boot."""
+    b = ctx.board
+    if not b.key():
+        ctx.note('firmware without the settings key (before v1.12.0-rc.3): not checked')
+        return
+    ctx.reset_ok = True
+    b.cmd('wifi offline-boot-short', r'test: ok restarting')
+    ctx.log.wait(r'test: console ready', 30, 'the restart')
+    at = len(ctx.log.lines())
+    ctx.log.wait(r'offering the setup network', 50, 'offline setup after the 30 s connect timeout', start=at)
+    b.wait_screen('setup0', 5)
+    b.cmd('tap 233 233')                             # close: tries the saved network for 30 s
+    ctx.log.wait(r'Setup network: no longer opened by itself', 75, 'the 60 s test window running out', start=at)
+    time.sleep(2)
+    check(b.screen() == 'message', f'setup reopened by itself after the window ({b.screen()})')
+    check(b.wifi()['ap'] == '0', 'the setup network is still up')
+    b.cmd('press 233 233')                           # a long-press still opens it
+    b.wait_screen('setup0', 6)
+    b.cmd('wifi online', r'test: wifi (.*)')
+    b.cmd('tap 233 233')
+    ctx.log.wait(r'Saved network is back', 60, 'reconnect after closing setup', start=at)
+    end = time.time() + 75
+    while b.screen() != 'weather':
+        if time.time() > end:
+            raise Fail('not back on the weather screen 75 s after the network came back')
+        time.sleep(1)
+    ctx.note('automatic setup network: closed after its window, long-press reopens it, recovery')

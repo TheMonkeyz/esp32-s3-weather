@@ -18,6 +18,7 @@
 #include "display.h"
 #include "touch.h"
 #include "imu.h"
+#include "config.h"
 
 static const char *TAG = "presence";
 
@@ -43,6 +44,7 @@ static const audio_codec_data_if_t *i2s_data;     // shared with the speaker (so
 static bool mic_ok;
 
 static volatile presence_state_t state = PRESENCE_ACTIVE;
+static uint32_t mic_errors;                                // failed microphone reads since boot
 static volatile float level_db = -90, score, quiet_s;
 static volatile int cur_pct = -1;                 // brightness actually applied
 static volatile bool calibrating;
@@ -58,13 +60,30 @@ static volatile float motion_g, motion_show;      // now; recent peak for the se
 
 /* ---------------- settings ---------------- */
 
+// The limits every setting is held to, whether it comes from the page, the screen or NVS (until v1.12.0 a value
+// loaded from NVS skipped them). The dimmed level may be above the full one: it is capped where it is used, so a
+// brightness lowered for a while doesn't lower the saved dim level for good.
+static void clamp_cfg(presence_cfg_t *c)
+{
+    if (!(c->margin_db >= 1)) c->margin_db = 1;          // (NaN too)
+    if (c->margin_db > 60) c->margin_db = 60;
+    if (!(c->wake_s >= 0.2f)) c->wake_s = 0.2f;
+    if (c->wake_s > 60) c->wake_s = 60;
+    if (!(c->dim_s >= 1)) c->dim_s = 1;
+    if (!(c->off_s >= 1)) c->off_s = 1;
+    if (c->bright_pct < 5) c->bright_pct = 5;
+    if (c->bright_pct > 100) c->bright_pct = 100;
+    if (c->dim_pct < 1) c->dim_pct = 1;
+    if (c->dim_pct > 100) c->dim_pct = 100;
+}
+
 static void load_cfg(void)
 {
     nvs_handle_t h;
     if (nvs_open("presence", NVS_READONLY, &h) != ESP_OK) return;
     presence_cfg_t c = cfg;
     size_t len = sizeof(c);
-    if (nvs_get_blob(h, "cfg", &c, &len) == ESP_OK && len == sizeof(c)) cfg = c;
+    if (nvs_get_blob(h, "cfg", &c, &len) == ESP_OK && len == sizeof(c)) { clamp_cfg(&c); cfg = c; }
     uint8_t m;
     if (nvs_get_u8(h, "motion", &m) == ESP_OK) motion_wake = m;
     uint16_t mg;
@@ -72,15 +91,16 @@ static void load_cfg(void)
     nvs_close(h);
 }
 
-static void save_cfg(void)
+static bool save_cfg(void)
 {
     nvs_handle_t h;
-    if (nvs_open("presence", NVS_READWRITE, &h) != ESP_OK) return;
-    nvs_set_blob(h, "cfg", &cfg, sizeof(cfg));
-    nvs_set_u8(h, "motion", motion_wake);
-    nvs_set_u16(h, "motion_mg", (uint16_t)(motion_thr * 1000 + 0.5f));
-    nvs_commit(h);
+    if (!nvs_check(nvs_open("presence", NVS_READWRITE, &h), "open presence")) return false;
+    bool ok = nvs_check(nvs_set_blob(h, "cfg", &cfg, sizeof(cfg)), "presence/cfg") &&
+              nvs_check(nvs_set_u8(h, "motion", motion_wake), "presence/motion") &&
+              nvs_check(nvs_set_u16(h, "motion_mg", (uint16_t)(motion_thr * 1000 + 0.5f)), "presence/motion_mg") &&
+              nvs_check(nvs_commit(h), "presence commit");
     nvs_close(h);
+    return ok;
 }
 
 void presence_get_config(presence_cfg_t *out)
@@ -90,26 +110,19 @@ void presence_get_config(presence_cfg_t *out)
     taskEXIT_CRITICAL(&mux);
 }
 
-void presence_set_config(const presence_cfg_t *in)
+bool presence_set_config(const presence_cfg_t *in)
 {
     presence_cfg_t c = *in;
     c.baseline_db = cfg.baseline_db;              // only calibration changes the baseline
-    if (c.margin_db < 1) c.margin_db = 1;
-    if (c.margin_db > 60) c.margin_db = 60;
-    if (c.wake_s < 0.2f) c.wake_s = 0.2f;
-    if (c.dim_s < 1) c.dim_s = 1;
-    if (c.off_s < 1) c.off_s = 1;
-    if (c.bright_pct < 5) c.bright_pct = 5;
-    if (c.bright_pct > 100) c.bright_pct = 100;
-    if (c.dim_pct < 1) c.dim_pct = 1;
-    if (c.dim_pct > c.bright_pct) c.dim_pct = c.bright_pct;
+    clamp_cfg(&c);
     taskENTER_CRITICAL(&mux);
     cfg = c;
     taskEXIT_CRITICAL(&mux);
-    save_cfg();
+    bool ok = save_cfg();
     presence_wake();                              // show the result of the new settings right away
     ESP_LOGI(TAG, "config: %s, margin %.0f dB, wake %.1f s, dim %.0f s, off +%.0f s, %d%%/%d%%",
              c.enabled ? "on" : "off", c.margin_db, c.wake_s, c.dim_s, c.off_s, c.bright_pct, c.dim_pct);
+    return ok;
 }
 
 /* ---------------- status / control ---------------- */
@@ -258,17 +271,22 @@ static void presence_task(void *arg)
     int imu_skip = 10;                                        // the first second of samples is junk (3.7 g seen)
 
     while (1) {
+        bool heard = false;                                    // this tick's sound level is real
         if (mic_ok) {
             if (esp_codec_dev_read(mic, buf, FRAMES * 2 * sizeof(int16_t)) != ESP_CODEC_DEV_OK) {
+                // A failing read used to skip the rest of the loop (`continue`): brightness froze, with no log.
+                // Count it, carry on as if quiet (motion and timers still work), log the first one.
+                if (mic_errors++ == 0) ESP_LOGW(TAG, "microphone read failed (counted in the 5 s lines)");
                 vTaskDelay(pdMS_TO_TICKS(TICK_MS));
-                continue;
-            }
+            } else heard = true;
+        }
+        if (heard) {
             double acc = 0;
             for (int i = 0; i < FRAMES * 2; i++) acc += (double)buf[i] * buf[i];
             double rms = sqrt(acc / (FRAMES * 2));
             float db = rms > 0.5 ? 20.0f * log10f((float)(rms / 32768.0)) : -90.0f;
             level_db = db;
-        } else {
+        } else if (!mic_ok) {
             vTaskDelay(pdMS_TO_TICKS(TICK_MS));
         }
 
@@ -307,7 +325,7 @@ static void presence_task(void *arg)
 
         presence_cfg_t c;
         presence_get_config(&c);
-        bool loud = mic_ok && !calibrating && level_db > c.baseline_db + c.margin_db;
+        bool loud = heard && !calibrating && level_db > c.baseline_db + c.margin_db;
         if (moved && state != PRESENCE_ACTIVE)
             ESP_LOGI(TAG, "picked up / moved (%.2f g): wake", motion_g);
 
@@ -344,12 +362,15 @@ static void presence_task(void *arg)
             // a finger is on the brightness slider: presence_preview_brightness() sets it, no fade here
         } else {
             preview_pct = -1;
-            apply_brightness(state == PRESENCE_ACTIVE ? c.bright_pct : state == PRESENCE_DIM ? c.dim_pct : 0);
+            int dim = c.dim_pct < c.bright_pct ? c.dim_pct : c.bright_pct;   // never brighter than "full"
+            apply_brightness(state == PRESENCE_ACTIVE ? c.bright_pct : state == PRESENCE_DIM ? dim : 0);
         }
 
         if (++log_tick % 50 == 0) {                            // every 5 s
-            ESP_LOGI(TAG, "level %.1f dB (threshold %.1f), score %.1f/%.1f, quiet %.0f s, motion peak %.3f g",
-                     level_db, c.baseline_db + c.margin_db, score, c.wake_s, quiet_s, motion_peak);
+            ESP_LOGI(TAG, "level %.1f dB (threshold %.1f), score %.1f/%.1f, quiet %.0f s, motion peak %.3f g%s",
+                     level_db, c.baseline_db + c.margin_db, score, c.wake_s, quiet_s, motion_peak,
+                     mic_errors ? ", MIC READ ERRORS" : "");
+            if (mic_errors) ESP_LOGW(TAG, "%lu microphone read errors so far", (unsigned long)mic_errors);
             motion_peak = 0;
         }
     }

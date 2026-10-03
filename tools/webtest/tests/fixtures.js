@@ -33,7 +33,8 @@ exports.test = base.test.extend({
     await request.post('/__reset');
     const errors = [];
     page.on('pageerror', e => errors.push(e.message));
-    page.on('console', m => { if (m.type() === 'error' && !noInternet) errors.push(m.text()); });
+    // (a 401 is the display refusing a change without its key: the page handles it, the browser still logs it)
+    page.on('console', m => { if (m.type() === 'error' && !noInternet && !/status of 401/.test(m.text())) errors.push(m.text()); });
     if (noInternet) {
       await page.route(/^https:\/\//, r => r.abort('internetdisconnected'));
     } else {

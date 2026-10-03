@@ -10,6 +10,7 @@
 #include "esp_system.h"
 #include "esp_timer.h"
 #include "esp_partition.h"
+#include "esp_ota_ops.h"
 #include "esp_psram.h"
 #include "esp_flash.h"
 #include "nvs.h"
@@ -32,7 +33,7 @@ static volatile bool bench_done;
                           // swallowed swipes a minute after boot; the harness runs it on demand ("bench").
 #define KB(x) ((unsigned)((x) / 1024))
 
-typedef struct { TaskHandle_t h; uint32_t rt; } prev_t;
+typedef struct { UBaseType_t num; uint32_t rt; } prev_t;   // by task number: a freed handle is reused
 static prev_t prev[MAX_TASKS];
 static int nprev;
 static uint32_t prev_total;
@@ -61,8 +62,8 @@ static void startup_info(void)
              esp_app_get_description()->date, esp_app_get_description()->time);
     ESP_LOGI(TAG, "reset reason %s, flash %u MB, PSRAM %u KB", reset_reason(), (unsigned)(flash >> 20),
              KB(esp_psram_get_size()));
-    const esp_partition_t *app = esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_ANY, NULL);
-    if (app) ESP_LOGI(TAG, "app partition %u KB at 0x%lx", KB(app->size), (unsigned long)app->address);
+    const esp_partition_t *app = esp_ota_get_running_partition();      // (the first app partition was printed)
+    if (app) ESP_LOGI(TAG, "running from %s, %u KB at 0x%lx", app->label, KB(app->size), (unsigned long)app->address);
     nvs_stats_t ns;
     if (nvs_get_stats(NULL, &ns) == ESP_OK)
         ESP_LOGI(TAG, "NVS entries: %u used, %u free of %u", (unsigned)ns.used_entries,
@@ -85,8 +86,8 @@ static void report_tasks(void)
     prev_t now[MAX_TASKS];
     for (int i = 0; i < n; i++) {
         uint32_t rt = ts[i].ulRunTimeCounter, old = 0;
-        for (int j = 0; j < nprev; j++) if (prev[j].h == ts[i].xHandle) { old = prev[j].rt; break; }
-        now[i].h = ts[i].xHandle; now[i].rt = rt;
+        for (int j = 0; j < nprev; j++) if (prev[j].num == ts[i].xTaskNumber) { old = prev[j].rt; break; }
+        now[i].num = ts[i].xTaskNumber; now[i].rt = rt;
         ts[i].ulRunTimeCounter = prev_total ? rt - old : 0;
     }
     memcpy(prev, now, sizeof(prev_t) * n);

@@ -80,6 +80,18 @@ test('show another place, then delete it', async ({ page, request }) => {
   expect(s.active).toBe(0);
 });
 
+test('a name too long for the display is refused with a message', async ({ page, request }) => {
+  await page.goto('/');
+  await page.locator('#addPlace').click();
+  await page.locator('#name').fill('ᐃᓄᒃᑎᑐᑦ'.repeat(3));               // 21 syllabics = 63 bytes > 47
+  await page.locator('#coords').evaluate(d => { d.open = true; });
+  await page.locator('#lat').fill('63.75');
+  await page.locator('#lon').fill('-68.52');
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(page.locator('#msg')).toHaveText('This name is too long for the display. Shorten it.');
+  expect((await state(request)).places.length).toBe(1);
+});
+
 test('no Add button with 4 places', async ({ page, request }) => {
   for (const [i, n] of ['A', 'B', 'C'].entries()) await addPlace(request, n, 46 + i, -71, i + 1);
   await page.goto('/');

@@ -11,6 +11,7 @@
 #include "radar.h"
 #include "config.h"
 #include "net.h"
+#include "web.h"
 #include "alerts.h"
 #include "ota.h"
 #include "svc.h"
@@ -344,11 +345,14 @@ static void show_settings(lv_event_t *e)
         return;
     }
     ESP_LOGI("ui", "long press -> settings QR");
-    char ip[20], url[48];
+    char ip[20], url[48], keyed[80];
     if (!net_get_ip(ip, sizeof(ip))) strcpy(ip, "192.168.4.1");
     snprintf(url, sizeof(url), "https://%s", ip);
+    // The code carries the key that lets the page change settings (web.c, "Who may change things"); the address
+    // written under it doesn't: typed by hand, the page shows the settings and asks for the code to change them
+    snprintf(keyed, sizeof(keyed), "%s/#k=%s", url, web_key());
     lv_label_set_text(ov_title, tr(T_SETTINGS));
-    lv_qrcode_update(ov_qr, url, strlen(url));
+    lv_qrcode_update(ov_qr, keyed, strlen(keyed));
     lv_label_set_text_fmt(ov_url, tr(T_OV_HELP), url);
     ov_state = 1;
     overlay_show();
@@ -1062,7 +1066,7 @@ static bool su_can_close;           // a tap closes it (not in first-time setup:
 static volatile bool su_open;
 static lv_timer_t *su_timer;
 static char su_note_text[96];
-static const char su_ap_qr[] = "WIFI:T:WPA;S:" SETUP_AP_SSID ";P:" SETUP_AP_PASS ";;";
+static char su_ap_qr[64];                 // "WIFI:T:WPA;S:Weather-Setup;P:<this display's password>;;"
 
 static void su_dots(void)
 {
@@ -1072,7 +1076,7 @@ static void su_dots(void)
     }
 }
 
-// Easy Connect callbacks (Wi-Fi task context: take the display lock)
+// Easy Connect callbacks (system event task: take the display lock)
 static void su_dpp_uri(const char *uri)
 {
     display_lock(-1);
@@ -1104,9 +1108,10 @@ static void su_show_page(int page)
         net_dpp_stop();
         net_setup_ap_start();
         lv_label_set_text(su_title, tr(T_WIFI_SETUP));
+        snprintf(su_ap_qr, sizeof(su_ap_qr), "WIFI:T:WPA;S:" SETUP_AP_SSID ";P:%s;;", net_setup_ap_pass());
         lv_qrcode_update(su_qr, su_ap_qr, strlen(su_ap_qr));
         lv_obj_remove_flag(su_qr, LV_OBJ_FLAG_HIDDEN);
-        lv_label_set_text_fmt(su_body, tr(T_WIFI_JOIN), SETUP_AP_SSID, SETUP_AP_PASS);
+        lv_label_set_text_fmt(su_body, tr(T_WIFI_JOIN), SETUP_AP_SSID, net_setup_ap_pass());
     } else {
         lv_label_set_text(su_title, tr(T_WIFI_DPP_TITLE));
         lv_obj_add_flag(su_qr, LV_OBJ_FLAG_HIDDEN);          // until the code is generated
@@ -1194,6 +1199,17 @@ void ui_wifi_setup(const char *note)
 }
 
 bool ui_wifi_setup_open(void) { return su_open; }
+
+// Close the setup screen as a tap would, unless a phone is on the setup network (main.c: the automatic setup
+// network's 15 minutes are over). Any task.
+bool ui_wifi_setup_close(void)
+{
+    display_lock(-1);
+    bool close = su_open && su_can_close && net_ap_clients() == 0;
+    if (close) su_close();
+    display_unlock();
+    return close;
+}
 
 void ui_wifi_setup_end(void)
 {
@@ -1761,11 +1777,14 @@ static void update_render(void)       // display lock held
         lv_obj_remove_flag(up_bar, LV_OBJ_FLAG_HIDDEN);
         lv_bar_set_value(up_bar, o->state == OTA_DONE ? 100 : o->progress, LV_ANIM_OFF);
     } else lv_obj_add_flag(up_bar, LV_OBJ_FLAG_HIDDEN);
+    char rb[96] = "";
+    if (o->rolled_back[0] && !busy) snprintf(rb, sizeof(rb), tr(T_OTA_ROLLED_BACK), o->rolled_back);
     lv_label_set_text(up_state,
         o->state == OTA_DOWNLOADING ? tr(T_UP_DOWNLOADING) :
         o->state == OTA_DONE ? tr(T_UP_INSTALLED) :
+        rb[0] ? rb :
         o->state == OTA_FAILED ? o->error :
-        o->state == OTA_AVAILABLE ? tr(T_UP_KEPT) : "");
+        o->state == OTA_AVAILABLE ? (o->error[0] ? o->error : tr(T_UP_KEPT)) : "");
     lv_label_set_text(up_title, tr(o->state == OTA_DONE ? T_UP_DONE : busy ? T_UP_BUSY : T_UP_AVAILABLE));
     update_notes();
 }
@@ -2109,7 +2128,7 @@ static void cfg_tick(lv_timer_t *t)
     if (lv_screen_active() == scr_cfg) cfg_refresh();      // update state, changes made from the phone
 }
 
-static void do_restart(lv_timer_t *t) { esp_restart(); }
+static void do_restart(lv_timer_t *t) { lv_timer_delete(t); ota_restart_when_safe(); }   // (not during an update's first minute)
 
 static void cfg_tap(lv_event_t *e)
 {
@@ -2693,7 +2712,7 @@ lv_draw_buf_t *ui_snapshot(const char *screen)
         su_dots();                                   // sizes the page dots
         lv_label_set_text(su_title, tr(p1 ? T_WIFI_DPP_TITLE : T_WIFI_SETUP));
         if (p1) lv_label_set_text(su_body, tr(T_WIFI_DPP_HOW));
-        else lv_label_set_text_fmt(su_body, tr(T_WIFI_JOIN), SETUP_AP_SSID, SETUP_AP_PASS);
+        else lv_label_set_text_fmt(su_body, tr(T_WIFI_JOIN), SETUP_AP_SSID, net_setup_ap_pass());
     }
     if (s == scr_status) status_refresh();
     if (s == scr_cfg) cfg_refresh();

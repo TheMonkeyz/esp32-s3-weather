@@ -9,10 +9,15 @@ down), phone (settings QR), setup0 / setup1 (Wi-Fi setup texts), current (the on
 off-display, so the board isn't disturbed. Pixels outside the round panel are tinted red, so anything the
 circle would cut off stands out (--square to skip). Needs the PC on the same network; the certificate is
 self-signed. Standard library only.
+
+Snapshots need the display's key (since v1.12.0, main/web.c): --key KEY, else $WEATHER_KEY, else the file
+tools/harness/.display_key that the harness writes after asking the test console ("key").
 """
+import os
 import ssl
 import struct
 import sys
+import urllib.error
 import urllib.request
 import zlib
 
@@ -46,7 +51,16 @@ def bmp_to_png(bmp: bytes, mask: bool = True) -> bytes:
 
 
 def main() -> None:
-    args = [a for a in sys.argv[1:] if a != "--square"]
+    argv = sys.argv[1:]
+    key = os.environ.get("WEATHER_KEY", "")
+    if "--key" in argv:
+        i = argv.index("--key")
+        key = argv[i + 1]
+        del argv[i:i + 2]
+    saved = os.path.join(os.path.dirname(os.path.abspath(__file__)), "harness", ".display_key")
+    if not key and os.path.exists(saved):
+        key = open(saved).read().strip()
+    args = [a for a in argv if a != "--square"]
     if not args:
         sys.exit(__doc__)
     ip = args[0]
@@ -55,8 +69,15 @@ def main() -> None:
     ctx = ssl.create_default_context()
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE                              # per-device self-signed certificate
-    with urllib.request.urlopen(f"https://{ip}/api/snapshot?screen={screen}", context=ctx, timeout=30) as r:
-        bmp = r.read()
+    req = urllib.request.Request(f"https://{ip}/api/snapshot?screen={screen}", headers={"X-Key": key} if key else {})
+    try:
+        with urllib.request.urlopen(req, context=ctx, timeout=30) as r:
+            bmp = r.read()
+    except urllib.error.HTTPError as e:
+        if e.code == 401:
+            sys.exit("The display wants its key: --key KEY (the test console's 'key' command, or the #k= part of the "
+                     "settings QR code)")
+        raise
     with open(out, "wb") as f:
         f.write(bmp_to_png(bmp, "--square" not in sys.argv))
     print(f"{out}: {struct.unpack_from('<i', bmp, 18)[0]}x{abs(struct.unpack_from('<i', bmp, 22)[0])}, {len(bmp)} bytes received")

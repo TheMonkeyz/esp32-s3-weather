@@ -157,18 +157,35 @@ static bool fetch_place(int i)
 // cut...): offer the setup network with its QR code. The saved network isn't tried while setup is open (the
 // attempts would knock phones off it); closing it (a tap, or 5 idle minutes) tries the saved network for 30 s,
 // then setup comes back. New credentials restart the board; a connection carries on normally.
+// For AUTO_SETUP_S only: after that (a long router outage) the setup network stops opening by itself and the
+// display just keeps trying the saved network; a long-press still opens setup (the owner's choice, October 2026:
+// a setup network left open for hours is a way in for anyone nearby).
+#define AUTO_SETUP_S (15 * 60)
 static void offline_setup(const char *ssid)
 {
-    char note[96], body[160];
+    char note[96], body[160], still[160];
     snprintf(note, sizeof(note), tr(T_CANT_REACH), ssid);
     snprintf(body, sizeof(body), tr(T_CONNECTING), ssid);
+    snprintf(still, sizeof(still), tr(T_STILL_TRYING), ssid);
+    int64_t until = esp_timer_get_time() + (net_test_short_setup() ? 60 : AUTO_SETUP_S) * 1000000LL;
+    bool gave_up = false;
     while (1) {
-        if (!ui_wifi_setup_open()) ui_wifi_setup(note);   // setup network (page 1) or Easy Connect (page 2)
-        while (ui_wifi_setup_open() && !net_is_connected()) vTaskDelay(pdMS_TO_TICKS(500));
+        bool by_itself = esp_timer_get_time() < until;
+        bool opened = by_itself && !ui_wifi_setup_open();
+        if (opened) ui_wifi_setup(note);                  // setup network (page 1) or Easy Connect (page 2)
+        while (ui_wifi_setup_open() && !net_is_connected()) {
+            // The window ends while it is open: it closes, unless a phone is on it (one the user opened stays)
+            if (opened && esp_timer_get_time() >= until && ui_wifi_setup_close()) break;
+            vTaskDelay(pdMS_TO_TICKS(500));
+        }
         if (net_is_connected()) break;
-        ui_message("Wi-Fi", body);
+        if (!gave_up && esp_timer_get_time() >= until) {
+            gave_up = true;
+            ESP_LOGW(TAG, "Setup network: no longer opened by itself (long-press opens it); still trying \"%s\"", ssid);
+        }
+        ui_message("Wi-Fi", gave_up ? still : body);
         if (net_wait_connected(30000)) break;
-        ESP_LOGW(TAG, "Still can't reach \"%s\", offering the setup network again", ssid);
+        if (!gave_up) ESP_LOGW(TAG, "Still can't reach \"%s\", offering the setup network again", ssid);
     }
     ESP_LOGI(TAG, "Saved network is back");
     ui_wifi_setup_end();
@@ -268,6 +285,8 @@ void app_main(void)
                 if (!al.n) { if (map_key[0]) { ui_alert_map(NULL, 0, 0); map_key[0] = 0; } }
                 else if (strcmp(map_key, key) && strcmp(map_failed, key)) {   // map of the top alert's region
                     uint16_t *m = alerts_map(&al.a[0], loc.lat, loc.lon, ALERT_MAP_W, ALERT_MAP_H);
+                    ESP_LOGI(TAG, "alert map %s, main task stack %u B spare", m ? "drawn" : "failed",
+                             (unsigned)uxTaskGetStackHighWaterMark(NULL));
                     if (m) { ui_alert_map(m, ALERT_MAP_W, ALERT_MAP_H); strlcpy(map_key, key, sizeof(map_key)); }
                     else strlcpy(map_failed, key, sizeof(map_failed));   // (a 404 was retried every cycle)
                 }
