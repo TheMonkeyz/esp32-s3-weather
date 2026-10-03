@@ -503,6 +503,7 @@ docs/ARCHITECTURE.md  how the pieces fit together, memory budget, known issues
 docs/DIAGNOSTICS.md   how to measure memory/CPU/render speed, reference numbers, findings
 docs/TESTING.md       how changes are tested on the board: test builds, flash helper, logs, screenshots
 docs/IDEAS.md         feature ideas / backlog
+docs/HISTORY.md       how the project grew, how the work is done, lessons and open threads (start here)
 docs/translations/    Inuktitut draft: iu.tsv (the source) and the review sheet
 docs/img/hero.png     the picture at the top of this README (tools/make_hero.js)
 tools/diag_summary.py summarises the diag: lines of serial_log.txt

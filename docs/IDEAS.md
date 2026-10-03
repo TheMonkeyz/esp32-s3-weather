@@ -2,11 +2,6 @@
 
 Backlog of possible features (2026-09-30). ⭐ = suggested first. Move an item to "Done" when it ships.
 
-## Weather
-
-- [x] **Lightning on the radar** — Environment Canada lightning layer over the rain: yellow bolts, in the
-  animation too (v1.10.0).
-
 ## Using more of the board
 
 The board also has a speaker (ES8311), a motion sensor (QMI8658), a real-time clock (PCF85063) and battery
@@ -49,3 +44,5 @@ charging (AXP2101).
   Wi-Fi, updates, restart (v1.6.0).
 - [x] **Wake on pick-up** — the motion sensor wakes the screen when it's lifted or tilted (a table bump doesn't, at
   Normal sensitivity); settings page: on/off, sensitivity, live meter (v1.6.0).
+- [x] **Lightning on the radar** — Environment Canada lightning layer over the rain: yellow bolts, in the
+  animation too (v1.10.0).

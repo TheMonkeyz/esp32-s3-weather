@@ -1,7 +1,13 @@
 # Notes for AI-assisted sessions on this project
 
-Read `README.md` and `docs/ARCHITECTURE.md` first. This file collects the practical lessons from the first build
-session (Sept 2026): what worked, what cost time, and how to avoid repeating it.
+Read `README.md`, `docs/HISTORY.md` (how the project grew, how the work is done now, what is still open) and
+`docs/ARCHITECTURE.md` first. This file collects the practical lessons, September 29 to October 2, 2026: what worked,
+what cost time, and how to avoid repeating it.
+
+**The loop, in short** (details in docs/HISTORY.md, "How the work is done now"): test build labelled above the
+current release → flash and probe through the harness (`tools/harness/`) → prove it on the device (`pictest`,
+snapshots, the harness's checks and baseline) → the user tries it → "document and commit" → Claude publishes the
+release candidate and tests it with `harness.py --ota` → a stable release only with the user's OK.
 
 ## Working setup (how the first session ran)
 
