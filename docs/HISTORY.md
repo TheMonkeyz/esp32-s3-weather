@@ -7,7 +7,7 @@ the story that connects them.
 
 ## In numbers
 
-- Four days to v1.11.1 (98 commits, 13 stable releases, 30 tags); then the October 3 fix plan (v1.12.0-rc.1..rc.4).
+- Four days to v1.11.1 (98 commits, 13 stable releases, 30 tags); then the October 3 fix plan (v1.12.0-rc.1..rc.7).
 - 23 C files, ~10,000 lines (`main/`), plus the settings page (`main/web/index.html`), the web flasher, CI, and the
   test harness (`tools/harness/`).
 - One board (Waveshare ESP32-S3-Touch-AMOLED-1.75, COM5 on the user's Windows PC), one user so far.
@@ -61,7 +61,7 @@ The same day the release loop was handed over: Claude tags and pushes release ca
 CLI, and installs them on the display through its own updater (`harness.py --ota`). Stable releases still need the
 user's word.
 
-### October 3: the evaluation and its fix plan (v1.12.0-rc.2 to rc.5)
+### October 3: the evaluation and its fix plan (v1.12.0-rc.2 to rc.7)
 
 A read-only review of v1.11.1 (`docs/EVALUATION-2026-10-02.md`) became a fix plan worked through in one session,
 one release candidate per group, each installed by the display's own updater and tested by the harness:
@@ -75,6 +75,13 @@ one release candidate per group, each installed by the display's own updater and
 - **rc.4** (data and first run): forecasts right after midnight, failures visible on the weather screen, a
   first-run "Choose your location" hint.
 - **rc.5** (tests and hygiene): the portal's DNS server limited to the setup network, host unit tests in CI, docs.
+- **rc.6** (the owner's reports and the deferred items): the page's "No speaker found" (the speaker was probed
+  before the microphones opened the shared I2S bus), a place change from the page now slides at ~65 fps like a
+  drag, the French 12-hour clock as "2 h 45 p.m.", a one-time gesture hint after the location hint, a core dump
+  partition read at boot, hardware AES on again (snapshots 30 % faster), a host test for the radar's row decoder.
+- **rc.7**: rc.6's over-the-air test met an Open-Meteo outage (10 of 16 forecasts timed out on the display) and
+  showed that a failed place kept its backoff (up to 10 min) across a reconnect. Wi-Fi back now fetches at once;
+  the harness waits out an outage on the message screen instead of failing every test.
 
 What it taught: build exactly what you commit (a script splitting work dropped an include and rc.1's build failed);
 an empty translation is not a missing one; a rule with a time window needs a test that crosses it.
@@ -146,8 +153,11 @@ an empty translation is not a missing one; a rule with a time window needs a tes
 
 - Easy Connect's first setup should open the settings page on the phone (docs/IDEAS.md); the first-run hint (rc.4)
   covers part of it.
-- Left from the October 3 fix plan: see the end of this list and the plan itself (questions 5 and 6 for the owner,
-  a gesture hint, hardware AES re-measured, a core-dump partition, a png_rows host test).
+- Left from the October 3 fix plan: purging the old unused test key from git history (the owner said yes; the
+  rewrite was dry-run on a mirror, the force push of main and the tags is pending); saving a place on the captive
+  portal before the Wi-Fi restart (D3); heap poisoning in test builds; the harness's non-English Windows detection
+  and separate render limits for QIO/DIO boards (E3); a real phone install from the settings page; the stable
+  v1.12.0 tag (owner's call).
 - The Inuktitut draft needs a fluent speaker (docs/translations/iu-review.md).
 - Radar zoom: ~80 ms before the first frame (the overlays' alpha, mostly the range ring); could be cached between
   zooms.
