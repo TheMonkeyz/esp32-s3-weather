@@ -12,13 +12,15 @@ charging (AXP2101).
 
 ## Everyday use
 
-- [ ] **First setup with Easy Connect opens the settings page** — when a brand-new display gets its Wi-Fi from
-  Android Easy Connect, take the phone to the settings page (place, units) on its own, as the setup network's
-  sign-in page does (the user's request, October 2). Easy Connect gives no channel back to the phone, so it needs
-  another way: e.g. a QR code with the page's address on the display right after it connects for the first time.
 - [ ] **Home Assistant (MQTT)** — publish room presence from the microphones; show an indoor temperature.
 
 ## Done
+
+- [x] **First setup with Easy Connect opens the settings page** — when a brand-new display gets its Wi-Fi from
+  Android Easy Connect, take the phone to the settings page (place, units) on its own, as the setup network's
+  sign-in page does (the user's request, October 2). Easy Connect gives no channel back to the phone, so it needs
+  another way: e.g. a QR code with the page's address on the display right after it connects for the first time. Done in v1.12.0: after the first forecast the display shows the
+  settings code by itself ("Choose your location"), then a gesture hint.
 
 - [x] **Rain starting soon** — "Rain around 14:45" / "Rain until about 15:30" on the weather screen, from
   Open-Meteo's 15-minute forecast (2026-09-30).

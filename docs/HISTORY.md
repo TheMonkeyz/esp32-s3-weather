@@ -154,8 +154,6 @@ an empty translation is not a missing one; a rule with a time window needs a tes
 
 ## Open threads
 
-- Easy Connect's first setup should open the settings page on the phone (docs/IDEAS.md); the first-run hint (rc.4)
-  covers part of it.
 - Left from the October 3 fix plan: saving a place on the captive
   portal before the Wi-Fi restart (D3); heap poisoning in test builds; the harness's non-English Windows detection
   and separate render limits for QIO/DIO boards (E3); a real phone install from the settings page. (Old pull-request refs still reach
@@ -167,4 +165,3 @@ an empty translation is not a missing one; a rule with a time window needs a tes
   two waits ~0.13 s. The picture cache has 5 slots: with 2 places, Settings and the hourly view's other days aren't
   kept ready.
 - Boards updated over the air keep a DIO bootloader (no QIO speed-up) until a USB or web-flasher install.
-- GitHub's `ubuntu-latest` moves to Ubuntu 26 from October 19, 2026 (pin `ubuntu-24.04` if the build breaks).
