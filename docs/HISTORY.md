@@ -160,9 +160,8 @@ an empty translation is not a missing one; a rule with a time window needs a tes
   and separate render limits for QIO/DIO boards (E3). (Old pull-request refs still reach
   pre-purge commits; the key was rotated, so no GitHub Support request was made.)
 - The Inuktitut draft needs a fluent speaker (docs/translations/iu-review.md).
-- Radar zoom: ~80 ms before the first frame (the overlays' alpha, mostly the range ring); could be cached between
-  zooms.
-- A data change (new forecast, alerts) still makes neighbours' pictures out of date: a drag in the next second or
-  two waits ~0.13 s. The picture cache has 5 slots: with 2 places, Settings and the hourly view's other days aren't
+- Radar zoom: 52–79 ms before the first frame (v1.12.1); drawing the overlays is ~36 ms of it, the range ring 19.
+- After new data (a forecast, alerts) a place drag in the first ~0.5 s still waits ~0.12 s for its neighbour's
+  picture (v1.12.1; it was 1.5 s). The picture cache has 5 slots: with 2 places, Settings and the hourly view's other days aren't
   kept ready.
 - Boards updated over the air keep a DIO bootloader (no QIO speed-up) until a USB or web-flasher install.

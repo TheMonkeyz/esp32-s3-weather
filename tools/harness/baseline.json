@@ -188,9 +188,13 @@
   "ref": 42
  },
  "radar_zoom_start_ms": {
-  "max": 160,
-  "note": "overlays rendered with alpha before the first frame (mostly the range ring)",
-  "ref": 90
+  "dio": {
+   "max": 130,
+   "ref": 78
+  },
+  "max": 100,
+  "note": "overlays drawn with alpha before the first frame: 52-79 ms since v1.12.1 (only the box the objects cover is cleared, drawn and scanned; ~110 ms before, when whole strips were; drawing alone ~36 ms, the ring 19). \"dio\": estimated (+30 %), not measured",
+  "ref": 60
  },
  "render_ms.blank": {
   "max": 10,

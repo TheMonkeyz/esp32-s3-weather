@@ -943,8 +943,9 @@ static EXT_RAM_BSS_ATTR int ovl_row[DISP_H + 1];   // (PSRAM: internal RAM is sh
 
 static inline uint16_t rgb565_of(uint8_t r, uint8_t g, uint8_t b) { return ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3); }
 
-// The visible children of scr but img, with their alpha: ARGB8888 strips on a transparent background (~90 ms for
-// the radar, mostly its full-screen range ring; taller strips didn't make it faster)
+// The visible children of scr but img, with their alpha: ARGB8888 strips on a transparent background. Per strip only
+// the box the children cover in those rows is cleared, drawn and scanned: drawing the radar's objects takes ~36 ms
+// (the range ring 19), and clearing and scanning whole 466-px strips took as long again (~110 ms in all before)
 #define OVL_ROWS 32
 static bool overlay_build(lv_obj_t *scr, lv_obj_t *img)
 {
@@ -965,7 +966,25 @@ static bool overlay_build(lv_obj_t *scr, lv_obj_t *img)
     lv_layer_t *old_head = d->layer_head;
     for (int y0 = 0; y0 < DISP_H; y0 += OVL_ROWS) {
         int y1 = y0 + OVL_ROWS - 1 > DISP_H - 1 ? DISP_H - 1 : y0 + OVL_ROWS - 1;
-        lv_area_t rows = {0, y0, DISP_W - 1, y1}, in_buf = {0, 0, DISP_W - 1, y1 - y0};
+        int bx1 = DISP_W, bx2 = -1;                      // the children's box in these rows (with their shadows etc.)
+        for (uint32_t i = 0; i < lv_obj_get_child_count(scr); i++) {
+            lv_obj_t *c = lv_obj_get_child(scr, i);
+            if (c == img || lv_obj_has_flag(c, LV_OBJ_FLAG_HIDDEN)) continue;
+            lv_area_t a;
+            lv_obj_get_coords(c, &a);
+            int32_t ext = lv_obj_get_ext_draw_size(c);
+            lv_area_increase(&a, ext, ext);
+            if (a.y2 < y0 || a.y1 > y1) continue;
+            if (a.x1 < bx1) bx1 = a.x1;
+            if (a.x2 > bx2) bx2 = a.x2;
+        }
+        if (bx1 < 0) bx1 = 0;
+        if (bx2 > DISP_W - 1) bx2 = DISP_W - 1;
+        if (bx2 < bx1) {                                 // nothing in these rows
+            for (int y = y0; y <= y1; y++) ovl_row[y] = ovl_n;
+            continue;
+        }
+        lv_area_t rows = {bx1, y0, bx2, y1}, in_buf = {bx1, 0, bx2, y1 - y0};
         lv_draw_buf_clear(strip, &in_buf);
         lv_layer_t layer;
         lv_memzero(&layer, sizeof(layer));
@@ -988,11 +1007,12 @@ static bool overlay_build(lv_obj_t *scr, lv_obj_t *img)
         lv_refr_set_disp_refreshing(old);
         for (int y = y0; y <= y1; y++) {
             ovl_row[y] = ovl_n;
-            const uint8_t *p = strip->data + (y - y0) * strip->header.stride;   // B, G, R, A
-            for (int x = 0; x < DISP_W; x++, p += 4) {
-                if (!p[3] || ovl_n == OVL_CAP) continue;
-                ovl_c[ovl_n] = rgb565_of(p[2], p[1], p[0]);
-                ovl[ovl_n++] = (uint32_t)(y * DISP_W + x) | (uint32_t)p[3] << 24;
+            const uint32_t *p = (const uint32_t *)(strip->data + (y - y0) * strip->header.stride);   // A R G B
+            for (int x = bx1; x <= bx2; x++) {
+                uint32_t v = p[x];
+                if (!(v >> 24) || ovl_n == OVL_CAP) continue;
+                ovl_c[ovl_n] = rgb565_of(v >> 16, v >> 8, v);
+                ovl[ovl_n++] = (uint32_t)(y * DISP_W + x) | (v & 0xFF000000u);
             }
         }
     }

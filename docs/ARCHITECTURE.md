@@ -259,8 +259,11 @@ order, and ~11 ms on the bus.
   - The screen's other objects (pill, labels, range ring, dot: 30–70 % opaque over the map) are rendered once at the
     start, with their alpha, into 32-row ARGB8888 strips on a transparent background, and kept as a list of the
     pixels they cover (~16k: position + alpha packed in a word, colour apart, 6 bytes each; `ovl_row[]` indexes the
-    rows). Each frame blends them over the scaled rows. ~90 ms before the first frame, mostly the full-screen ring
-    (taller strips didn't help); LVGL's own zoom showed its first frame after ~100 ms too.
+    rows). Each frame blends them over the scaled rows. Per strip only the box the objects cover in those rows is
+    cleared, drawn and scanned (32-bit reads): 52–79 ms before the first frame since v1.12.1, ~110 ms before.
+    Measured per object (a throwaway build): drawing them all takes ~36 ms, the range ring 19 of it; clearing
+    and scanning whole 466-px strips took as long again. (It used to say "mostly the ring": it wasn't measured.)
+    Taller strips didn't help; LVGL's own zoom showed its first frame after ~100 ms.
   - LVGL doesn't read the touch during the zoom: the zoom reads it, and a swipe made meanwhile goes to the radar at
     the end (`zoom_swipe` -> the next zoom). A touch already down at the start is the swipe that triggered it (LVGL's
     gesture fires before the finger lifts) and is ignored until it lifts: counted, one swipe zoomed twice.
