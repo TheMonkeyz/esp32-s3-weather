@@ -9,7 +9,7 @@ How to write an entry: add a `## vX.Y.Z - YYYY-MM-DD` section at the top **befor
 their own `## vX.Y.Z-rc.N` section. Those are shown only to Beta users, while the final release's section should
 list everything again.
 
-## v1.12.0-rc.1 - 2026-10-03
+## v1.12.0-rc.2 - 2026-10-03
 - The Install button on the settings page shows again when an update is offered.
 - A red warning is never hidden behind lesser alerts when more than four are in force.
 - An alert beeps once. Environment Canada updates a warning every few hours; the display now beeps again only if the warning gets worse.
