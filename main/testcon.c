@@ -21,6 +21,7 @@
 #include "net.h"
 #include "presence.h"
 #include "diag.h"
+#include "web.h"
 
 static const char *TAG = "test";
 

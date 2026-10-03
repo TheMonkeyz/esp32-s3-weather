@@ -199,6 +199,9 @@ Windows build gets both from `main/idf_component.yml`. `components/dns_server` *
     (f) A release gate must fail on what it didn't measure: MISSING and NEW metrics fail like regressions unless the
     test says `ctx.skip()`; tests keep their own log positions (`log.mark()` is the harness's crash check).
     (g) Host tests (`tests/host`, gcc in WSL) reproduce parser bugs off the board; check the test fails on the old code.
+    (h) **Build exactly what you commit.** Group A was split out of a tree that already held the next group's work by
+    a script; it dropped an `#include` and v1.12.0-rc.1's CI build failed (no release). To set later work aside, use
+    `git stash push -u`, build the tree as it will be committed, commit, then `git stash pop`.
 
 - Internal RAM ran out silently (10 KB free, 0 KB min ever) because LVGL's small allocations went to internal RAM
   first. Fixed with `lvgl_mem.c` (LVGL heap in PSRAM). Font kerning cost 71% of render time; fonts now use
