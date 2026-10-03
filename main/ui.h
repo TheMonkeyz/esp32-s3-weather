@@ -28,4 +28,5 @@ void ui_ota(const ota_status_t *st);    // update availability / progress (from 
 // into an RGB565 buffer. Display lock held; free it with lv_draw_buf_destroy() under the lock.
 lv_draw_buf_t *ui_snapshot(const char *screen);
 void ui_units_changed(void);            // units / clock / language changed: redraw everything that shows them
+void ui_settings_changed(void);         // web.c: presence, sound or update settings changed (Settings' picture)
 void ui_on_data_refresh(void (*cb)(void));   // language changed on the display: main.c fetches alerts again

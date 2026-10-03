@@ -1,5 +1,9 @@
 CONFIG_IDF_TARGET="esp32s3"
 CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+# Quad I/O flash (DIO until v1.11.1): the program runs from flash through a 16 KB cache, and LVGL's code is large;
+# twice the bits per clock on cache misses. The bootloader switches the flash to QIO itself (esptool still writes its
+# header as "dio", as ESP-IDF does for QIO): it takes a bootloader built with this, i.e. a USB / web-flasher install.
+CONFIG_ESPTOOLPY_FLASHMODE_QIO=y
 CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y

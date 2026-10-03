@@ -81,26 +81,40 @@
   "max": 10,
   "ref": 1.4
  },
+ "radar_zoom_fps": {
+  "min": 28,
+  "note": "slide.c zoom (LVGL: ~10 fps)",
+  "ref": 42
+ },
+ "radar_zoom_start_ms": {
+  "max": 160,
+  "note": "overlays rendered with alpha before the first frame (mostly the range ring)",
+  "ref": 90
+ },
  "render_ms.blank": {
   "max": 10,
   "note": "a few ms: noise is a large part of it",
   "ref": 5.5
  },
  "render_ms.hourly": {
-  "max": 67.0,
-  "ref": 53.6
+  "max": 44.2,
+  "note": "v1.11.1 with QIO flash (DIO: weather 67, hourly 51, radar 56, with panel 94); a board updated over the air keeps a DIO bootloader and renders at the DIO speed",
+  "ref": 35.4
  },
  "render_ms.radar": {
-  "max": 70.4,
-  "ref": 56.3
+  "max": 54.6,
+  "note": "v1.11.1 with QIO flash (DIO: weather 67, hourly 51, radar 56, with panel 94); a board updated over the air keeps a DIO bootloader and renders at the DIO speed",
+  "ref": 43.7
  },
  "render_ms.weather": {
-  "max": 83.8,
-  "ref": 67.0
+  "max": 56.6,
+  "note": "v1.11.1 with QIO flash (DIO: weather 67, hourly 51, radar 56, with panel 94); a board updated over the air keeps a DIO bootloader and renders at the DIO speed",
+  "ref": 45.3
  },
  "render_ms.weather_with_panel": {
-  "max": 95.5,
-  "ref": 76.4
+  "max": 85.9,
+  "note": "v1.11.1 with QIO flash (DIO: weather 67, hourly 51, radar 56, with panel 94); a board updated over the air keeps a DIO bootloader and renders at the DIO speed",
+  "ref": 68.7
  },
  "scroll_frame_ms.scroll_hourly_list": {
   "max": 25,

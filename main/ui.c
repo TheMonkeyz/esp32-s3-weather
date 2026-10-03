@@ -560,6 +560,34 @@ static void graph_render(day_page_t *dp)
     lv_canvas_finish_layer(dp->graph, &layer);
 }
 
+/* The hourly rows' icons, each drawn once into a small picture (by kind, day or night, and the row's background) and
+ * copied into the rows: drawn from rounded shapes in every row of every frame, they were much of a list scroll's
+ * rendering. Made when a day's page is filled (fill_page: not during a render); a missing one is drawn as shapes. */
+#define HR_ICON 40                                   // 130 x 122 design space at 30 % (39 x 37), with a margin
+#define HR_NOW_BG 0x16283A                           // the "Now" row's background
+static lv_draw_buf_t *hr_icons[WX_STORM + 1][2][2];  // [kind][day][now row]
+static lv_obj_t *hr_icon_canvas;                     // hidden: draws them (LVGL's canvas layer)
+
+static void hr_icon_make(wx_kind_t k, bool day, bool now)
+{
+    lv_draw_buf_t **slot = &hr_icons[k][day][now];
+    if (*slot || !hr_icon_canvas) return;
+    lv_draw_buf_t *b = lv_draw_buf_create(HR_ICON, HR_ICON, LV_COLOR_FORMAT_RGB565, LV_STRIDE_AUTO);
+    if (!b) return;
+    lv_color_t bg = now ? lv_color_hex(HR_NOW_BG) : C_BG;
+    lv_canvas_set_draw_buf(hr_icon_canvas, b);
+    lv_canvas_fill_bg(hr_icon_canvas, bg, LV_OPA_COVER);
+    lv_layer_t layer;
+    lv_canvas_init_layer(hr_icon_canvas, &layer);
+    P_layer = &layer;
+    P_x = P_y = 0;
+    icon_bg = bg;
+    draw_icon(NULL, k, day, 30, 0);
+    P_layer = NULL;
+    lv_canvas_finish_layer(hr_icon_canvas, &layer);
+    *slot = b;
+}
+
 // Draws the column headers and only the rows inside the clip area (the graph is a canvas child)
 static void hr_draw(lv_event_t *e)
 {
@@ -588,16 +616,25 @@ static void hr_draw(lv_event_t *e)
         if (now) {
             lv_draw_rect_dsc_t d;
             lv_draw_rect_dsc_init(&d);
-            d.bg_color = icon_bg = lv_color_hex(0x16283A);
+            d.bg_color = icon_bg = lv_color_hex(HR_NOW_BG);
             d.radius = 14;
             lv_area_t a = { c.x1, y + 2, c.x2, y + ROW_H - 3 };
             lv_draw_rect(layer, &d, &a);
         }
         if (now) strlcpy(buf, tr(T_NOW), sizeof(buf)); else config_fmt_hour(i % 24, buf, sizeof(buf));
         draw_text(layer, f_tiny, now ? C_ACCENT : C_DIM, c.x1 + 10, y, 64, LV_TEXT_ALIGN_LEFT, buf);
-        P_layer = layer; P_x = c.x1 + 76; P_y = y + (ROW_H - 37) / 2;
-        draw_icon(NULL, weather_kind(h->code), h->is_day, 30, 0);
-        P_layer = NULL;
+        lv_draw_buf_t *ic = hr_icons[weather_kind(h->code)][h->is_day ? 1 : 0][now];
+        if (ic) {
+            lv_draw_image_dsc_t d;
+            lv_draw_image_dsc_init(&d);
+            d.src = ic;
+            lv_area_t a = { c.x1 + 76, y + (ROW_H - 37) / 2, c.x1 + 76 + HR_ICON - 1, y + (ROW_H - 37) / 2 + HR_ICON - 1 };
+            lv_draw_image(layer, &d, &a);
+        } else {
+            P_layer = layer; P_x = c.x1 + 76; P_y = y + (ROW_H - 37) / 2;
+            draw_icon(NULL, weather_kind(h->code), h->is_day, 30, 0);
+            P_layer = NULL;
+        }
         snprintf(buf, sizeof(buf), "%d°", config_temp(h->temp));
         draw_text(layer, f_small, C_TEXT, c.x1 + 118, y, 56, LV_TEXT_ALIGN_RIGHT, buf);
         snprintf(buf, sizeof(buf), "%d%%", h->pop);
@@ -642,6 +679,10 @@ static void fill_page(int day)
     lv_label_set_text(dp->title, name);
     lv_label_set_text_fmt(dp->sum, "%s  ·  %d° / %d°", weather_text(d->code), config_temp(d->tmax), config_temp(d->tmin));
     lv_obj_set_height(dp->content, TOP_H + dp->count * ROW_H);
+    for (int r = 0; r < dp->count; r++) {              // the rows' icon pictures (hr_draw copies them)
+        const wx_hour_t *h = &wx.hour[dp->first + r];
+        hr_icon_make(weather_kind(h->code), h->is_day, dp->first + r == dp->now);
+    }
     graph_render(dp);
     lv_obj_invalidate(dp->page);
 }
@@ -708,6 +749,8 @@ static void hr_settled(int day, void *user)
 static void hour_create(void)
 {
     scr_hour = base_screen();
+    hr_icon_canvas = lv_canvas_create(scr_hour);              // draws the rows' icon pictures (hr_icon_make)
+    lv_obj_add_flag(hr_icon_canvas, LV_OBJ_FLAG_HIDDEN);
     hr_pager = pager_create(scr_hour, false, WX_DAYS, hr_changed, hr_settled, NULL);
     pager_freeze(hr_pager);                              // days are dragged as pictures (slide.c, drag_read)
 
@@ -839,9 +882,15 @@ static void day_commit(int side, void *user)
 
 // Picture for slide.c's cache. A screen not shown: its content is brought up to date first, as when shown. A page:
 // its pager is moved there (with its dots) and back, within this LVGL cycle (slide.c undoes the redraws it causes).
+static void cfg_open_state(void);
+
 static bool drag_paint(const void *key, lv_draw_buf_t *dst, int y0, int y1)
 {
     int ip = pager_index(place_pager, key), ih = ip < 0 ? pager_index(hr_pager, key) : -1;
+    if (ih >= 0 && lv_screen_active() != scr_hour && y0 == 0) {
+        fill_page(ih);                                   // as main_tap opens it: today's data, the list at the top
+        lv_obj_scroll_to_y(pg[ih].list, 0, LV_ANIM_OFF);
+    }
     if (ip >= 0 || ih >= 0) {
         bool places = ip >= 0;
         lv_obj_t *pager = places ? place_pager : hr_pager;
@@ -878,6 +927,7 @@ static bool drag_paint(const void *key, lv_draw_buf_t *dst, int y0, int y1)
     if (scr != lv_screen_active() && y0 == 0) {          // brought up to date once, before the first strip
         if (scr == scr_status) status_refresh();
         if (scr == scr_extras) extras_refresh();
+        if (scr == scr_cfg) cfg_open_state();            // as a long-press opens it
     }
     return slide_picture_rows(scr, dst, y0, y1);
 }
@@ -897,6 +947,10 @@ static void pictures_tick(lv_timer_t *t)
         if (i < n - 1) keys[k++] = key_of(s[i + 1]);
         if (cur == scr_main) {
             for (int d = -1; d <= 1; d += 2) if (place_neighbour(d, NULL)) keys[k++] = place_neighbour(d, NULL);
+            // Spare slots: today's hourly view (a tap on the forecast opened it after ~0.17 s of rendering) and
+            // Settings (a long-press: ~0.06 s), ready as they open (drag_paint brings them up to date first)
+            if (have_wx && k < 5) keys[k++] = pager_page(hr_pager, 0);
+            if (k < 5) keys[k++] = scr_cfg;
         }
     } else if (cur == scr_hour) {
         keys[k++] = key_of(cur);
@@ -1999,6 +2053,15 @@ static void cfg_switch(int r, bool on)
     if (on) lv_obj_add_state(sw, LV_STATE_CHECKED); else lv_obj_remove_state(sw, LV_STATE_CHECKED);
 }
 
+// Settings as a long-press opens it (also its picture rendered ahead, drag_paint)
+static void cfg_refresh(void);
+
+static void cfg_open_state(void)
+{
+    cfg_refresh();
+    lv_obj_scroll_to_y(lv_obj_get_parent(cfg_row[0]), 0, LV_ANIM_OFF);
+}
+
 static void cfg_refresh(void)                      // display lock held
 {
     presence_cfg_t c;
@@ -2159,8 +2222,7 @@ static void open_cfg(lv_event_t *e)                // long-press on the weather 
     restart_armed = 0;
     check_tapped = 0;
     back_to_cfg = false;
-    cfg_refresh();
-    lv_obj_scroll_to_y(lv_obj_get_parent(cfg_row[0]), 0, LV_ANIM_OFF);
+    cfg_open_state();
     slide_screen(scr_cfg, LV_SCR_LOAD_ANIM_MOVE_TOP, 260);
     lv_indev_t *in = lv_indev_active();
     if (in) lv_indev_wait_release(in);               // the long-press's release isn't a tap on a row
@@ -2641,4 +2703,12 @@ lv_draw_buf_t *ui_snapshot(const char *screen)
     if (cfg_down && lv_screen_active() != scr_cfg) lv_obj_scroll_to_y(list, 0, LV_ANIM_OFF);
     if (phone && ov_hidden) lv_obj_add_flag(overlay, LV_OBJ_FLAG_HIDDEN);
     return db;
+}
+
+// The phone's settings page changed something Settings shows (presence, sound, update channel): its picture
+void ui_settings_changed(void)
+{
+    display_lock(-1);
+    dirty_hidden_one(scr_cfg);
+    display_unlock();
 }

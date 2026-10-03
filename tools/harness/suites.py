@@ -237,6 +237,18 @@ def radar_timing(ctx):
     lt = [int(x) for x in re.findall(r'radar: Lightning \S+: \d+ px, (\d+) marks', '\n'.join(ctx.log.since_mark()))]
     ctx.note(f'{frames} radar frames loaded during playback; lightning marks per frame: {lt[:15]}')
     b.cmd('tap 233 233')                             # stop
+    # Zoom in, then back out: drawn by slide.c (LVGL's own zoom transformed the whole image: ~10 fps)
+    time.sleep(1)
+    start = len(ctx.log.lines())
+    b.cmd('swipe down')
+    m = ctx.log.wait(r'slide: zoom \d+ -> \d+: overlays (\d+) px in (\d+) ms, (\d+) frames in (\d+) ms', 10,
+                     'the zoom drawn by slide.c', start=start)
+    ctx.metric('radar_zoom_fps', round(int(m.group(3)) * 1000 / int(m.group(4)), 1))
+    ctx.metric('radar_zoom_start_ms', int(m.group(2)))
+    ctx.note(f'radar zoom: {m.group(3)} frames in {m.group(4)} ms, overlays ({m.group(1)} px) in {m.group(2)} ms')
+    time.sleep(5)
+    b.cmd('swipe up')                                # back to the zoom level the user had
+    time.sleep(5)
     b.cmd('swipe right')
 
 

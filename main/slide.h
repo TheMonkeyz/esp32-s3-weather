@@ -31,6 +31,14 @@ bool slide_drag_running(void);
 // lock): radar.c holds its flash writes meanwhile (they stall both cores, and a drag then crawled at 3 fps).
 bool slide_screen_busy(void);
 
+// A zoom of a full-screen image (the radar's map) drawn without LVGL: its source (RGB565, the screen's size) scaled
+// from `from` to `to` (LVGL's scale: 256 = 1x; both at least 1x; pivot = the centre) with an ease out over ms, the
+// screen's other objects on top as they are; then LVGL's own scale is set to `to`. Runs on the next LVGL cycle.
+// false: not now (another move, not the screen shown, a scale under 1x): animate with LVGL instead. LVGL doesn't see
+// the touch meanwhile: a swipe made during the zoom is handed to swipe(dx, dy) at the end (LVGL task), or NULL.
+typedef void (*slide_swipe_cb_t)(int dx, int dy);
+bool slide_zoom(lv_obj_t *img, const uint16_t *src, int32_t from, int32_t to, uint32_t ms, slide_swipe_cb_t swipe);
+
 // Picture cache: 5 pictures keyed by screen or pager page. paint(key, dst) renders the picture of key into dst (ui.c refreshes the
 // screen's content first). The current screen's picture goes dirty when LVGL redraws anything on it; the others are
 // marked dirty by the code that changes them (slide_cache_dirty, NULL = all). keep = the keys worth holding now (the

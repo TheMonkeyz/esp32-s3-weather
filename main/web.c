@@ -158,6 +158,7 @@ static esp_err_t sound_post(httpd_req_t *req)
         c.quiet_from = hhmm_or(j, "quiet_from", c.quiet_from);
         c.quiet_to = hhmm_or(j, "quiet_to", c.quiet_to);
         sound_set_config(&c);
+        ui_settings_changed();
     }
     cJSON_Delete(j);
     return sound_get(req);
@@ -316,6 +317,7 @@ static esp_err_t presence_post(httpd_req_t *req)
         presence_set_motion(cJSON_IsBool(mw) ? cJSON_IsTrue(mw) : presence_motion_wake(), num_or(j, "motion_thr", ps.motion_thr));
     cJSON_Delete(j);
     presence_set_config(&c);
+    ui_settings_changed();
     return presence_get(req);
 }
 
@@ -405,7 +407,7 @@ static esp_err_t update_post(httpd_req_t *req)
     cJSON *j = read_json(req);
     const char *ch = cJSON_GetStringValue(cJSON_GetObjectItem(j, "channel"));
     const char *act = cJSON_GetStringValue(cJSON_GetObjectItem(j, "action"));
-    if (ch) ota_set_channel(ch);
+    if (ch) { ota_set_channel(ch); ui_settings_changed(); }
     if (act && !strcmp(act, "check")) ota_check_now();
     if (act && !strcmp(act, "install")) ota_install();
     cJSON_Delete(j);

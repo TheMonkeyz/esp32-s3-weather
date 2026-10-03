@@ -195,16 +195,41 @@ order, and ~11 ms on the bus.
   - At the start LVGL lets go of the touch (`lv_indev_reset`: the row pressed under the finger, e.g. a Settings row
     with a pressed colour) and `lv_refr_now()` draws that, into the panel and the picture. No exact picture of the
     screen yet (just opened): `slide_scroll()` returns false and LVGL scrolls as before.
-  - Per frame (harness): hourly list 19 ms (render the new rows ~7.5, move and send ~11.3), Settings 14 ms, status
-    page 16 ms. The hourly rows cost more to render (icons drawn as shapes, five labels a row).
+  - The list moves with `lv_obj_scroll_by_raw()`: `lv_obj_scroll_to_y()` stops at the ends (see above), and
+    `lv_obj_scroll_by()` sends SCROLL_BEGIN / END, which bubble up the hourly view (list -> page -> pager -> screen,
+    all with `EVENT_BUBBLE`) and made LVGL lay out the whole screen again on every frame: 4.4 ms of the hourly list's
+    7.7 ms of rendering. Settings' box doesn't bubble events, which is why only the hourly list paid. Found by timing
+    `render_rows()`'s parts (layout / draw) in a throwaway build.
+  - Per frame (harness): hourly list 13.7 ms (render the new rows ~3, move and send ~11), Settings 13.2 ms, status
+    page ~16 ms (QIO flash; 15.0 / 14.4 with DIO).
   - `pictest` (test console) compares the picture of the screen shown with a fresh rendering, after drawing pending
     redraws; the harness runs it after drags and scrolls. Snapshot `picture` (`GET /api/snapshot?screen=picture`)
     returns the picture itself, to compare with the `current` snapshot pixel by pixel (how the smear was found).
+- **Radar zoom** (`slide_zoom()`, from radar.c's `start_scale_anim()`; LVGL's scale animation stays the fallback):
+  LVGL transformed the whole 466×466 image for every frame of a zoom (~100 ms: ~10 fps). Here each frame is scaled
+  straight into the panel bands (nearest neighbour through per-frame row and column maps, pivot at the centre, as
+  LVGL with antialias off), ease out over 300 ms, then LVGL's own scale is set and it redraws the same last frame.
+  - The screen's other objects (pill, labels, range ring, dot: 30–70 % opaque over the map) are rendered once at the
+    start, with their alpha, into 32-row ARGB8888 strips on a transparent background, and kept as a list of the
+    pixels they cover (~16k: position + alpha packed in a word, colour apart, 6 bytes each; `ovl_row[]` indexes the
+    rows). Each frame blends them over the scaled rows. ~90 ms before the first frame, mostly the full-screen ring
+    (taller strips didn't help); LVGL's own zoom showed its first frame after ~100 ms too.
+  - LVGL doesn't read the touch during the zoom: the zoom reads it, and a swipe made meanwhile goes to the radar at
+    the end (`zoom_swipe` -> the next zoom). A touch already down at the start is the swipe that triggered it (LVGL's
+    gesture fires before the finger lifts) and is ignored until it lifts: counted, one swipe zoomed twice.
+  - 40–43 fps (harness `radar_zoom_fps`). Tables in PSRAM (`EXT_RAM_BSS_ATTR`): as static internal arrays they took
+    3.8 KB of internal RAM and its low point fell to 3 KB.
+- **Ready to open:** on the weather screen, spare cache slots keep today's hourly page and Settings (with 2 places
+  there's room for the hourly page only: 4 + 1). `drag_paint` first puts a hidden screen in the state it opens in
+  (`fill_page` + list at the top for an hourly page, as `main_tap` does; `cfg_open_state()` for Settings), so the
+  slide that opens it starts at once (hourly: 0 ms instead of ~170). `ui_settings_changed()` (web.c: presence,
+  sound, update channel) marks Settings' picture; the minute tick marks both (they're hidden pictures).
 - **Memory:** `room_for(n)`: free PSRAM above 1 MB + 440 KB per picture, and a 900 KB block. 5 pictures = 2.2 MB.
   A slide may reuse cache slots (`force`) rather than fall back to the slow animation.
 - **Measured (v1.11.0, harness `perf`):** screen to screen 64–70 fps (was 10–15; one run measured 32 fps to the
   radar, the next 67), places 46 fps (66 with the pictures ready; was 10), days 58 fps (was 11), drag start ~15 ms.
-  Lists (rc.4): hourly ~52 fps while moving (was 17.5), Settings ~70 (was 22), status page ~64.
+  Lists (rc.4): hourly ~52 fps while moving (was 17.5), Settings ~70 (was 22), status page ~64. v1.11.1: hourly
+  ~60 fps (raw scroll), radar zoom 40–43 fps (was ~10), today's hourly view opens at once.
 - Long-press opens the Settings screen (below). Its *More on your phone* row shows the overlay with a QR code
   (`lv_qrcode`) for `https://<ip>`.
 
@@ -366,8 +391,10 @@ order, and ~11 ms on the bus.
   Page dots update on `LV_EVENT_SCROLL`. A tap closes the view.
 - **Rows are drawn, not created:** each list has one tall object with an `LV_EVENT_DRAW_MAIN` callback that draws
   only the rows inside the clip area (`lv_draw_label` with `text_local`, `lv_draw_rect`). The weather icons have a
-  painter mode (`P_layer`) that draws the same shapes straight into the layer. 72 rows as real objects would have
-  been several hundred small allocations in internal RAM.
+  painter mode (`P_layer`) that draws the same shapes straight into a layer: since v1.11.1 once per kind, day or
+  night and row background (the "Now" row's), into 40×40 pictures (`hr_icon_make()`, made by `fill_page`, at most
+  28, through a hidden canvas: not during a render), which `hr_draw` copies (`lv_draw_image`); a missing one is drawn
+  as shapes. 72 rows as real objects would have been several hundred small allocations in internal RAM.
 - Today's page is refilled at each new hour and when new data arrives.
 - **Temperature graph** at the top of each day's list (it scrolls away with the column headers): hours 0–24 (the
   last point is the next day's 00:00; the last forecast day stops at 23:00), filled curve, a 1-px line every hour
@@ -386,7 +413,9 @@ order, and ~11 ms on the bus.
   ring picks the round distance (5 km … 800 km) closest to half the radius. The view is centred on the saved location (`apply_view()`). Only doubling steps are used, so
   map tiles are shown at native resolution and labels stay sharp.
 - **Zoom gestures:** swipe down = zoom in, up = zoom out (`radar_zoom()`, called from the LVGL gesture handler).
-  Zoom in grows the current picture 2× (`lv_anim` on `lv_image_set_scale`, 300 ms, nearest-neighbour), then the sharper
+  The animations are drawn by `slide.c` (`slide_zoom()`, ~40 fps; see Moves, Radar zoom), LVGL's `lv_anim` on
+  `lv_image_set_scale` only as the fallback.
+  Zoom in grows the current picture 2× (300 ms, nearest-neighbour), then the sharper
   map replaces it. Zoom out first loads the wider map (usually from the flash cache), then shrinks it from 2× into
   place (`reveal_map()`), so no black border shows. The task waits for a running zoom-in animation (`wait_zoom_anim()`)
   before swapping images. Requests interrupt waits (`ulTaskNotifyTake`), and a basemap download for a zoom level the
@@ -647,8 +676,15 @@ by `GET /api/config` as `version`.
 | PNG decode (`png_rows.c`) | PSRAM (transient) | ~50 KB |
 | TLS (client and server) | PSRAM (`MBEDTLS_EXTERNAL_MEM_ALLOC`) | ~40–60 KB per session |
 
-Build: `CONFIG_COMPILER_OPTIMIZATION_PERF=y` (debug `-Og` made LVGL rendering noticeably slow) and
-`CONFIG_LV_DEF_REFR_PERIOD=15`.
+Build: `CONFIG_COMPILER_OPTIMIZATION_PERF=y` (debug `-Og` made LVGL rendering noticeably slow),
+`CONFIG_LV_DEF_REFR_PERIOD=15`, and **QIO flash** since v1.11.1 (`CONFIG_ESPTOOLPY_FLASHMODE_QIO`; DIO before). The
+program runs from flash through a 16 KB instruction cache (more would cost internal RAM), and LVGL's code is large:
+full-screen renders went 67 → 45 ms (weather), 51 → 35 (hourly), 56 → 44 (radar). The bootloader switches the chip to
+QIO itself (ESP-IDF writes its header as "dio" even then: the flash helper's `--flash_mode dio` is right), so it takes
+a bootloader built with QIO: a USB or web-flasher install. A board updated over the air keeps its old bootloader and
+runs the same app at DIO speed (checked: v1.11.1-qio.1 on the IDF 5.4.2 DIO bootloader boots and passes the harness).
+The flash helper writes `firmware\bootloader.bin` (copy it from `build\v55\bootloader\` after a config change;
+the old one is kept as `firmware\bootloader-idf542-dio.bin`).
 
 Measured: internal RAM ~69 KB free steady, 30 KB min; PSRAM ~3.3 MB free, 1.1 MB min (v1.4.0, with the graph
 canvases). See `docs/DIAGNOSTICS.md` for
