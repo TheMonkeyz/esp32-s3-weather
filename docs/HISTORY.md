@@ -158,8 +158,8 @@ an empty translation is not a missing one; a rule with a time window needs a tes
   covers part of it.
 - Left from the October 3 fix plan: saving a place on the captive
   portal before the Wi-Fi restart (D3); heap poisoning in test builds; the harness's non-English Windows detection
-  and separate render limits for QIO/DIO boards (E3); a real phone install from the settings page; GitHub Support
-  to drop the pre-purge commits still reachable through old pull-request refs.
+  and separate render limits for QIO/DIO boards (E3); a real phone install from the settings page. (Old pull-request refs still reach
+  pre-purge commits; the key was rotated, so no GitHub Support request was made.)
 - The Inuktitut draft needs a fluent speaker (docs/translations/iu-review.md).
 - Radar zoom: ~80 ms before the first frame (the overlays' alpha, mostly the range ring); could be cached between
   zooms.
