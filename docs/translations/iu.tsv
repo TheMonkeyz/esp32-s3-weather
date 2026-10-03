@@ -75,12 +75,12 @@ fw:T_AGE_D	%d d	%d ulluit	medium	Tusaalanga glossary: ulluq = day
 fw:T_SVC_NOT_USED	not used yet	atuqtaunngittuq suli	low	"not used yet"
 fw:T_SVC_WAIT_SYNC	waiting for sync	utaqqijuq	medium	Tusaalanga glossary: utaqqijuq = waiting
 fw:T_SVC_CHECKING	checking...	qaujigiaqtuq...	medium	Microsoft Inuktitut terminology (Pirurvik): check = qaujigiarli
-fw:T_SVC_IN_A_ROW	%d in a row	%d tuglirijut	low	"%d in a row" (failures)
+fw:T_SVC_IN_A_ROW	%d failed tries	%d tuglirijut	low	"%d in a row" (failures)
 fw:T_SVC_OK_AGO	OK %s ago	`OK` %s qaangiqtuq	low	"OK, %s ago"
-fw:T_SVC_NEVER_OK	never OK	aturunnanngittuq	low	"could not be used"
+fw:T_SVC_NEVER_OK	not reached yet	aturunnanngittuq	low	"could not be used"
 fw:T_SVC_OFFERS	offers %s	%s atuinnaq	medium	Microsoft Inuktitut terminology (Pirurvik): available = atuinnaq
-fw:T_API_FORECAST	Forecast API v1	`API v1` silamut	low	"API v1 for the weather"
-fw:T_API_AIR	Air quality API v1	`API v1` anirsaq	low	air quality API; shortened to fit the status line
+fw:T_API_FORECAST	forecast	silamut	low	"forecast" (the API version is no longer shown)
+fw:T_API_AIR	air quality	anirsaq	low	"air quality" (the API version is no longer shown)
 fw:T_API_TILES	tiles	nunannguat	medium	nunannguaq = map
 fw:T_API_UPDATES	updates	nutaaruriarniit	medium	Microsoft Inuktitut terminology (Pirurvik): update = nutaaruriarli
 fw:T_ERR_CONNECT	Can't connect	Kasurunnanngittuq	medium	Microsoft Inuktitut terminology (Pirurvik): connect = kasurli; -runnanngit- cannot
@@ -104,6 +104,8 @@ fw:T_OTA_NO_IMAGE	No app image in the manifest	Ilitaksaq piqanngittuq	low	no app
 fw:T_OTA_NO_START	Download failed to start	Minarniq aulalaunngittuq	low	Microsoft Inuktitut terminology (Pirurvik): download = minarniq
 fw:T_OTA_WRONG	Wrong firmware image	Ilitaksaq tammaqtuq	low	wrong image
 fw:T_OTA_INTERRUPTED	Download interrupted	Minarniq nuqqaqtuq	low	download stopped
+fw:T_OTA_BAD_SITE	Unexpected reply from the update site	Nutaarurivik kiujjutinga tammaqtuq	low	"the update site's answer is wrong"; from T_OTA_NO_SITE
+fw:T_OTA_ROLLED_BACK	%s was undone: the display restarted before it was confirmed	%s piiqtauqtuq: saqqiqtitsijuq aullaqsikkannilauqtuq	low	"%s was removed: the display restarted"; needs review
 fw:T_OTA_INVALID	Downloaded image is invalid	Minaq atujunnanngittuq	low	Microsoft Inuktitut terminology (Pirurvik): download (noun) = minaq
 fw:T_DONE	Done	Pijariiqtuq	medium	"it is finished"; the longer pijariiqsimajuq was clipped by the circle at the top of Settings
 fw:T_SEC_SCREEN	SCREEN	Igalaujaq	medium	Microsoft Inuktitut terminology (Pirurvik): full screen = igalaujalimaaq
@@ -121,14 +123,14 @@ fw:T_WIND	Wind	Anuri	medium	wind
 fw:T_CLOCK	Clock	Ikarraat	low	Tusaalanga glossary: ikarraaq = hour
 fw:T_LANGUAGE	Language	Uqausiq	high	Microsoft Inuktitut terminology (Pirurvik): language = pilirijjutinut uqausiq
 fw:T_SEC_SOUND	SOUND	Nipi	high	nipi = sound
-fw:T_CHIME	Alert chime	Inirtiruti nipi	medium	Microsoft Inuktitut terminology (Pirurvik): warning = inirtiruti
+fw:T_CHIME	Alert sound	Inirtiruti nipi	medium	Microsoft Inuktitut terminology (Pirurvik): warning = inirtiruti
 fw:T_CHIME_OFF	Off	Qamittuq	medium	Microsoft Inuktitut terminology (Pirurvik): turn off = qamilli
 fw:T_CHIME_RED	Red	Aupaluktut	high	aupaluktuq = red
 fw:T_CHIME_ORANGE	Orange+	`Orange`+	low	no confident word for orange
 fw:T_CHIME_ALL	All	Tamarmik	high	tamarmik = all
 fw:T_VOLUME	Volume	Nipiqquqtusigiarut	high	Microsoft Inuktitut terminology (Pirurvik): volume
-fw:T_TEST_SOUND	Test the chime	Naalaguk nipi	medium	"listen to the sound"
-fw:T_PHONE	More on your phone	Suli uqaalautiralaarmi	medium	Microsoft Inuktitut terminology (Pirurvik)/Tusaalanga glossary: mobile phone = uqaalautiralaaq
+fw:T_TEST_SOUND	Test the sound	Naalaguk nipi	medium	"listen to the sound"
+fw:T_PHONE	Location & more (phone)	Suli uqaalautiralaarmi	medium	kept from "More on your phone" (the row now says "Location & more (phone)")
 fw:T_WIFI_NETWORK	Wi-Fi network	`Wi-Fi` kasuqatigiit	medium	Microsoft Inuktitut terminology (Pirurvik): network = kasuqatigiitsimajut
 fw:T_UPDATES	Updates	Nutaat	low	"new things"; "nutaaruriarniit" ran into the "Check now >" value on the Settings row
 fw:T_RESTART	Restart	Ikitikkannirli	high	Microsoft Inuktitut terminology (Pirurvik): restart
@@ -140,6 +142,8 @@ fw:T_TAP_AGAIN	Tap again	Naqikkannirli	medium	Microsoft Inuktitut terminology (P
 fw:T_RESTARTING	Restarting...	Ikitikkannirtuq...	medium	Microsoft Inuktitut terminology (Pirurvik): restart
 fw:T_BRIGHTNESS	Brightness %d%%	Qaumaninga %d%%	high	Microsoft Inuktitut terminology (Pirurvik): brightness = qaumaninga
 fw:T_SETTINGS	Settings	Aaqqissimautit	medium	Microsoft Inuktitut terminology (Pirurvik): setting = aaqqissimaut
+fw:T_HINT_TITLE	Choose your location	Inigijait qinirlugu	low	"choose your place"; inigi- (place where one lives) + qinir- (look for); needs review
+fw:T_HINT_HELP	%s\nScan with your phone to choose\nyour city and other settings.\n\nTap to close	%s\nAjjiliurli uqaalautiralaarmut\nnunaliit aaqqissimautillu qinirlugit.\n\nNaqilli: matuli	low	"photograph (scan) with your phone / choose the town and settings / tap: close"; from T_OV_HELP
 fw:T_OV_HELP	%s\nScan with your phone and accept\nthe certificate warning.\n\nLong-press for Wi-Fi setup\nTap to close	%s\nAjjiliurli uqaalautiralaarmut ammalu\ninirtiruti angiqtauli.\n\nNaqillugu naqimmili: `Wi-Fi`\nNaqilli: matuli	low	Microsoft Inuktitut terminology (Pirurvik): scan = ajjiliurli, press and hold = naqillugu naqimmili, tap = naqilli, close = matuli
 fw:T_WIFI_RECEIVED	Wi-Fi received	`Wi-Fi` pijaujuq	low	"Wi-Fi received"
 fw:T_WIFI_GOT	Got \"%s\" from your phone.\nRestarting...	"%s" uqaalautiralaarmit.\nIkitikkannirtuq...	low	"%s" from the phone, restarting
@@ -157,6 +161,10 @@ fw:T_CONNECTING	Connecting to\n%s\n\nLong-press for Wi-Fi setup	Kasuqtuq\n%s\n\n
 fw:T_FETCHING	Fetching forecast...\n\nLong-press for Wi-Fi setup	Silamik qaujisaqtuq...\n\nNaqillugu naqimmili: `Wi-Fi`	low	"looking up the weather"
 fw:T_CONNECTED	Connected	Kasuqsimajuq	high	Microsoft Inuktitut terminology (Pirurvik): online = kasuqsimajuq
 fw:T_CANT_REACH	Can't reach %s\nTap to try again	%s kasurunnanngittuq\nNaqilli: kasukkannirli	low	"cannot reach %s / tap: connect again"
+fw:T_FORECAST_RETRY	Can't reach the forecast service.\nRetrying.	Silamik qaujisarvik kasurunnanngittuq.\nKasukkanniqtuq.	low	"weather service cannot be reached / connecting again"; from T_FETCHING, T_ERR_CONNECT
+fw:T_UPDATED_MIN	Updated %d min ago	Nutaaqqiqtaujuq: %d `min`	low	"updated: N min (ago)"; the "ago" is implied; needs review
+fw:T_UPDATED_H	Updated %d h ago	Nutaaqqiqtaujuq: %d `h`	low	"updated: N h (ago)"
+fw:T_NO_CONNECTION	No connection	Kasurunnanngittuq	medium	as T_ERR_CONNECT ("cannot connect")
 fw:T_STILL_TRYING	Can't reach %s\nStill trying\n\nLong-press for Wi-Fi setup	%s kasurunnanngittuq\nKasukkanniqtuq\n\nNaqillugu naqimmili: `Wi-Fi`	low	"cannot reach %s / connecting again / long-press: Wi-Fi" from T_CANT_REACH and T_CONNECTING
 fw:T_FIRST_SETUP	First-time setup	Sivulliq aaqqiksuiniq	low	"first arrangement"
 fw:T_RADAR	Radar	`Radar`	medium	kept as is
@@ -267,6 +275,7 @@ web:locUnavail	Location unavailable: {0}	Namiinninga atuinnaunngittuq: {0}	mediu
 web:cityPicked	{0}: move the pin if needed, then tap Save.	{0}: kikiak nusuarli, jagajjairlilu.	low	
 web:searchNoNet	City search needs internet on this phone.	Qiniqtuq `internet`-mik pijariaqaqtuq.	low	
 web:badCoords	Pick a spot on the map or enter valid coordinates.	Nunannguarmi ini niruarli uvvaluunniit naasautit naqittaurlugit.	low	
+web:nameLong	This name is too long for the display. Shorten it.	Atia takiluaqtuq. Naittukkulirlugu.	low	"the name is too long; shorten it"
 web:savedUpdating	Saved. The display is updating.	Jagajjairsimajuq. Saqqijaut nutaaruriaqtuq.	medium	
 web:addedPlace	Added {0}. Drag up or down on the display to see it.	{0} ilaliqsimajuq. Saqqijaummi nusuarli qulimut uvvaluunniit atimut.	low	
 web:savedPlace	Saved {0}. Drag up or down on the display to see it.	{0} jagajjairsimajuq. Saqqijaummi nusuarli qulimut uvvaluunniit atimut.	low	
@@ -297,6 +306,7 @@ web:fwAvailable	Version {0} is available.	{0} atuinnaq.	medium	Microsoft Inuktit
 web:fwDownloading	Downloading {0}… {1} %. Keep the display plugged in.	{0} minarijuq… {1} %. Saqqijaut kasuqsimatillugu.	low	
 web:fwDone	Installed. The display is restarting…	Ilitaujuq. Saqqijaut ikitikkannirtuq…	medium	
 web:fwFailed	Update check failed: {0}.	Qaujigiarniq tammaqtuq: {0}.	low	
+web:fwRolledBack	{0} was undone: the display restarted before it was confirmed.	{0} piiqtauqtuq: saqqiqtitsijuq aullaqsikkannilauqtuq.	low	as T_OTA_ROLLED_BACK
 web:unknownErr	unknown error	tammarniq	medium	Microsoft Inuktitut terminology (Pirurvik): error
 web:installX	Install {0}	{0} ilili	high	Microsoft Inuktitut terminology (Pirurvik): install
 web:theUpdate	update	nutaaruriarniq	medium	
@@ -305,7 +315,7 @@ web:noAnswer	The display did not answer	Saqqijaut kiunngittuq	low
 web:whatsNew	What's new	Nutaat	medium	
 web:pageError	Page error: {0} (line {1})	Tammarniq: {0} ({1})	medium	
 web:soundTitle	Sound	Nipi	high	sound
-web:chimeFor	Chime for new weather alerts	Nipi silamut inirtirutinut nutaanut	low	Microsoft Inuktitut terminology (Pirurvik): warning = inirtiruti
+web:chimeFor	Sound for new weather alerts	Nipi silamut inirtirutinut nutaanut	low	Microsoft Inuktitut terminology (Pirurvik): warning = inirtiruti
 web:lvOff	Off	Qamittuq	medium	
 web:lvRed	Red alerts only	Aupaluktut taima	medium	red only
 web:lvOrange	Orange and red alerts	`Orange` ammalu aupaluktut	low	
@@ -313,7 +323,8 @@ web:lvAll	All alerts (yellow and statements too)	Tamarmik	high	all
 web:volume	Volume	Nipiqquqtusigiarut	high	Microsoft Inuktitut terminology (Pirurvik): volume
 web:quietFrom	Quiet from	Nipaittuq	low	quiet from
 web:quietTo	Until	Tikillugu	low	until
-web:testChime	🔔 Test the chime	🔔 Naalaguk nipi	medium	
-web:quietNote	No chime during quiet hours, except for red alerts. Each alert chimes once.	Nipaittumi nipiqanngittuq, aupaluktut kisiani. Inirtiruti atausiaq nipiqaqtuq.	low	
+web:testChime	🔔 Test the sound	🔔 Naalaguk nipi	medium	
+web:quietNote	No sound during quiet hours, except for red alerts. Each warning sounds once, and again if it gets worse. The same start and end time means no quiet hours.	Nipaittumi nipiqanngittuq, aupaluktut kisiani. Inirtiruti atausiaq nipiqaqtuq.	low	the earlier draft; the new English adds "again if it gets worse" and "same times = no quiet hours": not translated yet
 web:noSpeaker	No speaker found on this display.	Nipiqaut piqanngittuq.	low	Microsoft Inuktitut terminology (Pirurvik): speaker = nipiqaut
+web:betaNote	Release candidates: new features a few days early. They are tested, but a problem is more likely than with stable releases.	`Beta`: nutaat ullunik sivulliqpiaqsaqtut. Misiliqtaujut, kisiani ajurnarniqsauvut aulajjuittunit.	low	"new things a few days earlier; tested, but more likely to have a problem than stable ones"; needs review
 web:needKey	To change settings, scan the code on the display: press and hold the weather screen. This phone then remembers it.	Aaqqissimautit asijjiqsuqqunnatit, ajjiliurli titiraujamut saqqiqtumi: naqillugu naqimmili silamut. Uqaalautiralaarmut puiguqtaililugu.	low	"to change settings, photograph (scan) the code shown: long-press the weather screen; the phone won't forget it" from T_SETTINGS, T_OV_HELP; needs review

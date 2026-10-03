@@ -46,7 +46,7 @@ static int ov_state;          // 0 hidden, 1 settings QR
 static lv_obj_t *scr_hour;       // hourly detail screen
 static int hr_day;
 static void hour_fill(int day);
-static lv_obj_t *al_pill, *al_pill_lbl, *scr_alert, *al_title, *al_sub, *al_body, *al_map;
+static lv_obj_t *al_pill, *al_pill_lbl, *scr_alert, *al_title, *al_sub, *al_body, *al_map, *al_attr;
 static lv_image_dsc_t al_map_dsc;
 static uint16_t *al_map_buf;
 static EXT_RAM_BSS_ATTR alerts_t alerts;           // ~4 KB, in PSRAM
@@ -58,6 +58,9 @@ typedef struct {
     int utc_offset;
     bool has_wx;                               // pw[i] holds this place's forecast
     bool drawn;                                // ui_place() filled it at least once
+    lv_obj_t *age;                             // "Updated 45 min ago" / "No connection" (only when it matters)
+    int64_t ok_us;                             // last successful forecast (esp_timer), 0 = none yet
+    bool failing;                              // the last attempt failed
 } place_page_t;
 static lv_obj_t *scr_main, *place_pager;
 static place_page_t pp[MAX_PLACES];
@@ -87,7 +90,9 @@ static lv_font_t *mkfont(int px)
     lv_font_t *f = lv_tiny_ttf_create_data_ex(ttf_start, ttf_end - ttf_start, px, LV_FONT_KERNING_NONE, 96);
     // Montserrat has no syllabics: LVGL looks a missing glyph up in the fallback font
     // a quarter larger: Noto's syllabics are drawn about x-height, they looked small next to Montserrat's capitals
-    lv_font_t *s = lv_tiny_ttf_create_data_ex(syl_start, syl_end - syl_start, px * 5 / 4, LV_FONT_KERNING_NONE, 48);
+    // 96 glyphs per size: the Settings screen alone uses 57 distinct syllabics, and a 48-glyph cache re-rasterised
+    // them while it scrolled
+    lv_font_t *s = lv_tiny_ttf_create_data_ex(syl_start, syl_end - syl_start, px * 5 / 4, LV_FONT_KERNING_NONE, 96);
     if (f && s) f->fallback = s;
     return f;
 }
@@ -267,6 +272,9 @@ static bool minute_marks_own(const void *key)
     return key == scr_radar || pager_index(place_pager, key) >= 0;
 }
 
+static bool local_date(int utc_offset, char *out, size_t n);   // below
+static void age_update(int i);
+
 static void clock_tick(lv_timer_t *t)
 {
     struct tm tm;
@@ -301,6 +309,12 @@ static void clock_tick(lv_timer_t *t)
         }
         if (!new_minute) return;
         ESP_LOGI("ui", "clock %s", buf);
+        for (int i = 0; i < n_places; i++) age_update(i);
+        for (int i = 0; i < n_places; i++) {               // past a place's midnight: its forecast starts today
+            char today[12];
+            if (pp[i].has_wx && pw[i].ndays > 1 && local_date(pw[i].utc_offset, today, sizeof(today)) &&
+                strcmp(pw[i].day[0].date, today) < 0) ui_place(i, pp[i].name, &pw[i]);
+        }
         slide_cache_dirty_hidden(minute_marks_own);         // ages, the sun...: the other pictures are a minute old
                                                             // (the one shown gets its changes as they're drawn)
         if (lv_screen_active() == scr_hour && tm.tm_min == 0) hour_fill(0);   // new hour
@@ -337,6 +351,8 @@ static void overlay_close(lv_event_t *e)
 static void show_wifi_setup(lv_event_t *e);
 
 // Step 1: long-press on the weather screen -> settings page QR (home network, HTTPS)
+static bool hint_text;                                  // the overlay shows the first-run hint's texts
+
 static void show_settings(lv_event_t *e)
 {
     if (!net_is_connected()) {                        // offline: the settings QR would be useless
@@ -344,18 +360,32 @@ static void show_settings(lv_event_t *e)
         ui_wifi_setup(NULL);
         return;
     }
-    ESP_LOGI("ui", "long press -> settings QR");
+    ESP_LOGI("ui", "%s", hint_text ? "first run: location hint (settings QR)" : "long press -> settings QR");
     char ip[20], url[48], keyed[80];
     if (!net_get_ip(ip, sizeof(ip))) strcpy(ip, "192.168.4.1");
     snprintf(url, sizeof(url), "https://%s", ip);
     // The code carries the key that lets the page change settings (web.c, "Who may change things"); the address
     // written under it doesn't: typed by hand, the page shows the settings and asks for the code to change them
     snprintf(keyed, sizeof(keyed), "%s/#k=%s", url, web_key());
-    lv_label_set_text(ov_title, tr(T_SETTINGS));
+    lv_label_set_text(ov_title, tr(hint_text ? T_HINT_TITLE : T_SETTINGS));
     lv_qrcode_update(ov_qr, keyed, strlen(keyed));
-    lv_label_set_text_fmt(ov_url, tr(T_OV_HELP), url);
+    lv_label_set_text_fmt(ov_url, tr(hint_text ? T_HINT_HELP : T_OV_HELP), url);
+    hint_text = false;
     ov_state = 1;
     overlay_show();
+}
+
+// A new display ends on the built-in place with nothing pointing to the settings page (the only way there was
+// long-press, "More on your phone", the QR code): once, the first time a forecast is on screen, the settings QR
+// comes up by itself with "Choose your location". A tap closes it. Any task.
+void ui_first_run(void)
+{
+    display_lock(-1);
+    if (lv_screen_active() == scr_main && lv_obj_has_flag(overlay, LV_OBJ_FLAG_HIDDEN)) {
+        hint_text = true;
+        show_settings(NULL);
+    }
+    display_unlock();
 }
 
 // Step 2: long-press on the settings QR -> Wi-Fi setup screen
@@ -467,15 +497,18 @@ static void graph_draw(lv_layer_t *layer, const day_page_t *dp, int x0, int y0)
     int base = dp->day * 24, n = wx.nhours - base;              // points: hours 0..24
     if (n > 25) n = 25;
     if (n < 2) return;
-    float lo = wx.hour[base].temp, hi = lo, smin = lo, smax = lo;
+    // Hours without a value (null in the forecast: NAN) are left out of the scale, the fill and the curve
+    float lo = NAN, hi = NAN, smin = NAN, smax = NAN;
     int ilo = 0, ihi = 0;
-    for (int i = 1; i < n; i++) {
+    for (int i = 0; i < n; i++) {
         float t = wx.hour[base + i].temp;
-        if (i < 24 && t < lo) { lo = t; ilo = i; }             // the day's own low and high (00:00 to 23:00)
-        if (i < 24 && t > hi) { hi = t; ihi = i; }
-        if (t < smin) smin = t;                                 // the scale also fits the next day's 00:00
-        if (t > smax) smax = t;
+        if (isnan(t)) continue;
+        if (i < 24 && !(t >= lo)) { lo = t; ilo = i; }          // the day's own low and high (00:00 to 23:00)
+        if (i < 24 && !(t <= hi)) { hi = t; ihi = i; }
+        if (!(t >= smin)) smin = t;                             // the scale also fits the next day's 00:00
+        if (!(t <= smax)) smax = t;
     }
+    if (isnan(smin) || isnan(lo)) return;
     float span = smax - smin < 4 ? 4 : smax - smin, mid = (smax + smin) / 2;   // a flat day stays flat
     float bot = mid - span / 2;
     int now = dp->now >= 0 ? dp->now - base : -1;              // hour index of "now" (today only)
@@ -494,6 +527,7 @@ static void graph_draw(lv_layer_t *layer, const day_page_t *dp, int x0, int y0)
         int i = (int)fi;
         if (i >= n - 1) i = n - 2;
         float t = wx.hour[base + i].temp + (wx.hour[base + i + 1].temp - wx.hour[base + i].temp) * (fi - i);
+        if (isnan(t)) continue;
         r.bg_color = now >= 0 && fi < now ? fill_past : fill;
         lv_area_t a = { x, (int)GY(t), x + 1, ybase };
         lv_draw_rect(layer, &r, &a);
@@ -514,6 +548,7 @@ static void graph_draw(lv_layer_t *layer, const day_page_t *dp, int x0, int y0)
     l.round_start = l.round_end = 1;
     for (int i = 0; i + 1 < n; i++) {
         l.color = now >= 0 && i < now ? C_DIM : warm;
+        if (isnan(wx.hour[base + i].temp) || isnan(wx.hour[base + i + 1].temp)) continue;
         l.p1.x = GX(i);     l.p1.y = GY(wx.hour[base + i].temp);
         l.p2.x = GX(i + 1); l.p2.y = GY(wx.hour[base + i + 1].temp);
         lv_draw_line(layer, &l);
@@ -538,7 +573,7 @@ static void graph_draw(lv_layer_t *layer, const day_page_t *dp, int x0, int y0)
     }
 
     // Now
-    if (now >= 0 && now < n) {
+    if (now >= 0 && now < n && !isnan(wx.hour[base + now].temp)) {
         lv_draw_rect_dsc_t d;
         lv_draw_rect_dsc_init(&d);
         d.bg_color = lv_color_white();
@@ -639,10 +674,13 @@ static void hr_draw(lv_event_t *e)
             draw_icon(NULL, weather_kind(h->code), h->is_day, 30, 0);
             P_layer = NULL;
         }
-        snprintf(buf, sizeof(buf), "%d°", config_temp(h->temp));
+        if (isnan(h->temp)) strcpy(buf, "--");                  // no value in the forecast (null)
+        else snprintf(buf, sizeof(buf), "%d°", config_temp(h->temp));
         draw_text(layer, f_small, C_TEXT, c.x1 + 118, y, 56, LV_TEXT_ALIGN_RIGHT, buf);
-        snprintf(buf, sizeof(buf), "%d%%", h->pop);
-        draw_text(layer, f_tiny, h->pop >= 30 ? C_ACCENT : C_DIM, c.x1 + 180, y, 54, LV_TEXT_ALIGN_RIGHT, buf);
+        if (h->pop == WX_POP_NONE) strcpy(buf, "--");
+        else snprintf(buf, sizeof(buf), "%d%%", h->pop);
+        draw_text(layer, f_tiny, h->pop >= 30 && h->pop != WX_POP_NONE ? C_ACCENT : C_DIM, c.x1 + 180, y, 54,
+                  LV_TEXT_ALIGN_RIGHT, buf);
         config_fmt_wind(h->wind, buf, sizeof(buf));
         draw_text(layer, f_micro, C_DIM, c.x1 + 236, y, 72, LV_TEXT_ALIGN_RIGHT, buf);
     }
@@ -1278,6 +1316,11 @@ static void alert_create(void)
     lv_obj_set_style_clip_corner(al_map, true, 0);
     lv_obj_set_style_margin_bottom(al_map, 8, 0);
     lv_obj_add_flag(al_map, LV_OBJ_FLAG_HIDDEN | LV_OBJ_FLAG_EVENT_BUBBLE | LV_OBJ_FLAG_GESTURE_BUBBLE);
+    al_attr = al_label(box, f_micro, C_DIM);            // the map's tiles: OpenStreetMap asks for it on screen
+    lv_obj_set_style_text_align(al_attr, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_pad_bottom(al_attr, 6, 0);
+    lv_label_set_text(al_attr, "© OpenStreetMap contributors");
+    lv_obj_add_flag(al_attr, LV_OBJ_FLAG_HIDDEN);
     al_sub = al_label(box, f_tiny, C_DIM);
     lv_obj_set_style_text_align(al_sub, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_pad_bottom(al_sub, 10, 0);
@@ -1303,8 +1346,10 @@ void ui_alert_map(uint16_t *buf, int w, int h)
         lv_image_cache_drop(&al_map_dsc);
         lv_image_set_src(al_map, &al_map_dsc);
         lv_obj_remove_flag(al_map, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_remove_flag(al_attr, LV_OBJ_FLAG_HIDDEN);
     } else {
         lv_obj_add_flag(al_map, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(al_attr, LV_OBJ_FLAG_HIDDEN);
     }
     display_unlock();
     free(old);
@@ -1965,6 +2010,9 @@ static void place_page_create(int i, lv_obj_t *pg)
 {
     place_page_t *p = &pp[i];
     p->time = label(pg, f_time, C_DIM, 38);
+    p->age = label(pg, f_micro, C_DIM, 16);                  // above the clock, where the circle is ~220 px wide
+    lv_obj_set_width(p->age, 220);
+    lv_label_set_long_mode(p->age, LV_LABEL_LONG_DOT);
     p->city = label(pg, f_city, C_TEXT, 72);
     lv_obj_t *hero = lv_obj_create(pg);                      // icon + big temperature, centred together
     lv_obj_remove_style_all(hero);
@@ -2100,7 +2148,7 @@ static void cfg_refresh(void)                      // display lock held
     lv_label_set_text(cfg_val[R_TEMP], u.fahrenheit ? "°F" : "°C");
     lv_label_set_text(cfg_val[R_WIND], u.wind == WIND_MPH ? "mph" : u.wind == WIND_MS ? "m/s" : "km/h");
     lv_label_set_text(cfg_val[R_CLOCK], u.h12 ? "12 h" : "24 h");
-    lv_label_set_text(cfg_val[R_LANG], i18n_name(i18n_lang()));
+    lv_label_set_text(cfg_val[R_LANG], i18n_name(i18n_lang()));   // (Inuktitut: "draft" in its name, i18n.c)
     sound_cfg_t sc;
     sound_get_config(&sc);
     static const tid_t lvl[4] = { T_CHIME_OFF, T_CHIME_RED, T_CHIME_ORANGE, T_CHIME_ALL };
@@ -2528,6 +2576,59 @@ static void place_current(const weather_t *w, bool force)
     if (lv_screen_active() == scr_hour) for (int d = 0; d < WX_DAYS; d++) hour_fill(d);
 }
 
+// The line above the clock: nothing while the forecast is fresh; "No connection" offline, "Updated N min ago" once the
+// forecast is over 30 min old (failures, or no Wi-Fi). A failed forecast was invisible: only the status page, two
+// swipes away, said why the numbers weren't changing. Display lock held.
+static void age_update(int i)
+{
+    place_page_t *p = &pp[i];
+    char b[48] = "";
+    int64_t age_s = p->ok_us ? (esp_timer_get_time() - p->ok_us) / 1000000 : 0;
+    if (!net_is_connected() && p->has_wx) strlcpy(b, tr(T_NO_CONNECTION), sizeof(b));
+    else if (p->has_wx && p->ok_us && age_s > 30 * 60) {
+        if (age_s < 2 * 3600) snprintf(b, sizeof(b), tr(T_UPDATED_MIN), (int)(age_s / 60));
+        else snprintf(b, sizeof(b), tr(T_UPDATED_H), (int)(age_s / 3600));
+    }
+    if (!strcmp(lv_label_get_text(p->age), b)) return;      // unchanged: leave the picture alone (slide.c)
+    lv_label_set_text(p->age, b);
+    lv_obj_t *page = pager_page(place_pager, i);
+    if (page == key_of(lv_screen_active())) return;
+    lv_area_t a, pa;
+    lv_obj_get_coords(p->age, &a);
+    lv_obj_get_coords(page, &pa);
+    slide_cache_dirty_rows(page, a.y1 - pa.y1 - 2, a.y2 - pa.y1 + 2);
+}
+
+void ui_place_state(int i, bool ok)
+{
+    if (i < 0 || i >= MAX_PLACES) return;
+    display_lock(-1);
+    place_page_t *p = &pp[i];
+    if (ok) p->ok_us = esp_timer_get_time();
+    p->failing = !ok;
+    if (!ok && !p->has_wx && p->drawn) {                     // "Loading..." forever: say why
+        const char *t = tr(T_FORECAST_RETRY);
+        if (strcmp(lv_label_get_text(p->cond), t)) {
+            lv_label_set_text(p->cond, t);
+            slide_cache_dirty(pager_page(place_pager, i));
+        }
+    }
+    age_update(i);
+    display_unlock();
+}
+
+// The place's local date, "YYYY-MM-DD"; false before the clock is set
+static bool local_date(int utc_offset, char *out, size_t n)
+{
+    time_t t = time(NULL);
+    if (t < 1600000000) return false;
+    t += utc_offset;
+    struct tm tm;
+    gmtime_r(&t, &tm);
+    strftime(out, n, "%Y-%m-%d", &tm);
+    return true;
+}
+
 void ui_place(int i, const char *name, const weather_t *w)
 {
     if (i < 0 || i >= MAX_PLACES) return;
@@ -2564,6 +2665,10 @@ void ui_place(int i, const char *name, const weather_t *w)
         return;
     }
     if (w != &pw[i]) pw[i] = *w;
+    char today[12];
+    if (local_date(pw[i].utc_offset, today, sizeof(today)) && weather_from_today(&pw[i], today))
+        ESP_LOGI("ui", "place %d: forecast from today (%s), the days before dropped", i + 1, today);
+    w = &pw[i];
     p->has_wx = true;
     p->utc_offset = w->utc_offset;
     char buf[64];

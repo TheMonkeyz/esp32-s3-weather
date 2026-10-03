@@ -255,7 +255,7 @@ class Board:
         self.api('/api/update', {'action': 'install'})
         self.log.wait(r'ota: Update installed, restarting', 300, 'download and install', start=at)
         self.log.wait(r'ota: Running ' + re.escape(want) + ' from', 90, f'{want} starting', start=at)
-        self.log.wait(r'ota: New firmware ran \d+ s: marked valid', 120, 'the update confirmed (no rollback)', start=at)
+        self.log.wait(r'ota: New firmware ran \d+ s[^:]*: marked valid', 120, 'the update confirmed (no rollback)', start=at)
 
     def snap(self, screen, out):
         t0 = time.time()

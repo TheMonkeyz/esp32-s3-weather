@@ -45,3 +45,18 @@ test('pick-up sensitivity is saved, the meter shows the threshold', async ({ pag
   await page.locator('#locCard').scrollIntoViewIfNeeded();
   await page.locator('#presCard').screenshot({ path: 'shots/review_presence_card.png' });
 });
+
+test('the 10-second "Testing" timings only with ?test', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#pPreset option[value=testing]')).toBeHidden();
+  await page.goto('/?test');
+  await expect(page.locator('#pPreset option[value=testing]')).not.toHaveAttribute('hidden', '');
+});
+
+test('the Beta channel says what it means', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#fwBeta')).toBeHidden();
+  await page.locator('#fwChan').selectOption('beta');
+  await expect(page.locator('#fwBeta')).toBeVisible();
+  await expect(page.locator('#fwBeta')).toContainText('Release candidates');
+});

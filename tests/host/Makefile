@@ -8,7 +8,7 @@ OUT := build
 CFLAGS := -std=gnu11 -D_DEFAULT_SOURCE -g -O1 -Wall -Wno-unused-function -fsanitize=address,undefined \
           -fno-sanitize-recover=undefined -Ishim -I$(MAIN) -I$(CJSON) -include shim/host.h
 COMMON := fake.c $(CJSON)/cJSON.c
-TESTS := weather alerts utf8
+TESTS := weather alerts utf8 i18n
 
 all: $(TESTS:%=$(OUT)/test_%)
 	@set -e; for t in $(TESTS); do ./$(OUT)/test_$$t; done
@@ -25,3 +25,5 @@ clean:
 .PHONY: all clean
 $(OUT)/test_utf8: test_utf8.c $(MAIN)/utf8.h | $(OUT)
 	$(CC) $(CFLAGS) -o $@ test_utf8.c fake.c $(CJSON)/cJSON.c -lm
+$(OUT)/test_i18n: test_i18n.c $(MAIN)/i18n.c $(MAIN)/i18n_strings.h | $(OUT)
+	$(CC) $(CFLAGS) -o $@ test_i18n.c fake.c $(CJSON)/cJSON.c -lm

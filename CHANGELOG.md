@@ -9,6 +9,16 @@ How to write an entry: add a `## vX.Y.Z - YYYY-MM-DD` section at the top **befor
 their own `## vX.Y.Z-rc.N` section. Those are shown only to Beta users, while the final release's section should
 list everything again.
 
+## v1.12.0-rc.4 - 2026-10-03
+- The hourly view and the "Today" column are right just after midnight (they showed the day before until the next update).
+- When the forecast can't be updated, the weather screen says so: "No connection", or "Updated 45 min ago" above the clock, and "Can't reach the forecast service" instead of "Loading..." forever. It retries less often during a long outage.
+- A new display shows the settings code by itself the first time, to choose your location.
+- Hours without data in the forecast show "--" instead of 0° and 0 %.
+- On the radar, the zoom distance follows your units (miles), and "No Wi-Fi" goes away as soon as Wi-Fi is back.
+- Clearer wording: "sound" instead of "chime", plain words on the status page, a note about the Beta channel, and Inuktitut marked as a draft.
+- The map in an alert's details credits OpenStreetMap.
+- Two update messages were blank in Inuktitut.
+
 ## v1.12.0-rc.3 - 2026-10-03
 - Changing settings from your phone now needs the code shown on the display: press and hold the weather screen, tap More on your phone, and scan it. Your phone remembers it. Anyone on your Wi-Fi can still look at the settings page.
 - The display's setup network has its own password, shown on the display next to its code (it was the same for every display).

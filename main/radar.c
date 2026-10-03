@@ -65,7 +65,7 @@ static double view_x, view_y;       // top-left of view in world pixels at `zoom
 
 /* ---------------- HTTP download into a growing PSRAM buffer ---------------- */
 
-typedef struct { uint8_t *buf; size_t len, cap; } dl_t;
+typedef struct { uint8_t *buf; size_t len, cap; bool oom; } dl_t;
 
 static esp_err_t on_http(esp_http_client_event_t *e)
 {
@@ -75,7 +75,7 @@ static esp_err_t on_http(esp_http_client_event_t *e)
         size_t nc = (d->cap ? d->cap * 2 : 65536);
         while (nc < d->len + e->data_len + 1) nc *= 2;
         uint8_t *nb = heap_caps_realloc(d->buf, nc, MALLOC_CAP_SPIRAM);
-        if (!nb) return ESP_FAIL;
+        if (!nb) { d->oom = true; return ESP_FAIL; }   // (the client ignores this: http_fetch checks oom)
         d->buf = nb; d->cap = nc;
     }
     memcpy(d->buf + d->len, e->data, e->data_len);
@@ -114,8 +114,8 @@ static bool http_fetch(esp_http_client_handle_t *hp, const char *url, dl_t *d)
         esp_http_client_cleanup(*hp);
         *hp = NULL;
     }
-    if (err != ESP_OK || st != 200 || d->len == 0) {
-        ESP_LOGW(TAG, "GET failed (%s, %d): %.90s", esp_err_to_name(err), st, url);
+    if (err != ESP_OK || st != 200 || d->len == 0 || d->oom) {
+        ESP_LOGW(TAG, "GET failed (%s, %d%s): %.90s", esp_err_to_name(err), st, d->oom ? ", no memory for the body" : "", url);
         free(d->buf); d->buf = NULL;
         return false;
     }
@@ -214,7 +214,7 @@ static void cache_save(void)
     // Erase and write one sector at a time with a short pause in between, so the idle task
     // (and the task watchdog) get to run: a single 450 KB erase blocks this core for seconds.
     for (size_t off = 0; off < len; off += SECT) {
-        wait_screen_quiet(&waited);
+        if (slide_screen_busy()) { xSemaphoreGive(cache_mux); wait_screen_quiet(&waited); xSemaphoreTake(cache_mux, portMAX_DELAY); }
         if (esp_partition_erase_range(p, base + off, SECT) != ESP_OK) { xSemaphoreGive(cache_mux); return; }
         vTaskDelay(1);
     }
@@ -222,7 +222,7 @@ static void cache_save(void)
     size_t total = W * H * 2;
     for (size_t off = 0; off < total; off += SECT) {
         size_t n = total - off < SECT ? total - off : SECT;
-        wait_screen_quiet(&waited);
+        if (slide_screen_busy()) { xSemaphoreGive(cache_mux); wait_screen_quiet(&waited); xSemaphoreTake(cache_mux, portMAX_DELAY); }
         if (esp_partition_write(p, base + sizeof(cache_hdr_t) + off, src + off, n) != ESP_OK) { xSemaphoreGive(cache_mux); return; }
         vTaskDelay(1);
     }
@@ -276,6 +276,7 @@ static void preload_progress(int done)
     lv_label_set_text_fmt(pnl_body, tr(T_PREP_PROGRESS), level, levels, done, pre_total);
     lv_bar_set_range(pnl_bar, 0, pre_total > 0 ? pre_total : 1);
     lv_bar_set_value(pnl_bar, done, LV_ANIM_OFF);
+    if (!lv_obj_has_flag(pnl, LV_OBJ_FLAG_HIDDEN)) slide_cache_dirty(scr);   // (as set_status)
     display_unlock();
 }
 
@@ -649,15 +650,23 @@ static void refresh_img(void)
     lv_obj_invalidate(img);
 }
 
+// Labels set only when they change: a redraw that changes nothing makes the screen's picture for drags (slide.c) out
+// of date. A change marks it, or a drag to the radar showed the old text for a moment.
 static void set_status(const char *title, const char *status)
 {
     display_lock(-1);
-    if (title) lv_label_set_text(lbl_title, title);
+    bool changed = false;
+    if (title && strcmp(lv_label_get_text(lbl_title), title)) { lv_label_set_text(lbl_title, title); changed = true; }
     if (status) {
-        lv_label_set_text(lbl_status, status);
-        if (status[0]) lv_obj_remove_flag(lbl_status, LV_OBJ_FLAG_HIDDEN);
-        else lv_obj_add_flag(lbl_status, LV_OBJ_FLAG_HIDDEN);
+        if (strcmp(lv_label_get_text(lbl_status), status)) { lv_label_set_text(lbl_status, status); changed = true; }
+        bool hide = !status[0];
+        if (hide != lv_obj_has_flag(lbl_status, LV_OBJ_FLAG_HIDDEN)) {
+            if (hide) lv_obj_add_flag(lbl_status, LV_OBJ_FLAG_HIDDEN);
+            else lv_obj_remove_flag(lbl_status, LV_OBJ_FLAG_HIDDEN);
+            changed = true;
+        }
     }
+    if (changed) slide_cache_dirty(scr);
     display_unlock();
 }
 
@@ -871,7 +880,10 @@ static void preload_all(void)
         preloading = true;
         preload_progress(0);
         display_lock(-1);
-        lv_obj_remove_flag(pnl, LV_OBJ_FLAG_HIDDEN);        // only seen if the radar screen is opened meanwhile
+        if (lv_obj_has_flag(pnl, LV_OBJ_FLAG_HIDDEN)) {
+            lv_obj_remove_flag(pnl, LV_OBJ_FLAG_HIDDEN);    // only seen if the radar screen is opened meanwhile
+            slide_cache_dirty(scr);
+        }
         lv_obj_move_foreground(pnl);
         display_unlock();
         for (int i = 0; i < n && !relocate_pending; i++) {
@@ -889,7 +901,7 @@ static void preload_all(void)
     apply_view();
     base_ok = cache_load();
     display_lock(-1);
-    lv_obj_add_flag(pnl, LV_OBJ_FLAG_HIDDEN);
+    if (!lv_obj_has_flag(pnl, LV_OBJ_FLAG_HIDDEN)) { lv_obj_add_flag(pnl, LV_OBJ_FLAG_HIDDEN); slide_cache_dirty(scr); }
     show_live();
     display_unlock();
 }
@@ -938,7 +950,12 @@ static void radar_task(void *arg)
         bool want_work = prefetch || visible || play_pending;
         prefetch = false;
         if (!want_work) continue;
-        if (!net_is_connected()) { set_status(NULL, tr(T_NO_WIFI)); continue; }
+        if (!net_is_connected()) {                       // look again soon: "No Wi-Fi" stayed up to 6 min after it
+            set_status(NULL, tr(T_NO_WIFI));             // came back (the next wake was the refresh period)
+            ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(10000));
+            prefetch = true;
+            continue;
+        }
 
         if (!base_ok) {
             base_ok = load_basemap();
@@ -1179,7 +1196,10 @@ void radar_zoom(int step)
     } else if (lv_image_get_scale(img) > LV_SCALE_NONE) {
         start_scale_anim(lv_image_get_scale(img), lv_image_get_scale(img) / 2);   // undo a pending zoom-in preview
     }
-    lv_label_set_text_fmt(lbl_status, "%s  ·  %d km", tr(step > 0 ? T_ZOOM_IN : T_ZOOM_OUT), radius_at(z));
+    if (config_miles())                                  // as the rest of the radar (it said km in miles mode)
+        lv_label_set_text_fmt(lbl_status, "%s  ·  %d mi", tr(step > 0 ? T_ZOOM_IN : T_ZOOM_OUT),
+                              (int)(radius_at(z) / 1.609344 + 0.5));
+    else lv_label_set_text_fmt(lbl_status, "%s  ·  %d km", tr(step > 0 ? T_ZOOM_IN : T_ZOOM_OUT), radius_at(z));
     lv_obj_remove_flag(lbl_status, LV_OBJ_FLAG_HIDDEN);
     if (task) xTaskNotifyGive(task);
 }

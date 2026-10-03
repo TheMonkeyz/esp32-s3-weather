@@ -333,6 +333,8 @@ def measure(ctx, name, action, settle=1.0):
     clock and data: 57 fps for the drag, 30 with them). For drags, slide.c's own line gives the drag alone:
     drag_fps and drag_start_ms (finger recognised -> first frame; the user noticed 0.1 s)."""
     b = ctx.board
+    if time.localtime().tm_sec > 55:                 # not across a minute change: the clock's redraw right after a
+        time.sleep(62 - time.localtime().tm_sec)     # move counts in swipe_gap_max_ms (127 ms once, after a radar swipe)
     b.cmd('fps reset')
     start = len(ctx.log.lines())
     for c in action:
@@ -659,3 +661,30 @@ def setup_stops_opening_by_itself(ctx):
             raise Fail('not back on the weather screen 75 s after the network came back')
         time.sleep(1)
     ctx.note('automatic setup network: closed after its window, long-press reopens it, recovery')
+
+
+# ---------------------------------------------------------------- first run
+
+@test('firstrun')
+def location_hint(ctx):
+    """A new display (the built-in place, never chosen) shows the settings QR by itself once, titled "Choose your
+    location", as soon as a forecast is on screen; a tap closes it. 'hint next-boot' asks for it on the next boot
+    without touching the places or the real once-only flag."""
+    b = ctx.board
+    try:
+        b.cmd('hint next-boot', r'test: ok hint')
+    except Fail as e:
+        if 'unknown command' not in str(e):
+            raise
+        ctx.note('firmware without the first-run hint (before v1.12.0-rc.4): not checked')
+        return
+    ctx.reset_ok = True
+    at = len(ctx.log.lines())
+    b.cmd('reboot', r'test: ok')
+    ctx.log.wait(r'test: console ready', 40, 'the restart', start=at)
+    ctx.log.wait(r'ui: first run: location hint', 90, 'the hint once the forecast is shown', start=at)
+    b.wait_screen('phone', 5)
+    b.snap('current', ctx.out('screen_first_run_hint.png'))
+    b.cmd('tap 233 233')
+    b.wait_screen('weather', 6)
+    ctx.note('first-run hint: shown after the first forecast, closed by a tap')

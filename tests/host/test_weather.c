@@ -1,5 +1,6 @@
 // weather.c against scripted Open-Meteo replies: whole, partial (arrays missing or short), failed
 #include <string.h>
+#include <math.h>
 #include "check.h"
 #include "fake.h"
 #include "weather.h"
@@ -62,6 +63,26 @@ int main(void)
     CHECK(!weather_fetch(&here, &w) && fake_http.requests == 0, "no client");
     air_t air;
     CHECK(!air_fetch(&air), "air: no client");
+
+    // Null hourly values are "no value", not 0
+    CHECK(fetch("{" CUR ",\"daily\":{\"time\":[\"2026-10-03\"],\"temperature_2m_max\":[1],\"temperature_2m_min\":[0],"
+                "\"weather_code\":[1]},\"hourly\":{\"temperature_2m\":[1,null],\"weather_code\":[0,1],"
+                "\"precipitation_probability\":[null,40],\"wind_speed_10m\":[5,6],\"is_day\":[0,0]}}"), "nulls");
+    CHECK(w.nhours == 2 && isnan(w.hour[1].temp) && w.hour[0].pop == WX_POP_NONE && w.hour[1].pop == 40,
+          "temp %f pop %d", w.hour[1].temp, w.hour[0].pop);
+
+    // After midnight: the forecast still starts yesterday until the next fetch
+    memset(&w, 0, sizeof(w));
+    w.ndays = 3;
+    w.nhours = 72;
+    strcpy(w.day[0].date, "2026-10-02"); strcpy(w.day[1].date, "2026-10-03"); strcpy(w.day[2].date, "2026-10-04");
+    for (int i = 0; i < 72; i++) w.hour[i].temp = i;
+    CHECK(weather_from_today(&w, "2026-10-03") == 1, "one day dropped");
+    CHECK(w.ndays == 2 && !strcmp(w.day[0].date, "2026-10-03") && w.nhours == 48 && w.hour[0].temp == 24,
+          "ndays %d day0 %s nhours %d hour0 %.0f", w.ndays, w.day[0].date, w.nhours, w.hour[0].temp);
+    CHECK(weather_from_today(&w, "2026-10-03") == 0 && w.ndays == 2, "already today: unchanged");
+    CHECK(weather_from_today(&w, "2026-10-09") == 0 && w.ndays == 2, "today not in the forecast: unchanged");
+    CHECK(weather_from_today(&w, "2026-10-01") == 0, "clock behind the forecast: unchanged");
     return check_done("weather");
 }
 

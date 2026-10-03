@@ -11,8 +11,11 @@
 #include "i18n.h"
 #include "svc.h"
 #include "esp_timer.h"
+#include <math.h>
 
 static const char *TAG = "weather";
+static volatile int last_status;
+int weather_last_status(void) { return last_status; }
 
 #define URL_FMT "https://api.open-meteo.com/v1/forecast?latitude=%.4f&longitude=%.4f" \
     "&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m,is_day,uv_index" \
@@ -46,6 +49,25 @@ static double num_at(cJSON *a, int i)
     return cJSON_IsNumber(v) ? v->valuedouble : 0;
 }
 
+static double num_or(cJSON *a, int i, double none)          // a missing or null value: `none`, not 0
+{
+    cJSON *v = cJSON_GetArrayItem(a, i);
+    return cJSON_IsNumber(v) ? v->valuedouble : none;
+}
+
+int weather_from_today(weather_t *w, const char *today)
+{
+    int k = 0;
+    while (k < w->ndays && strcmp(w->day[k].date, today) < 0) k++;   // ISO dates sort as strings
+    if (k == 0 || k >= w->ndays || strcmp(w->day[k].date, today)) return 0;
+    memmove(w->day, w->day + k, (w->ndays - k) * sizeof(w->day[0]));
+    w->ndays -= k;
+    int h = k * 24 < w->nhours ? k * 24 : w->nhours;
+    memmove(w->hour, w->hour + h, (w->nhours - h) * sizeof(w->hour[0]));
+    w->nhours -= h;
+    return k;
+}
+
 // 15-minute forecast: slot i (time T_i) holds the precipitation of (T_i - 15 min, T_i]. Slot 0 is the current
 // quarter hour, 8 more cover the next 2 hours. "Starts" = dry now, wet later: the rain begins around the start
 // of the first wet slot (= T of the slot before). "Stops" = wet now, dry later.
@@ -76,6 +98,9 @@ static void nowcast(cJSON *m15, weather_t *w)
 
 bool weather_fetch(const location_t *loc, weather_t *w)
 {
+    // All of it, padding included: main.c and ui.c compare forecasts with memcmp ("unchanged: leave the page
+    // alone"), and leftovers from another place's fetch made every comparison differ
+    memset(w, 0, sizeof(*w));
     rx_t rx = { .cap = 49152 };    // ~10 KB with 7 days of hourly data
     rx.buf = calloc(1, rx.cap);
     if (!rx.buf) return false;
@@ -90,6 +115,7 @@ bool weather_fetch(const location_t *loc, weather_t *w)
     int status;
     esp_err_t err = http_once(&cfg, &status);
     svc_http(SVC_FORECAST, err, status, t0);
+    last_status = status;
 
     bool ok = false;
     if (err != ESP_OK || status != 200) {
@@ -153,9 +179,10 @@ bool weather_fetch(const location_t *loc, weather_t *w)
             w->nhours = 0;
             for (int i = 0; i < WX_HOURS && i < cJSON_GetArraySize(ht); i++) {
                 wx_hour_t *h = &w->hour[i];
-                h->temp = num_at(ht, i);
+                h->temp = num_or(ht, i, NAN);                  // null: no value (it was shown as 0°, 0 %)
                 h->code = (unsigned char)num_at(hc, i);
-                h->pop = (unsigned char)num_at(hp, i);
+                double pop = num_or(hp, i, -1);
+                h->pop = pop < 0 || pop > 100 ? WX_POP_NONE : (unsigned char)pop;
                 h->wind = num_at(hw, i);
                 h->is_day = (unsigned char)num_at(hd, i);
                 w->nhours++;

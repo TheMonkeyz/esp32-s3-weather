@@ -13,6 +13,13 @@ void config_get_location(location_t *out);          // the place shown; defaults
 // An NVS write's result: false (and a log line naming `what`) if it failed. Savers chain these and report "not saved".
 #include "esp_err.h"
 bool nvs_check(esp_err_t err, const char *what);
+// A new display: the built-in place (Québec City) still in use, nobody has chosen one. The one-time "choose your
+// location" hint (ui_first_run) shows once, then never again (NVS "ui"/"hint"); the test console can ask for it on the
+// next boot without touching the places ("hint next-boot").
+bool config_place_is_default(void);
+bool config_hint_wanted(void);
+void config_hint_done(void);
+void config_hint_next_boot(void);
 bool config_set_location(const location_t *loc);    // edits the place shown; saves to NVS
 int config_place_count(void);
 int config_active_place(void);

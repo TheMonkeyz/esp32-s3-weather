@@ -24,7 +24,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from board import Board, Fail, Log, PCWifi, ROOT  # noqa: E402
 from suites import SUITES  # noqa: E402
 
-ORDER = ['smoke', 'navigation', 'web', 'perf', 'presence', 'wifi_runtime', 'wifi_setup']
+ORDER = ['smoke', 'navigation', 'web', 'perf', 'presence', 'firstrun', 'wifi_runtime', 'wifi_setup']
 BASELINE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'baseline.json')
 
 
@@ -239,7 +239,7 @@ def main():
     print(f'\n{len(results) - len(failed)}/{len(results)} passed, {len(perf_bad)} performance problems')
     for k, v, lim, vd in rows:
         if vd in BAD:
-            print(f'  {vd}: {k} {v} {lim}')
+            print(f'  {vd}: {k} {v} {lim}'.replace('≤', '<=').replace('≥', '>='))   # (a cp1252 console)
     print('Report:', os.path.relpath(os.path.join(outdir, 'report.md'), ROOT))
     return 1 if failed or perf_bad else 0
 

@@ -93,10 +93,26 @@ LVGL timer and event callbacks already run inside the lock.
   `main.c` selects it. Each page's clock uses its place's `utc_offset`. Icon objects need unique bolt-point slots:
   page × 4 + icon.
 - `main.c` keeps every place's forecast (`wx[i]`, tagged with the coordinates it was fetched for, so edits and
-  deletions never show one place's weather under another's name), refreshes all of them every 10 min (the place
-  shown first) and fetches new or edited places at once. Alerts, air quality and the radar are for the place shown:
-  a switch clears them and `radar_relocate()`s. `config.c` stores the places (place 1 in NVS `loc` as before, the
-  others as blobs in `places`, plus the count and the place shown).
+  deletions never show one place's weather under another's name). Each place is due 10 min after its last success
+  (the place shown first); a failure is retried after 30 s, 1, 2, 5, then every 10 min (HTTP 429: 10 min), per
+  place (until v1.12.0 every place was refetched every 30 s during an outage: ~11,500 requests a day, over
+  Open-Meteo's free quota). New or edited places (`tried[i]` ≠ their coordinates) are fetched at once. Alerts, air
+  quality and the radar are for the place shown: every 10 min, and at once after a switch, an edit or a language
+  change (`extras_now`).
+- **When the forecast can't be had** (`ui_place_state(i, ok)`): a page without a forecast says "Can't reach the
+  forecast service. Retrying." instead of "Loading..." forever, and so does the start-up message after a failure. A
+  line above the clock (`p->age`, ~220 px wide there) says "No connection" while offline and "Updated N min ago" once
+  the forecast is over 30 min old; nothing otherwise. It is updated on the minute tick, and only its rows of the
+  page's picture are marked (as the clock's).
+- **After local midnight** the forecast still starts yesterday until the next fetch (10 min online, the whole outage
+  offline). `ui_place()` drops the days before the place's local date (`weather_from_today()`, host-tested), and the
+  minute tick re-sends a place's forecast when its midnight has passed: the hourly view's "Now", the graph's dot, the
+  day names and the "Today" column are right from 00:00. Until v1.12.0 they showed yesterday.
+- **First run:** a display still on the built-in place (no place saved, one place) shows the settings QR by itself
+  once, the first time a forecast is on screen, titled "Choose your location" (`ui_first_run()`; NVS `ui/hint`). A
+  tap closes it. The test console's `hint next-boot` asks for it on the next boot without touching the places or the
+  flag (RTC memory). The Settings row that opens the QR says "Location & more (phone)".
+- `config.c` stores the places: see Settings / web (typed NVS keys since v1.12.0).
 - The radar only caches the **first** place's maps (`cache_save()` returns otherwise, and no preload): switching
   between places would rewrite up to 3.5 MB of flash and fetch 63 OSM tiles each time.
 
@@ -427,6 +443,9 @@ order, and ~11 ms on the bus.
   28, through a hidden canvas: not during a render), which `hr_draw` copies (`lv_draw_image`); a missing one is drawn
   as shapes. 72 rows as real objects would have been several hundred small allocations in internal RAM.
 - Today's page is refilled at each new hour and when new data arrives.
+- Hourly values the forecast left null are "no value": the temperature is `NAN` and the chance of rain
+  `WX_POP_NONE` (255); the row shows `--` and the graph leaves the point out (its scale, fill and curve). They were
+  stored as 0 and shown as real: 0° and 0 %.
 - **Temperature graph** at the top of each day's list (it scrolls away with the column headers): hours 0–24 (the
   last point is the next day's 00:00; the last forecast day stops at 23:00), filled curve, a 1-px line every hour
   (brighter every 3 h, which are labelled), the day's high and low (00:00–23:00) labelled. The vertical scale fits
@@ -456,8 +475,8 @@ order, and ~11 ms on the bus.
   512 KB slot in the 4 MB `mapcache` partition (7 slots). The header (magic `MAP7`, zoom, view origin) makes a location change
   download fresh tiles. Bump the magic to force a full re-download (useful for testing the preload). `cache_save()`
   stores only the first place's view and waits between sectors while the screen is in use (see Known issues).
-- **Background preload:** `radar_preload_start()` (called by `main` after Wi-Fi connects) and every location change
-  run `preload_all()` in the radar task. It checks each zoom level's cache header and downloads the missing levels
+- **Background preload:** `radar_preload_start()` (called by `main` after Wi-Fi connects) and a change of the first
+  place (the only one cached) run `preload_all()` in the radar task. It checks each zoom level's cache header and downloads the missing levels
   (9 tiles each; all 7 take about 45 s). Meanwhile the weather screen works normally. The radar screen shows a
   "Preparing maps" panel (level x of n, tile bar), and zoom swipes answer "Maps still downloading", because the
   preload temporarily moves the task's `zoom`. If a level gets no tiles at all (no network), the preload stops.

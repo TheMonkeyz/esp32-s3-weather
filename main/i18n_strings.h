@@ -163,18 +163,18 @@ X(T_SVC_WAIT_SYNC,  "waiting for sync",            "en attente de synchro",
                     "ᐅᑕᖅᑭᔪᖅ")
 X(T_SVC_CHECKING,   "checking...",                 "vérification...",
                     "ᖃᐅᔨᒋᐊᖅᑐᖅ...")
-X(T_SVC_IN_A_ROW,   "%d in a row",                 "%d de suite",
+X(T_SVC_IN_A_ROW,   "%d failed tries",             "%d essais ratés",
                     "%d ᑐᒡᓕᕆᔪᑦ")
 X(T_SVC_OK_AGO,     "OK %s ago",                   "OK il y a %s",
                     "OK %s ᖄᖏᖅᑐᖅ")
-X(T_SVC_NEVER_OK,   "never OK",                    "jamais OK",
+X(T_SVC_NEVER_OK,   "not reached yet",             "pas encore joint",
                     "ᐊᑐᕈᓐᓇᙱᑦᑐᖅ")
 X(T_SVC_OFFERS,     "offers %s",                   "offre %s",
                     "%s ᐊᑐᐃᓐᓇᖅ")
-X(T_API_FORECAST,   "Forecast API v1",             "API prévisions v1",
-                    "API v1 ᓯᓚᒧᑦ")
-X(T_API_AIR,        "Air quality API v1",          "API qualité air v1",
-                    "API v1 ᐊᓂᕐᓴᖅ")
+X(T_API_FORECAST,   "forecast",                    "prévisions",
+                    "ᓯᓚᒧᑦ")
+X(T_API_AIR,        "air quality",                 "qualité de l'air",
+                    "ᐊᓂᕐᓴᖅ")
 X(T_API_TILES,      "tiles",                       "tuiles",
                     "ᓄᓇᙳᐊᑦ")
 X(T_API_UPDATES,    "updates",                     "mises à jour",
@@ -224,10 +224,10 @@ X(T_OTA_WRONG,      "Wrong firmware image",        "Mauvaise image de micrologic
 X(T_OTA_INTERRUPTED,"Download interrupted",        "Téléchargement interrompu",
                     "ᒥᓇᕐᓂᖅ ᓄᖅᑲᖅᑐᖅ")
 X(T_OTA_BAD_SITE,   "Unexpected reply from the update site", "Réponse inattendue du site des mises à jour",
-                    "")
+                    "ᓄᑖᕈᕆᕕᒃ ᑭᐅᔾᔪᑎᖓ ᑕᒻᒪᖅᑐᖅ")
 X(T_OTA_ROLLED_BACK,"%s was undone: the display restarted before it was confirmed",
                     "%s annulée : l'afficheur a redémarré avant de la confirmer",
-                    "")
+                    "%s ᐲᖅᑕᐅᖅᑐᖅ: ᓴᖅᑭᖅᑎᑦᓯᔪᖅ ᐊᐅᓪᓚᖅᓯᒃᑲᓐᓂᓚᐅᖅᑐᖅ")
 X(T_OTA_INVALID,    "Downloaded image is invalid", "Image téléchargée invalide",
                     "ᒥᓇᖅ ᐊᑐᔪᓐᓇᙱᑦᑐᖅ")
 
@@ -264,7 +264,7 @@ X(T_LANGUAGE,       "Language",                    "Langue",
                     "ᐅᖃᐅᓯᖅ")
 X(T_SEC_SOUND,      "SOUND",                       "SON",
                     "ᓂᐱ")
-X(T_CHIME,          "Alert chime",                 "Alerte sonore",
+X(T_CHIME,          "Alert sound",                 "Alerte sonore",
                     "ᐃᓂᕐᑎᕈᑎ ᓂᐱ")
 X(T_CHIME_OFF,      "Off",                         "Non",
                     "ᖃᒥᑦᑐᖅ")
@@ -276,9 +276,9 @@ X(T_CHIME_ALL,      "All",                         "Toutes",
                     "ᑕᒪᕐᒥᒃ")
 X(T_VOLUME,         "Volume",                      "Volume",
                     "ᓂᐱᖅᑯᖅᑐᓯᒋᐊᕈᑦ")
-X(T_TEST_SOUND,     "Test the chime",              "Essayer le son",
+X(T_TEST_SOUND,     "Test the sound",              "Essayer le son",
                     "ᓈᓚᒍᒃ ᓂᐱ")
-X(T_PHONE,          "More on your phone",          "Réglages sur téléphone",
+X(T_PHONE,          "Location & more (phone)",     "Endroit et plus (tél.)",
                     "ᓱᓕ ᐅᖄᓚᐅᑎᕋᓛᕐᒥ")
 X(T_WIFI_NETWORK,   "Wi-Fi network",               "Réseau Wi-Fi",
                     "Wi-Fi ᑲᓱᖃᑎᒌᑦ")
@@ -302,8 +302,13 @@ X(T_BRIGHTNESS,     "Brightness %d%%",             "Luminosité %d %%",
                     "ᖃᐅᒪᓂᖓ %d%%")
 X(T_SETTINGS,       "Settings",                    "Réglages",
                     "ᐋᖅᑭᔅᓯᒪᐅᑎᑦ")
+X(T_HINT_TITLE,     "Choose your location",        "Choisissez votre endroit",
+                    "ᐃᓂᒋᔭᐃᑦ ᕿᓂᕐᓗᒍ")
+X(T_HINT_HELP,      "%s\nScan with your phone to choose\nyour city and other settings.\n\nTap to close",
+                    "%s\nBalayez le code avec votre\ntéléphone pour choisir votre\nville et vos réglages.\n\nTouchez pour fermer",
+                    "%s\nᐊᔾᔨᓕᐅᕐᓕ ᐅᖄᓚᐅᑎᕋᓛᕐᒧᑦ\nᓄᓇᓖᑦ ᐋᖅᑭᔅᓯᒪᐅᑎᓪᓗ ᕿᓂᕐᓗᒋᑦ.\n\nᓇᕿᓪᓕ: ᒪᑐᓕ")
 X(T_OV_HELP,        "%s\nScan with your phone and accept\nthe certificate warning.\n\nLong-press for Wi-Fi setup\nTap to close",
-                    "%s\nBalayez le code avec votre téléphone\net acceptez l'avertissement de certificat.\n\nAppuyez longuement pour le Wi-Fi\nTouchez pour fermer",
+                    "%s\nBalayez le code avec votre\ntéléphone et acceptez\nl'avertissement de certificat.\n\nAppuyez longuement : Wi-Fi\nTouchez pour fermer",
                     "%s\nᐊᔾᔨᓕᐅᕐᓕ ᐅᖄᓚᐅᑎᕋᓛᕐᒧᑦ ᐊᒻᒪᓗ\nᐃᓂᕐᑎᕈᑎ ᐊᖏᖅᑕᐅᓕ.\n\nᓇᕿᓪᓗᒍ ᓇᕿᒻᒥᓕ: Wi-Fi\nᓇᕿᓪᓕ: ᒪᑐᓕ")
 
 // Wi-Fi setup screen
@@ -345,6 +350,15 @@ X(T_CONNECTED,      "Connected",                   "Connecté",
                     "ᑲᓱᖅᓯᒪᔪᖅ")
 X(T_CANT_REACH,     "Can't reach %s\nTap to try again", "%s injoignable\nTouchez pour réessayer",
                     "%s ᑲᓱᕈᓐᓇᙱᑦᑐᖅ\nᓇᕿᓪᓕ: ᑲᓱᒃᑲᓐᓂᕐᓕ")
+X(T_FORECAST_RETRY, "Can't reach the forecast service.\nRetrying.",
+                    "Service de prévisions injoignable.\nNouvel essai sous peu.",
+                    "ᓯᓚᒥᒃ ᖃᐅᔨᓴᕐᕕᒃ ᑲᓱᕈᓐᓇᙱᑦᑐᖅ.\nᑲᓱᒃᑲᓐᓂᖅᑐᖅ.")
+X(T_UPDATED_MIN,    "Updated %d min ago",          "Mis à jour il y a %d min",
+                    "ᓄᑖᖅᑭᖅᑕᐅᔪᖅ: %d min")
+X(T_UPDATED_H,      "Updated %d h ago",            "Mis à jour il y a %d h",
+                    "ᓄᑖᖅᑭᖅᑕᐅᔪᖅ: %d h")
+X(T_NO_CONNECTION,  "No connection",               "Aucune connexion",
+                    "ᑲᓱᕈᓐᓇᙱᑦᑐᖅ")
 X(T_STILL_TRYING,   "Can't reach %s\nStill trying\n\nLong-press for Wi-Fi setup",
                     "%s injoignable\nNouvel essai en cours\n\nAppuyez longuement pour le Wi-Fi",
                     "%s ᑲᓱᕈᓐᓇᙱᑦᑐᖅ\nᑲᓱᒃᑲᓐᓂᖅᑐᖅ\n\nᓇᕿᓪᓗᒍ ᓇᕿᒻᒥᓕ: Wi-Fi")

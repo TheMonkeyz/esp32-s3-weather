@@ -9,6 +9,7 @@
 #include "esp_log.h"
 #include "i18n.h"
 #include "utf8.h"
+#include "esp_attr.h"
 
 static const char *TAG = "config";
 static portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
@@ -25,7 +26,7 @@ bool nvs_check(esp_err_t err, const char *what)
 }
 static location_t places[MAX_PLACES];
 static int nplaces = 1, active;
-static bool loaded;
+static bool loaded, place_saved;             // place_saved: NVS has a place (someone chose one)
 static volatile int utc_offset;
 static volatile bool offset_known;
 
@@ -47,6 +48,7 @@ static void load(void)
             strlcpy(places[0].name, name, sizeof(places[0].name));
             places[0].lat = la / 1e6;
             places[0].lon = lo / 1e6;
+            place_saved = true;
         }
         nvs_close(h);
     }
@@ -134,6 +136,32 @@ void config_get_location(location_t *out)
 
 bool config_set_location(const location_t *loc) { return config_set_place(config_active_place(), loc); }
 
+static RTC_NOINIT_ATTR uint32_t hint_test;           // test console: the hint on the next boot (one boot)
+#define HINT_TEST 0x4817A11Eu
+
+bool config_place_is_default(void) { load(); return (!place_saved && nplaces == 1) || hint_test == HINT_TEST; }
+
+bool config_hint_wanted(void)
+{
+    if (hint_test == HINT_TEST) return true;
+    nvs_handle_t h;
+    uint8_t v = 0;
+    if (nvs_open("ui", NVS_READONLY, &h) == ESP_OK) { nvs_get_u8(h, "hint", &v); nvs_close(h); }
+    return !v;
+}
+
+void config_hint_done(void)
+{
+    if (hint_test == HINT_TEST) { hint_test = 0; return; }   // (a test: the real flag is left alone)
+    nvs_handle_t h;
+    if (nvs_open("ui", NVS_READWRITE, &h) != ESP_OK) return;
+    nvs_check(nvs_set_u8(h, "hint", 1), "ui/hint");
+    nvs_commit(h);
+    nvs_close(h);
+}
+
+void config_hint_next_boot(void) { hint_test = HINT_TEST; }
+
 int config_place_count(void) { load(); return nplaces; }
 int config_active_place(void) { load(); return active; }
 
@@ -159,6 +187,7 @@ bool config_set_place(int i, const location_t *loc)
     if (i == nplaces) nplaces++;
     taskEXIT_CRITICAL(&mux);
     if (i == active) offset_known = false;   // may be another time zone; the next forecast sets it
+    if (i == 0) place_saved = true;
     ESP_LOGI(TAG, "Saved place %d: %s (%.4f, %.4f)", i + 1, loc->name, loc->lat, loc->lon);
     return save();
 }

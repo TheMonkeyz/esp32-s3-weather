@@ -9,7 +9,7 @@ test('sound settings are saved and the test chime is requested', async ({ page, 
   await expect(page.locator('#smsg')).toHaveText('Saved');
   await page.locator('#sFrom').fill('21:30');
   await page.locator('#sFrom').dispatchEvent('change');
-  await page.getByRole('button', { name: /Test the chime/ }).click();
+  await page.getByRole('button', { name: /Test the sound/ }).click();
   await expect.poll(async () => (await state(request)).sound.tests).toBe(1);
   const s = (await state(request)).sound;
   expect(s.level).toBe(1);

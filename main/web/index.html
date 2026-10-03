@@ -80,7 +80,7 @@ details.coords{margin-top:10px;font-size:14px;color:var(--dim)}details.coords su
 <div class="card" id="unitCard">
   <h2 data-i18n="units"></h2>
   <label for="uLang" data-i18n="language"></label>
-  <select id="uLang"><option value="en">English</option><option value="fr">Français</option><option value="iu">ᐃᓄᒃᑎᑐᑦ</option></select>
+  <select id="uLang"><option value="en">English</option><option value="fr">Français</option><option value="iu">ᐃᓄᒃᑎᑐᑦ (draft)</option></select>
   <div class="row">
     <div><label for="uTemp" data-i18n="temperature"></label>
       <select id="uTemp"><option value="c">°C</option><option value="f">°F</option></select></div>
@@ -114,7 +114,7 @@ details.coords{margin-top:10px;font-size:14px;color:var(--dim)}details.coords su
   </div>
   <label for="pPreset" data-i18n="timingPreset"></label>
   <select id="pPreset">
-    <option value="testing" data-i18n="pTesting"></option>
+    <option value="testing" data-i18n="pTesting" hidden></option>
     <option value="short" data-i18n="pShort"></option>
     <option value="normal" data-i18n="pNormal"></option>
     <option value="long" data-i18n="pLong"></option>
@@ -181,6 +181,7 @@ details.coords{margin-top:10px;font-size:14px;color:var(--dim)}details.coords su
     <option value="stable" data-i18n="chStable"></option>
     <option value="beta" data-i18n="chBeta"></option>
   </select>
+  <div id="fwBeta" class="muted" style="margin-top:6px;display:none" data-i18n="betaNote"></div>
   <div id="fwState" class="muted" style="margin-top:8px">–</div>
   <div id="fwNotes" style="display:none;margin-top:8px"></div>
   <div class="meter" id="fwMeter" style="display:none"><div class="fill" id="fwBar"></div></div>
@@ -268,11 +269,12 @@ const I18N = {
   fwFailed: 'Update check failed: {0}.', fwRolledBack: '{0} was undone: the display restarted before it was confirmed.', unknownErr: 'unknown error', installX: 'Install {0}', theUpdate: 'update',
   installConfirm: 'Install {0}? The display restarts when it is done; settings are kept.',
   noAnswer: 'The display did not answer', whatsNew: "What's new", pageError: 'Page error: {0} (line {1})',
-  soundTitle: 'Sound', chimeFor: 'Chime for new weather alerts', lvOff: 'Off', lvRed: 'Red alerts only',
+  soundTitle: 'Sound', chimeFor: 'Sound for new weather alerts', lvOff: 'Off', lvRed: 'Red alerts only',
   lvOrange: 'Orange and red alerts', lvAll: 'All alerts (yellow and statements too)', volume: 'Volume',
-  quietFrom: 'Quiet from', quietTo: 'Until', testChime: '🔔 Test the chime',
+  quietFrom: 'Quiet from', quietTo: 'Until', testChime: '🔔 Test the sound',
   quietNote: 'No sound during quiet hours, except for red alerts. Each warning sounds once, and again if it gets worse. The same start and end time means no quiet hours.',
   noSpeaker: 'No speaker found on this display.',
+  betaNote: 'Release candidates: new features a few days early. They are tested, but a problem is more likely than with stable releases.',
   needKey: 'To change settings, scan the code on the display: press and hold the weather screen. This phone then remembers it.',
  },
  fr: {
@@ -340,6 +342,7 @@ const I18N = {
   volume: 'Volume', quietFrom: 'Silence de', quietTo: 'Jusqu\'à', testChime: '🔔 Essayer le son',
   quietNote: "Aucun son pendant les heures de silence, sauf pour les alertes rouges. Chaque alerte sonne une fois, puis de nouveau si elle s'aggrave. La même heure de début et de fin signifie : pas d'heures de silence.",
   noSpeaker: "Aucun haut-parleur trouvé sur cet afficheur.",
+  betaNote: "Versions candidates : les nouveautés quelques jours plus tôt. Elles sont testées, mais un problème est plus probable qu'avec les versions stables.",
  },
  iu: {
   title: 'ᓯᓚᒧᑦ ᓴᖅᑭᔭᐅᑦ',
@@ -434,6 +437,7 @@ const I18N = {
   cityPicked: '{0}: ᑭᑭᐊᒃ ᓄᓱᐊᕐᓕ, ᔭᒐᔾᔭᐃᕐᓕᓗ.',
   searchNoNet: 'ᕿᓂᖅᑐᖅ internet-ᒥᒃ ᐱᔭᕆᐊᖃᖅᑐᖅ.',
   badCoords: 'ᓄᓇᙳᐊᕐᒥ ᐃᓂ ᓂᕈᐊᕐᓕ ᐅᕝᕙᓘᓐᓃᑦ ᓈᓴᐅᑎᑦ ᓇᕿᑦᑕᐅᕐᓗᒋᑦ.',
+  nameLong: 'ᐊᑎᐊ ᑕᑭᓗᐊᖅᑐᖅ. ᓇᐃᑦᑐᒃᑯᓕᕐᓗᒍ.',
   savedUpdating: 'ᔭᒐᔾᔭᐃᕐᓯᒪᔪᖅ. ᓴᖅᑭᔭᐅᑦ ᓄᑖᕈᕆᐊᖅᑐᖅ.',
   addedPlace: '{0} ᐃᓚᓕᖅᓯᒪᔪᖅ. ᓴᖅᑭᔭᐅᒻᒥ ᓄᓱᐊᕐᓕ ᖁᓕᒧᑦ ᐅᕝᕙᓘᓐᓃᑦ ᐊᑎᒧᑦ.',
   savedPlace: '{0} ᔭᒐᔾᔭᐃᕐᓯᒪᔪᖅ. ᓴᖅᑭᔭᐅᒻᒥ ᓄᓱᐊᕐᓕ ᖁᓕᒧᑦ ᐅᕝᕙᓘᓐᓃᑦ ᐊᑎᒧᑦ.',
@@ -464,6 +468,7 @@ const I18N = {
   fwDownloading: '{0} ᒥᓇᕆᔪᖅ… {1} %. ᓴᖅᑭᔭᐅᑦ ᑲᓱᖅᓯᒪᑎᓪᓗᒍ.',
   fwDone: 'ᐃᓕᑕᐅᔪᖅ. ᓴᖅᑭᔭᐅᑦ ᐃᑭᑎᒃᑲᓐᓂᕐᑐᖅ…',
   fwFailed: 'ᖃᐅᔨᒋᐊᕐᓂᖅ ᑕᒻᒪᖅᑐᖅ: {0}.',
+  fwRolledBack: '{0} ᐲᖅᑕᐅᖅᑐᖅ: ᓴᖅᑭᖅᑎᑦᓯᔪᖅ ᐊᐅᓪᓚᖅᓯᒃᑲᓐᓂᓚᐅᖅᑐᖅ.',
   unknownErr: 'ᑕᒻᒪᕐᓂᖅ',
   installX: '{0} ᐃᓕᓕ',
   theUpdate: 'ᓄᑖᕈᕆᐊᕐᓂᖅ',
@@ -483,6 +488,7 @@ const I18N = {
   testChime: '🔔 ᓈᓚᒍᒃ ᓂᐱ',
   quietNote: 'ᓂᐸᐃᑦᑐᒥ ᓂᐱᖃᙱᑦᑐᖅ, ᐊᐅᐸᓗᒃᑐᑦ ᑭᓯᐊᓂ. ᐃᓂᕐᑎᕈᑎ ᐊᑕᐅᓯᐊᖅ ᓂᐱᖃᖅᑐᖅ.',
   noSpeaker: 'ᓂᐱᖃᐅᑦ ᐱᖃᙱᑦᑐᖅ.',
+  betaNote: 'Beta: ᓄᑖᑦ ᐅᓪᓗᓂᒃ ᓯᕗᓪᓕᖅᐱᐊᖅᓴᖅᑐᑦ. ᒥᓯᓕᖅᑕᐅᔪᑦ, ᑭᓯᐊᓂ ᐊᔪᕐᓇᕐᓂᖅᓴᐅᕗᑦ ᐊᐅᓚᔾᔪᐃᑦᑐᓂᑦ.',
   needKey: 'ᐋᖅᑭᔅᓯᒪᐅᑎᑦ ᐊᓯᔾᔨᖅᓱᖅᑯᓐᓇᑎᑦ, ᐊᔾᔨᓕᐅᕐᓕ ᑎᑎᕋᐅᔭᒧᑦ ᓴᖅᑭᖅᑐᒥ: ᓇᕿᓪᓗᒍ ᓇᕿᒻᒥᓕ ᓯᓚᒧᑦ. ᐅᖄᓚᐅᑎᕋᓛᕐᒧᑦ ᐳᐃᒍᖅᑕᐃᓕᓗᒍ.',
  },
 };
@@ -821,6 +827,8 @@ $('pPreset').onchange = () => {
   say($('pmsg'), t('presetFilled'), true);
 };
 applyLang();
+// The 10 s / 30 s "Testing" timings are for tests (tools/harness): only with ?test in the address
+if (new URLSearchParams(location.search).has('test')) document.querySelector('#pPreset option[value=testing]').hidden = false;
 ['pDim', 'pDimU', 'pOffT', 'pOffTU', 'pWakeS'].forEach(id => $(id).addEventListener('input', () => { $('pPreset').value = 'custom'; }));
 setInterval(() => { if (!document.hidden) pollPresence(); }, 700);
 pollPresence();
@@ -838,6 +846,7 @@ function fwShow(u){
   fwLast = u;
   $('fwVer').textContent = u.current || '–';
   $('fwChan').value = u.channel || 'stable';
+  $('fwBeta').style.display = $('fwChan').value === 'beta' ? '' : 'none';
   const busy = u.state === 'checking' || u.state === 'downloading' || u.state === 'done';
   const txt = {
     idle: t('fwIdle'),

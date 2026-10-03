@@ -11,7 +11,8 @@ static const char *const texts[T_COUNT][LANG_COUNT] = {
 };
 
 static const char *const LANG_CODE[LANG_COUNT] = { "en", "fr", "iu" };
-static const char *const LANG_NAME[LANG_COUNT] = { "English", "Français", "ᐃᓄᒃᑎᑐᑦ" };
+// Inuktitut is a draft no fluent speaker has reviewed (docs/translations): its name says so where it is chosen
+static const char *const LANG_NAME[LANG_COUNT] = { "English", "Français", "ᐃᓄᒃᑎᑐᑦ (draft)" };
 
 static const char *const WD_FULL[LANG_COUNT][7] = {
     { "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday" },
@@ -59,7 +60,7 @@ const char *tr(tid_t id)
 {
     if (id >= T_COUNT) return "";
     const char *s = texts[id][cur()];
-    return s ? s : texts[id][LANG_EN];
+    return s && s[0] ? s : texts[id][LANG_EN];          // missing or empty (not translated yet): English
 }
 
 const char *tr_weekday(int wday, bool full)

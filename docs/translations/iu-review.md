@@ -83,12 +83,12 @@ anything that reads wrong.
 | `fw:T_SVC_NOT_USED` | not used yet | ᐊᑐᖅᑕᐅᙱᑦᑐᖅ ᓱᓕ | atuqtaunngittuq suli | low | "not used yet" |
 | `fw:T_SVC_WAIT_SYNC` | waiting for sync | ᐅᑕᖅᑭᔪᖅ | utaqqijuq | medium | Tusaalanga glossary: utaqqijuq = waiting |
 | `fw:T_SVC_CHECKING` | checking... | ᖃᐅᔨᒋᐊᖅᑐᖅ... | qaujigiaqtuq... | medium | Microsoft Inuktitut terminology (Pirurvik): check = qaujigiarli |
-| `fw:T_SVC_IN_A_ROW` | %d in a row | %d ᑐᒡᓕᕆᔪᑦ | %d tuglirijut | low | "%d in a row" (failures) |
+| `fw:T_SVC_IN_A_ROW` | %d failed tries | %d ᑐᒡᓕᕆᔪᑦ | %d tuglirijut | low | "%d in a row" (failures) |
 | `fw:T_SVC_OK_AGO` | OK %s ago | OK %s ᖄᖏᖅᑐᖅ | `OK` %s qaangiqtuq | low | "OK, %s ago" |
-| `fw:T_SVC_NEVER_OK` | never OK | ᐊᑐᕈᓐᓇᙱᑦᑐᖅ | aturunnanngittuq | low | "could not be used" |
+| `fw:T_SVC_NEVER_OK` | not reached yet | ᐊᑐᕈᓐᓇᙱᑦᑐᖅ | aturunnanngittuq | low | "could not be used" |
 | `fw:T_SVC_OFFERS` | offers %s | %s ᐊᑐᐃᓐᓇᖅ | %s atuinnaq | medium | Microsoft Inuktitut terminology (Pirurvik): available = atuinnaq |
-| `fw:T_API_FORECAST` | Forecast API v1 | API v1 ᓯᓚᒧᑦ | `API v1` silamut | low | "API v1 for the weather" |
-| `fw:T_API_AIR` | Air quality API v1 | API v1 ᐊᓂᕐᓴᖅ | `API v1` anirsaq | low | air quality API; shortened to fit the status line |
+| `fw:T_API_FORECAST` | forecast | ᓯᓚᒧᑦ | silamut | low | "forecast" (the API version is no longer shown) |
+| `fw:T_API_AIR` | air quality | ᐊᓂᕐᓴᖅ | anirsaq | low | "air quality" (the API version is no longer shown) |
 | `fw:T_API_TILES` | tiles | ᓄᓇᙳᐊᑦ | nunannguat | medium | nunannguaq = map |
 | `fw:T_API_UPDATES` | updates | ᓄᑖᕈᕆᐊᕐᓃᑦ | nutaaruriarniit | medium | Microsoft Inuktitut terminology (Pirurvik): update = nutaaruriarli |
 | `fw:T_ERR_CONNECT` | Can't connect | ᑲᓱᕈᓐᓇᙱᑦᑐᖅ | Kasurunnanngittuq | medium | Microsoft Inuktitut terminology (Pirurvik): connect = kasurli; -runnanngit- cannot |
@@ -112,6 +112,8 @@ anything that reads wrong.
 | `fw:T_OTA_NO_START` | Download failed to start | ᒥᓇᕐᓂᖅ ᐊᐅᓚᓚᐅᙱᑦᑐᖅ | Minarniq aulalaunngittuq | low | Microsoft Inuktitut terminology (Pirurvik): download = minarniq |
 | `fw:T_OTA_WRONG` | Wrong firmware image | ᐃᓕᑕᒃᓴᖅ ᑕᒻᒪᖅᑐᖅ | Ilitaksaq tammaqtuq | low | wrong image |
 | `fw:T_OTA_INTERRUPTED` | Download interrupted | ᒥᓇᕐᓂᖅ ᓄᖅᑲᖅᑐᖅ | Minarniq nuqqaqtuq | low | download stopped |
+| `fw:T_OTA_BAD_SITE` | Unexpected reply from the update site | ᓄᑖᕈᕆᕕᒃ ᑭᐅᔾᔪᑎᖓ ᑕᒻᒪᖅᑐᖅ | Nutaarurivik kiujjutinga tammaqtuq | low | "the update site's answer is wrong"; from T_OTA_NO_SITE |
+| `fw:T_OTA_ROLLED_BACK` | %s was undone: the display restarted before it was confirmed | %s ᐲᖅᑕᐅᖅᑐᖅ: ᓴᖅᑭᖅᑎᑦᓯᔪᖅ ᐊᐅᓪᓚᖅᓯᒃᑲᓐᓂᓚᐅᖅᑐᖅ | %s piiqtauqtuq: saqqiqtitsijuq aullaqsikkannilauqtuq | low | "%s was removed: the display restarted"; needs review |
 | `fw:T_OTA_INVALID` | Downloaded image is invalid | ᒥᓇᖅ ᐊᑐᔪᓐᓇᙱᑦᑐᖅ | Minaq atujunnanngittuq | low | Microsoft Inuktitut terminology (Pirurvik): download (noun) = minaq |
 | `fw:T_DONE` | Done | ᐱᔭᕇᖅᑐᖅ | Pijariiqtuq | medium | "it is finished"; the longer pijariiqsimajuq was clipped by the circle at the top of Settings |
 | `fw:T_SEC_SCREEN` | SCREEN | ᐃᒐᓚᐅᔭᖅ | Igalaujaq | medium | Microsoft Inuktitut terminology (Pirurvik): full screen = igalaujalimaaq |
@@ -129,14 +131,14 @@ anything that reads wrong.
 | `fw:T_CLOCK` | Clock | ᐃᑲᕐᕌᑦ | Ikarraat | low | Tusaalanga glossary: ikarraaq = hour |
 | `fw:T_LANGUAGE` | Language | ᐅᖃᐅᓯᖅ | Uqausiq | high | Microsoft Inuktitut terminology (Pirurvik): language = pilirijjutinut uqausiq |
 | `fw:T_SEC_SOUND` | SOUND | ᓂᐱ | Nipi | high | nipi = sound |
-| `fw:T_CHIME` | Alert chime | ᐃᓂᕐᑎᕈᑎ ᓂᐱ | Inirtiruti nipi | medium | Microsoft Inuktitut terminology (Pirurvik): warning = inirtiruti |
+| `fw:T_CHIME` | Alert sound | ᐃᓂᕐᑎᕈᑎ ᓂᐱ | Inirtiruti nipi | medium | Microsoft Inuktitut terminology (Pirurvik): warning = inirtiruti |
 | `fw:T_CHIME_OFF` | Off | ᖃᒥᑦᑐᖅ | Qamittuq | medium | Microsoft Inuktitut terminology (Pirurvik): turn off = qamilli |
 | `fw:T_CHIME_RED` | Red | ᐊᐅᐸᓗᒃᑐᑦ | Aupaluktut | high | aupaluktuq = red |
 | `fw:T_CHIME_ORANGE` | Orange+ | Orange+ | `Orange`+ | low | no confident word for orange |
 | `fw:T_CHIME_ALL` | All | ᑕᒪᕐᒥᒃ | Tamarmik | high | tamarmik = all |
 | `fw:T_VOLUME` | Volume | ᓂᐱᖅᑯᖅᑐᓯᒋᐊᕈᑦ | Nipiqquqtusigiarut | high | Microsoft Inuktitut terminology (Pirurvik): volume |
-| `fw:T_TEST_SOUND` | Test the chime | ᓈᓚᒍᒃ ᓂᐱ | Naalaguk nipi | medium | "listen to the sound" |
-| `fw:T_PHONE` | More on your phone | ᓱᓕ ᐅᖄᓚᐅᑎᕋᓛᕐᒥ | Suli uqaalautiralaarmi | medium | Microsoft Inuktitut terminology (Pirurvik)/Tusaalanga glossary: mobile phone = uqaalautiralaaq |
+| `fw:T_TEST_SOUND` | Test the sound | ᓈᓚᒍᒃ ᓂᐱ | Naalaguk nipi | medium | "listen to the sound" |
+| `fw:T_PHONE` | Location & more (phone) | ᓱᓕ ᐅᖄᓚᐅᑎᕋᓛᕐᒥ | Suli uqaalautiralaarmi | medium | kept from "More on your phone" (the row now says "Location & more (phone)") |
 | `fw:T_WIFI_NETWORK` | Wi-Fi network | Wi-Fi ᑲᓱᖃᑎᒌᑦ | `Wi-Fi` kasuqatigiit | medium | Microsoft Inuktitut terminology (Pirurvik): network = kasuqatigiitsimajut |
 | `fw:T_UPDATES` | Updates | ᓄᑖᑦ | Nutaat | low | "new things"; "nutaaruriarniit" ran into the "Check now >" value on the Settings row |
 | `fw:T_RESTART` | Restart | ᐃᑭᑎᒃᑲᓐᓂᕐᓕ | Ikitikkannirli | high | Microsoft Inuktitut terminology (Pirurvik): restart |
@@ -148,6 +150,8 @@ anything that reads wrong.
 | `fw:T_RESTARTING` | Restarting... | ᐃᑭᑎᒃᑲᓐᓂᕐᑐᖅ... | Ikitikkannirtuq... | medium | Microsoft Inuktitut terminology (Pirurvik): restart |
 | `fw:T_BRIGHTNESS` | Brightness %d%% | ᖃᐅᒪᓂᖓ %d%% | Qaumaninga %d%% | high | Microsoft Inuktitut terminology (Pirurvik): brightness = qaumaninga |
 | `fw:T_SETTINGS` | Settings | ᐋᖅᑭᔅᓯᒪᐅᑎᑦ | Aaqqissimautit | medium | Microsoft Inuktitut terminology (Pirurvik): setting = aaqqissimaut |
+| `fw:T_HINT_TITLE` | Choose your location | ᐃᓂᒋᔭᐃᑦ ᕿᓂᕐᓗᒍ | Inigijait qinirlugu | low | "choose your place"; inigi- (place where one lives) + qinir- (look for); needs review |
+| `fw:T_HINT_HELP` | %s ⏎ Scan with your phone to choose ⏎ your city and other settings. ⏎  ⏎ Tap to close | %s ⏎ ᐊᔾᔨᓕᐅᕐᓕ ᐅᖄᓚᐅᑎᕋᓛᕐᒧᑦ ⏎ ᓄᓇᓖᑦ ᐋᖅᑭᔅᓯᒪᐅᑎᓪᓗ ᕿᓂᕐᓗᒋᑦ. ⏎  ⏎ ᓇᕿᓪᓕ: ᒪᑐᓕ | %s ⏎ Ajjiliurli uqaalautiralaarmut ⏎ nunaliit aaqqissimautillu qinirlugit. ⏎  ⏎ Naqilli: matuli | low | "photograph (scan) with your phone / choose the town and settings / tap: close"; from T_OV_HELP |
 | `fw:T_OV_HELP` | %s ⏎ Scan with your phone and accept ⏎ the certificate warning. ⏎  ⏎ Long-press for Wi-Fi setup ⏎ Tap to close | %s ⏎ ᐊᔾᔨᓕᐅᕐᓕ ᐅᖄᓚᐅᑎᕋᓛᕐᒧᑦ ᐊᒻᒪᓗ ⏎ ᐃᓂᕐᑎᕈᑎ ᐊᖏᖅᑕᐅᓕ. ⏎  ⏎ ᓇᕿᓪᓗᒍ ᓇᕿᒻᒥᓕ: Wi-Fi ⏎ ᓇᕿᓪᓕ: ᒪᑐᓕ | %s ⏎ Ajjiliurli uqaalautiralaarmut ammalu ⏎ inirtiruti angiqtauli. ⏎  ⏎ Naqillugu naqimmili: `Wi-Fi` ⏎ Naqilli: matuli | low | Microsoft Inuktitut terminology (Pirurvik): scan = ajjiliurli, press and hold = naqillugu naqimmili, tap = naqilli, close = matuli |
 | `fw:T_WIFI_RECEIVED` | Wi-Fi received | Wi-Fi ᐱᔭᐅᔪᖅ | `Wi-Fi` pijaujuq | low | "Wi-Fi received" |
 | `fw:T_WIFI_GOT` | Got \"%s\" from your phone. ⏎ Restarting... | "%s" ᐅᖄᓚᐅᑎᕋᓛᕐᒥᑦ. ⏎ ᐃᑭᑎᒃᑲᓐᓂᕐᑐᖅ... | "%s" uqaalautiralaarmit. ⏎ Ikitikkannirtuq... | low | "%s" from the phone, restarting |
@@ -165,6 +169,10 @@ anything that reads wrong.
 | `fw:T_FETCHING` | Fetching forecast... ⏎  ⏎ Long-press for Wi-Fi setup | ᓯᓚᒥᒃ ᖃᐅᔨᓴᖅᑐᖅ... ⏎  ⏎ ᓇᕿᓪᓗᒍ ᓇᕿᒻᒥᓕ: Wi-Fi | Silamik qaujisaqtuq... ⏎  ⏎ Naqillugu naqimmili: `Wi-Fi` | low | "looking up the weather" |
 | `fw:T_CONNECTED` | Connected | ᑲᓱᖅᓯᒪᔪᖅ | Kasuqsimajuq | high | Microsoft Inuktitut terminology (Pirurvik): online = kasuqsimajuq |
 | `fw:T_CANT_REACH` | Can't reach %s ⏎ Tap to try again | %s ᑲᓱᕈᓐᓇᙱᑦᑐᖅ ⏎ ᓇᕿᓪᓕ: ᑲᓱᒃᑲᓐᓂᕐᓕ | %s kasurunnanngittuq ⏎ Naqilli: kasukkannirli | low | "cannot reach %s / tap: connect again" |
+| `fw:T_FORECAST_RETRY` | Can't reach the forecast service. ⏎ Retrying. | ᓯᓚᒥᒃ ᖃᐅᔨᓴᕐᕕᒃ ᑲᓱᕈᓐᓇᙱᑦᑐᖅ. ⏎ ᑲᓱᒃᑲᓐᓂᖅᑐᖅ. | Silamik qaujisarvik kasurunnanngittuq. ⏎ Kasukkanniqtuq. | low | "weather service cannot be reached / connecting again"; from T_FETCHING, T_ERR_CONNECT |
+| `fw:T_UPDATED_MIN` | Updated %d min ago | ᓄᑖᖅᑭᖅᑕᐅᔪᖅ: %d min | Nutaaqqiqtaujuq: %d `min` | low | "updated: N min (ago)"; the "ago" is implied; needs review |
+| `fw:T_UPDATED_H` | Updated %d h ago | ᓄᑖᖅᑭᖅᑕᐅᔪᖅ: %d h | Nutaaqqiqtaujuq: %d `h` | low | "updated: N h (ago)" |
+| `fw:T_NO_CONNECTION` | No connection | ᑲᓱᕈᓐᓇᙱᑦᑐᖅ | Kasurunnanngittuq | medium | as T_ERR_CONNECT ("cannot connect") |
 | `fw:T_STILL_TRYING` | Can't reach %s ⏎ Still trying ⏎  ⏎ Long-press for Wi-Fi setup | %s ᑲᓱᕈᓐᓇᙱᑦᑐᖅ ⏎ ᑲᓱᒃᑲᓐᓂᖅᑐᖅ ⏎  ⏎ ᓇᕿᓪᓗᒍ ᓇᕿᒻᒥᓕ: Wi-Fi | %s kasurunnanngittuq ⏎ Kasukkanniqtuq ⏎  ⏎ Naqillugu naqimmili: `Wi-Fi` | low | "cannot reach %s / connecting again / long-press: Wi-Fi" from T_CANT_REACH and T_CONNECTING |
 | `fw:T_FIRST_SETUP` | First-time setup | ᓯᕗᓪᓕᖅ ᐋᖅᑭᒃᓱᐃᓂᖅ | Sivulliq aaqqiksuiniq | low | "first arrangement" |
 | `fw:T_RADAR` | Radar | Radar | `Radar` | medium | kept as is |
@@ -275,6 +283,7 @@ anything that reads wrong.
 | `web:cityPicked` | {0}: move the pin if needed, then tap Save. | {0}: ᑭᑭᐊᒃ ᓄᓱᐊᕐᓕ, ᔭᒐᔾᔭᐃᕐᓕᓗ. | {0}: kikiak nusuarli, jagajjairlilu. | low |  |
 | `web:searchNoNet` | City search needs internet on this phone. | ᕿᓂᖅᑐᖅ internet-ᒥᒃ ᐱᔭᕆᐊᖃᖅᑐᖅ. | Qiniqtuq `internet`-mik pijariaqaqtuq. | low |  |
 | `web:badCoords` | Pick a spot on the map or enter valid coordinates. | ᓄᓇᙳᐊᕐᒥ ᐃᓂ ᓂᕈᐊᕐᓕ ᐅᕝᕙᓘᓐᓃᑦ ᓈᓴᐅᑎᑦ ᓇᕿᑦᑕᐅᕐᓗᒋᑦ. | Nunannguarmi ini niruarli uvvaluunniit naasautit naqittaurlugit. | low |  |
+| `web:nameLong` | This name is too long for the display. Shorten it. | ᐊᑎᐊ ᑕᑭᓗᐊᖅᑐᖅ. ᓇᐃᑦᑐᒃᑯᓕᕐᓗᒍ. | Atia takiluaqtuq. Naittukkulirlugu. | low | "the name is too long; shorten it" |
 | `web:savedUpdating` | Saved. The display is updating. | ᔭᒐᔾᔭᐃᕐᓯᒪᔪᖅ. ᓴᖅᑭᔭᐅᑦ ᓄᑖᕈᕆᐊᖅᑐᖅ. | Jagajjairsimajuq. Saqqijaut nutaaruriaqtuq. | medium |  |
 | `web:addedPlace` | Added {0}. Drag up or down on the display to see it. | {0} ᐃᓚᓕᖅᓯᒪᔪᖅ. ᓴᖅᑭᔭᐅᒻᒥ ᓄᓱᐊᕐᓕ ᖁᓕᒧᑦ ᐅᕝᕙᓘᓐᓃᑦ ᐊᑎᒧᑦ. | {0} ilaliqsimajuq. Saqqijaummi nusuarli qulimut uvvaluunniit atimut. | low |  |
 | `web:savedPlace` | Saved {0}. Drag up or down on the display to see it. | {0} ᔭᒐᔾᔭᐃᕐᓯᒪᔪᖅ. ᓴᖅᑭᔭᐅᒻᒥ ᓄᓱᐊᕐᓕ ᖁᓕᒧᑦ ᐅᕝᕙᓘᓐᓃᑦ ᐊᑎᒧᑦ. | {0} jagajjairsimajuq. Saqqijaummi nusuarli qulimut uvvaluunniit atimut. | low |  |
@@ -305,6 +314,7 @@ anything that reads wrong.
 | `web:fwDownloading` | Downloading {0}… {1} %. Keep the display plugged in. | {0} ᒥᓇᕆᔪᖅ… {1} %. ᓴᖅᑭᔭᐅᑦ ᑲᓱᖅᓯᒪᑎᓪᓗᒍ. | {0} minarijuq… {1} %. Saqqijaut kasuqsimatillugu. | low |  |
 | `web:fwDone` | Installed. The display is restarting… | ᐃᓕᑕᐅᔪᖅ. ᓴᖅᑭᔭᐅᑦ ᐃᑭᑎᒃᑲᓐᓂᕐᑐᖅ… | Ilitaujuq. Saqqijaut ikitikkannirtuq… | medium |  |
 | `web:fwFailed` | Update check failed: {0}. | ᖃᐅᔨᒋᐊᕐᓂᖅ ᑕᒻᒪᖅᑐᖅ: {0}. | Qaujigiarniq tammaqtuq: {0}. | low |  |
+| `web:fwRolledBack` | {0} was undone: the display restarted before it was confirmed. | {0} ᐲᖅᑕᐅᖅᑐᖅ: ᓴᖅᑭᖅᑎᑦᓯᔪᖅ ᐊᐅᓪᓚᖅᓯᒃᑲᓐᓂᓚᐅᖅᑐᖅ. | {0} piiqtauqtuq: saqqiqtitsijuq aullaqsikkannilauqtuq. | low | as T_OTA_ROLLED_BACK |
 | `web:unknownErr` | unknown error | ᑕᒻᒪᕐᓂᖅ | tammarniq | medium | Microsoft Inuktitut terminology (Pirurvik): error |
 | `web:installX` | Install {0} | {0} ᐃᓕᓕ | {0} ilili | high | Microsoft Inuktitut terminology (Pirurvik): install |
 | `web:theUpdate` | update | ᓄᑖᕈᕆᐊᕐᓂᖅ | nutaaruriarniq | medium |  |
@@ -313,7 +323,7 @@ anything that reads wrong.
 | `web:whatsNew` | What's new | ᓄᑖᑦ | Nutaat | medium |  |
 | `web:pageError` | Page error: {0} (line {1}) | ᑕᒻᒪᕐᓂᖅ: {0} ({1}) | Tammarniq: {0} ({1}) | medium |  |
 | `web:soundTitle` | Sound | ᓂᐱ | Nipi | high | sound |
-| `web:chimeFor` | Chime for new weather alerts | ᓂᐱ ᓯᓚᒧᑦ ᐃᓂᕐᑎᕈᑎᓄᑦ ᓄᑖᓄᑦ | Nipi silamut inirtirutinut nutaanut | low | Microsoft Inuktitut terminology (Pirurvik): warning = inirtiruti |
+| `web:chimeFor` | Sound for new weather alerts | ᓂᐱ ᓯᓚᒧᑦ ᐃᓂᕐᑎᕈᑎᓄᑦ ᓄᑖᓄᑦ | Nipi silamut inirtirutinut nutaanut | low | Microsoft Inuktitut terminology (Pirurvik): warning = inirtiruti |
 | `web:lvOff` | Off | ᖃᒥᑦᑐᖅ | Qamittuq | medium |  |
 | `web:lvRed` | Red alerts only | ᐊᐅᐸᓗᒃᑐᑦ ᑕᐃᒪ | Aupaluktut taima | medium | red only |
 | `web:lvOrange` | Orange and red alerts | Orange ᐊᒻᒪᓗ ᐊᐅᐸᓗᒃᑐᑦ | `Orange` ammalu aupaluktut | low |  |
@@ -321,7 +331,8 @@ anything that reads wrong.
 | `web:volume` | Volume | ᓂᐱᖅᑯᖅᑐᓯᒋᐊᕈᑦ | Nipiqquqtusigiarut | high | Microsoft Inuktitut terminology (Pirurvik): volume |
 | `web:quietFrom` | Quiet from | ᓂᐸᐃᑦᑐᖅ | Nipaittuq | low | quiet from |
 | `web:quietTo` | Until | ᑎᑭᓪᓗᒍ | Tikillugu | low | until |
-| `web:testChime` | 🔔 Test the chime | 🔔 ᓈᓚᒍᒃ ᓂᐱ | 🔔 Naalaguk nipi | medium |  |
-| `web:quietNote` | No chime during quiet hours, except for red alerts. Each alert chimes once. | ᓂᐸᐃᑦᑐᒥ ᓂᐱᖃᙱᑦᑐᖅ, ᐊᐅᐸᓗᒃᑐᑦ ᑭᓯᐊᓂ. ᐃᓂᕐᑎᕈᑎ ᐊᑕᐅᓯᐊᖅ ᓂᐱᖃᖅᑐᖅ. | Nipaittumi nipiqanngittuq, aupaluktut kisiani. Inirtiruti atausiaq nipiqaqtuq. | low |  |
+| `web:testChime` | 🔔 Test the sound | 🔔 ᓈᓚᒍᒃ ᓂᐱ | 🔔 Naalaguk nipi | medium |  |
+| `web:quietNote` | No sound during quiet hours, except for red alerts. Each warning sounds once, and again if it gets worse. The same start and end time means no quiet hours. | ᓂᐸᐃᑦᑐᒥ ᓂᐱᖃᙱᑦᑐᖅ, ᐊᐅᐸᓗᒃᑐᑦ ᑭᓯᐊᓂ. ᐃᓂᕐᑎᕈᑎ ᐊᑕᐅᓯᐊᖅ ᓂᐱᖃᖅᑐᖅ. | Nipaittumi nipiqanngittuq, aupaluktut kisiani. Inirtiruti atausiaq nipiqaqtuq. | low | the earlier draft; the new English adds "again if it gets worse" and "same times = no quiet hours": not translated yet |
 | `web:noSpeaker` | No speaker found on this display. | ᓂᐱᖃᐅᑦ ᐱᖃᙱᑦᑐᖅ. | Nipiqaut piqanngittuq. | low | Microsoft Inuktitut terminology (Pirurvik): speaker = nipiqaut |
+| `web:betaNote` | Release candidates: new features a few days early. They are tested, but a problem is more likely than with stable releases. | Beta: ᓄᑖᑦ ᐅᓪᓗᓂᒃ ᓯᕗᓪᓕᖅᐱᐊᖅᓴᖅᑐᑦ. ᒥᓯᓕᖅᑕᐅᔪᑦ, ᑭᓯᐊᓂ ᐊᔪᕐᓇᕐᓂᖅᓴᐅᕗᑦ ᐊᐅᓚᔾᔪᐃᑦᑐᓂᑦ. | `Beta`: nutaat ullunik sivulliqpiaqsaqtut. Misiliqtaujut, kisiani ajurnarniqsauvut aulajjuittunit. | low | "new things a few days earlier; tested, but more likely to have a problem than stable ones"; needs review |
 | `web:needKey` | To change settings, scan the code on the display: press and hold the weather screen. This phone then remembers it. | ᐋᖅᑭᔅᓯᒪᐅᑎᑦ ᐊᓯᔾᔨᖅᓱᖅᑯᓐᓇᑎᑦ, ᐊᔾᔨᓕᐅᕐᓕ ᑎᑎᕋᐅᔭᒧᑦ ᓴᖅᑭᖅᑐᒥ: ᓇᕿᓪᓗᒍ ᓇᕿᒻᒥᓕ ᓯᓚᒧᑦ. ᐅᖄᓚᐅᑎᕋᓛᕐᒧᑦ ᐳᐃᒍᖅᑕᐃᓕᓗᒍ. | Aaqqissimautit asijjiqsuqqunnatit, ajjiliurli titiraujamut saqqiqtumi: naqillugu naqimmili silamut. Uqaalautiralaarmut puiguqtaililugu. | low | "to change settings, photograph (scan) the code shown: long-press the weather screen; the phone won't forget it" from T_SETTINGS, T_OV_HELP; needs review |

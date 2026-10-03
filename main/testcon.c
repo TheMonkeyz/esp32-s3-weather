@@ -22,6 +22,7 @@
 #include "presence.h"
 #include "diag.h"
 #include "web.h"
+#include "config.h"
 
 static const char *TAG = "test";
 
@@ -236,6 +237,9 @@ static void run(char *line)
         snprintf(tasks, sizeof(tasks), "lvgl_task_state=%d", (int)ts);
         ESP_LOGI(TAG, "where slide_phase=%d raw_phase=%d raw_band=%d lvgl_inflight=%d %s", slide_phase, raw_phase,
                  raw_band, display_lvgl_inflight(), tasks);
+    } else if (!strcmp(c, "hint") && argc == 2 && !strcmp(argv[1], "next-boot")) {   // first-run hint, places kept
+        config_hint_next_boot();
+        ESP_LOGI(TAG, "ok hint next-boot");
     } else if (!strcmp(c, "key")) {                       // the settings key (web.c): USB = someone at the display
         ESP_LOGI(TAG, "key %s", web_key());
     } else if (!strcmp(c, "heap")) {
@@ -249,7 +253,7 @@ static void run(char *line)
         esp_restart();
     } else if (!strcmp(c, "help")) {
         ESP_LOGI(TAG, "commands: ping, screen, tap X Y, press X Y [ms], swipe left|right|up|down, "
-                      "drag X1 Y1 X2 Y2 [ms], wake, presence, key, wifi status|offline|offline-boot|online, portal windows-quiet, "
+                      "drag X1 Y1 X2 Y2 [ms], wake, presence, key, hint next-boot, wifi status|offline|offline-boot|online, portal windows-quiet, "
                       "fps [reset], page, pictest, where, memspeed, heap, bench, reboot");
     } else {
         ESP_LOGW(TAG, "error unknown command '%s' (help lists them)", c);

@@ -45,6 +45,7 @@ static bool boot_button_held(void)
 }
 
 static TaskHandle_t main_task;
+static volatile bool extras_now;             // a switch, an edit or a language change: alerts and air quality now
 
 // cJSON's trees (a forecast is thousands of small nodes) in PSRAM: they went to internal RAM, whose low point was
 // under 10 KB, and peaked when three replies were parsed at once on a reconnect
@@ -114,6 +115,7 @@ static void follow_active(bool all)
         ui_air(&no_air);
         radar_relocate();
     }
+    extras_now = true;                           // alerts and air quality for the place shown, now
     if (main_task) xTaskNotifyGive(main_task);   // fetch what's missing now
 }
 
@@ -133,6 +135,7 @@ static void on_location_changed(void)
 // The language changed on the display: wake the loop (alerts are re-shown, notes re-fetched in the new language)
 static void data_refresh(void)
 {
+    extras_now = true;
     ota_check_now();
     if (main_task) xTaskNotifyGive(main_task);
 }
@@ -163,7 +166,7 @@ static bool fetch_place(int i)
 #define AUTO_SETUP_S (15 * 60)
 static void offline_setup(const char *ssid)
 {
-    char note[96], body[160], still[160];
+    char note[160], body[160], still[160];        // (Inuktitut's note overflowed 96 bytes for long network names)
     snprintf(note, sizeof(note), tr(T_CANT_REACH), ssid);
     snprintf(body, sizeof(body), tr(T_CONNECTING), ssid);
     snprintf(still, sizeof(still), tr(T_STILL_TRYING), ssid);
@@ -252,29 +255,59 @@ void app_main(void)
     ui_on_place_select(place_select);
     ui_on_data_refresh(data_refresh);
     show_place(true);
-    int64_t next_all = 0;                  // when every place's forecast is due again
+    // Each place's forecast is due REFRESH_MIN after its last success. A failure is retried with a growing delay
+    // (30 s, 1, 2, 5, 10 min; HTTP 429 "too many requests": 10 min): all places every 30 s was ~11,500 requests a
+    // day in a day-long outage, over Open-Meteo's free quota. A new or edited place is fetched at once; the place
+    // shown goes first. Alerts and air quality: with the place shown's forecast, every REFRESH_MIN or on a switch.
+    static int64_t due[MAX_PLACES];         // 0 = now
+    static int fails[MAX_PLACES];
+    static location_t tried[MAX_PLACES];    // where the last attempt was for (an edit: fetch at once)
+    int64_t extras_due = 0;
+    bool shown_once = false;                 // a forecast has replaced the start-up message
     while (1) {
         int64_t now = esp_timer_get_time();
-        int a = config_active_place();
+        int a = config_active_place(), n = config_place_count();
         location_t loc;
         config_get_place(a, &loc);
-        bool ok = net_is_connected();
-        if (ok && now >= next_all) {                         // every place, active first
-            ok = fetch_place(a);
-            for (int i = 0; i < config_place_count(); i++) if (i != a) fetch_place(i);
-            next_all = now + (ok ? REFRESH_MIN * 60 : 30) * 1000000LL;
-        } else if (ok) {                                     // woken by a switch or an edit: only what's missing
-            for (int k = 0; k < config_place_count(); k++) {   // the place shown first, then new / edited ones
-                int i = k == 0 ? a : k <= a ? k - 1 : k;
-                location_t p;
-                if (!config_get_place(i, &p)) continue;
-                display_lock(-1);
-                bool c = cached(i, &p);
-                display_unlock();
-                if (!c && !fetch_place(i) && i == a) ok = false;
+        bool net = net_is_connected(), ok = false;
+        int64_t next = now + REFRESH_MIN * 60 * 1000000LL;
+        for (int k = 0; k < n; k++) {                        // the place shown first
+            int i = k == 0 ? a : k <= a ? k - 1 : k;
+            location_t p;
+            if (!config_get_place(i, &p)) continue;
+            display_lock(-1);
+            bool c = cached(i, &p);
+            display_unlock();
+            bool edited = tried[i].lat != p.lat || tried[i].lon != p.lon;
+            if (net && (edited || now >= due[i])) {
+                tried[i] = p;
+                if (fetch_place(i)) {
+                    c = true;
+                    fails[i] = 0;
+                    due[i] = esp_timer_get_time() + REFRESH_MIN * 60 * 1000000LL;
+                    ui_place_state(i, true);
+                } else {
+                    static const int wait_s[] = { 30, 60, 120, 300, 600 };
+                    int s = weather_last_status() == 429 ? 600 : wait_s[fails[i] < 4 ? fails[i] : 4];
+                    fails[i]++;
+                    due[i] = esp_timer_get_time() + s * 1000000LL;
+                    ui_place_state(i, false);
+                    ESP_LOGW(TAG, "Update failed for place %d (%d in a row), retrying in %d s", i + 1, fails[i], s);
+                }
             }
+            if (due[i] < next) next = due[i];
+            if (i == a) ok = c;
         }
-        if (ok && a == config_active_place()) {              // (unless the user swiped on meanwhile)
+        if (!ok && !shown_once && net && fails[a]) ui_message(tr(T_WEATHER), tr(T_FORECAST_RETRY));   // at start-up
+        if (ok && !shown_once && config_place_is_default() && config_hint_wanted()) {   // a new display
+            ui_first_run();
+            config_hint_done();
+        }
+        if (ok) shown_once = true;
+        if (ok && a == config_active_place() && (extras_now || esp_timer_get_time() >= extras_due)) {
+            extras_now = false;                              // (unless the user swiped on meanwhile)
+            extras_due = esp_timer_get_time() + REFRESH_MIN * 60 * 1000000LL;
+            if (extras_due < next) next = extras_due;
             show_place(false);
             static EXT_RAM_BSS_ATTR alerts_t al;
             if (alerts_fetch(loc.lat, loc.lon, &al) && a == config_active_place()) {   // failed: keep the last ones
@@ -295,11 +328,10 @@ void app_main(void)
             if (air_fetch(&air) && a == config_active_place()) ui_air(&air);
             static bool first = true;
             if (first) { first = false; diag_mark("first weather"); }
-        } else if (!ok) {
-            ESP_LOGW(TAG, "Update failed, retrying in 30 s");
-            next_all = now + 30 * 1000000LL;
         }
-        int64_t wait_ms = (next_all - esp_timer_get_time()) / 1000;
+        if (extras_due && extras_due < next) next = extras_due;
+        if (!net && next < esp_timer_get_time() + 5000000LL) next = esp_timer_get_time() + 5000000LL;   // offline: look again in 5 s
+        int64_t wait_ms = (next - esp_timer_get_time()) / 1000;
         ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(wait_ms > 1000 ? wait_ms : 1000));   // woken early by a switch / edit
     }
 }

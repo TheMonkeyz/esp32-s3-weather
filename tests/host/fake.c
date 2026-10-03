@@ -53,5 +53,5 @@ esp_err_t esp_http_client_set_user_data(esp_http_client_handle_t c, void *d) { c
 void svc_http(svc_id_t id, esp_err_t err, int status, int64_t t0) {}
 void svc_ok(svc_id_t id, int64_t t0) {}
 void svc_fail(svc_id_t id, const char *why, int64_t t0) {}
-const char *tr(tid_t id) { return "(text)"; }
-const char *tr_weather(int code) { return "(weather)"; }
+__attribute__((weak)) const char *tr(tid_t id) { return "(text)"; }   // test_i18n has the real ones
+__attribute__((weak)) const char *tr_weather(int code) { return "(weather)"; }

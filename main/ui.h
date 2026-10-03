@@ -18,6 +18,10 @@ void ui_wifi_setup(const char *note);   // Wi-Fi setup screen (setup network QR 
 void ui_wifi_setup_end(void);            // online again: stop Easy Connect and the auto-close timer
 bool ui_wifi_setup_open(void);           // false once closed (a tap, or the timeout)
 bool ui_wifi_setup_close(void);          // close it now, unless a phone is on the setup network
+// Place i's last forecast attempt: ok (the page's "Updated N min ago" counts from now) or failed (its page says it
+// can't reach the service while it has no forecast; an old one gets an age line)
+void ui_place_state(int i, bool ok);
+void ui_first_run(void);                 // the one-time "choose your location" settings QR (a new display)
 void ui_pages(int *place, int *day, int *places, int *days);   // test console (display lock held)
 const char *ui_screen_name(void);        // "weather", "radar", "settings", "setup0"... (display lock held)
 void ui_alerts(const alerts_t *al);     // weather alerts for the location (empty = none)

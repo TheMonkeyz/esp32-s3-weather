@@ -209,6 +209,11 @@ Windows build gets both from `main/idf_component.yml`. `components/dns_server` *
     (j) The setup network's password is per display (`wifi status` shows `ap_pass`); `meteo1234` is only older firmware.
     (k) A rule with a time window needs a test that crosses the window: the 15-minute setup limit passed review and
     failed on the board (the window ended while setup was open, and nothing closed it). `wifi offline-boot-short`.
+    (l) An empty translation ("") is not "missing": it showed as nothing. `tr()` now falls back on empty too, and
+    `tests/host/test_i18n.c` checks every text in every language (and the same printf conversions as English).
+    New French text: snapshot it (`hint next-boot` + restart for the first-run hint); long lines wrap badly on the
+    round screen, so give them explicit `
+` breaks.
 
 - Internal RAM ran out silently (10 KB free, 0 KB min ever) because LVGL's small allocations went to internal RAM
   first. Fixed with `lvgl_mem.c` (LVGL heap in PSRAM). Font kerning cost 71% of render time; fonts now use
