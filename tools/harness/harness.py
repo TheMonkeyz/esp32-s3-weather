@@ -149,6 +149,11 @@ def main():
     print(('Using the running log window' if reuse else 'Restarting the board and logging') + ' ...', flush=True)
     try:
         if not reuse:
+            try:                                        # places kept across a flash (smoke compares)
+                ctx.places_before = len(board.api('/api/config').get('places', []))
+            except Exception as e:
+                ctx.places_before = None
+                print(f'  (places before the restart unknown: {type(e).__name__}: {e})', flush=True)
             board.start_log(opts.minutes * 60, opts.flash and os.path.join(ROOT, opts.flash))
             log.wait(r'diag: mark first weather', 90, 'start-up')   # Wi-Fi up and the first forecast shown
             time.sleep(5)

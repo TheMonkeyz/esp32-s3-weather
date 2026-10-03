@@ -202,6 +202,13 @@ Windows build gets both from `main/idf_component.yml`. `components/dns_server` *
     (h) **Build exactly what you commit.** Group A was split out of a tree that already held the next group's work by
     a script; it dropped an `#include` and v1.12.0-rc.1's CI build failed (no release). To set later work aside, use
     `git stash push -u`, build the tree as it will be committed, commit, then `git stash pop`.
+    (i) **Changes need the display's key** (v1.12.0-rc.3, ARCHITECTURE "Settings / web"): every POST and
+    `/api/snapshot` carries `X-Key`. Get it with `echo key > serial.send` (`test: key …`); the harness and
+    `tools/snapshot.py` do it themselves. A cached "no key" from the firmware before a flash made the harness skip
+    its checks once: anything cached about the board is reset after a flash or an install.
+    (j) The setup network's password is per display (`wifi status` shows `ap_pass`); `meteo1234` is only older firmware.
+    (k) A rule with a time window needs a test that crosses the window: the 15-minute setup limit passed review and
+    failed on the board (the window ended while setup was open, and nothing closed it). `wifi offline-boot-short`.
 
 - Internal RAM ran out silently (10 KB free, 0 KB min ever) because LVGL's small allocations went to internal RAM
   first. Fixed with `lvgl_mem.c` (LVGL heap in PSRAM). Font kerning cost 71% of render time; fonts now use

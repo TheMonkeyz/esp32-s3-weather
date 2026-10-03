@@ -26,6 +26,8 @@ function fresh() {
                 imu_ok: true, motion_g: 0.01, motion_wake: true, motion_thr: 0.1 },
     sound: { level: 2, volume: 60, quiet_from: '22:00', quiet_to: '07:00', ok: true, tests: 0 },
     wifi: null,
+    key: null,                                // the display's key (web.c): POSTs need X-Key when set
+    setupNet: false,                          // the page is on the setup network (web.c from_setup_ap)
     log: [],                                  // every API call: {method, url, body}
   };
 }
@@ -52,7 +54,11 @@ const config = () => ({
 });
 
 const routes = {
-  'GET /api/config': () => [200, config()],
+  'GET /api/config': () => {                       // web.c config_get: no coordinates on the setup network
+    const c = config();
+    if (!st.setupNet) return [200, c];
+    return [200, { ...c, lat: undefined, lon: undefined, ssid: '', places: c.places.map(p => ({ name: p.name })) }];
+  },
   'POST /api/location': b => {                     // web.c location_post
     if (!b || typeof b.lat !== 'number' || typeof b.lon !== 'number') return [400, 'bad location'];
     const i = typeof b.index === 'number' ? b.index : st.active;
@@ -107,6 +113,8 @@ http.createServer(async (req, res) => {
   const url = req.url.split('?')[0];
   if (req.method === 'POST' && url === '/__reset') { st = fresh(); return json(res, 200, { ok: true }); }
   if (req.method === 'GET' && url === '/__state') return json(res, 200, st);
+  if (req.method === 'POST' && url === '/__setup') { st.setupNet = true; return json(res, 200, { ok: true }); }
+  if (req.method === 'POST' && url === '/__key') { st.key = (await body(req) || {}).key || null; return json(res, 200, { ok: true }); }
   if (req.method === 'POST' && url === '/__update') { Object.assign(st.update, await body(req) || {}); return json(res, 200, st.update); }
   if (req.method === 'GET' && url === '/') {
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
@@ -114,6 +122,10 @@ http.createServer(async (req, res) => {
   }
   const fn = routes[req.method + ' ' + url];
   if (!fn) { res.writeHead(404); return res.end('not found'); }
+  if (req.method === 'POST' && st.key && !st.setupNet && req.headers['x-key'] !== st.key) {   // web.c guarded()
+    st.log.push({ method: req.method, url, refused: 401 });
+    return json(res, 401, { error: 'key' });
+  }
   const b = req.method === 'POST' ? await body(req) : undefined;
   st.log.push({ method: req.method, url, body: b });
   const [code, out] = fn(b);

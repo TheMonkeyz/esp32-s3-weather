@@ -165,6 +165,7 @@ anything that reads wrong.
 | `fw:T_FETCHING` | Fetching forecast... ⏎  ⏎ Long-press for Wi-Fi setup | ᓯᓚᒥᒃ ᖃᐅᔨᓴᖅᑐᖅ... ⏎  ⏎ ᓇᕿᓪᓗᒍ ᓇᕿᒻᒥᓕ: Wi-Fi | Silamik qaujisaqtuq... ⏎  ⏎ Naqillugu naqimmili: `Wi-Fi` | low | "looking up the weather" |
 | `fw:T_CONNECTED` | Connected | ᑲᓱᖅᓯᒪᔪᖅ | Kasuqsimajuq | high | Microsoft Inuktitut terminology (Pirurvik): online = kasuqsimajuq |
 | `fw:T_CANT_REACH` | Can't reach %s ⏎ Tap to try again | %s ᑲᓱᕈᓐᓇᙱᑦᑐᖅ ⏎ ᓇᕿᓪᓕ: ᑲᓱᒃᑲᓐᓂᕐᓕ | %s kasurunnanngittuq ⏎ Naqilli: kasukkannirli | low | "cannot reach %s / tap: connect again" |
+| `fw:T_STILL_TRYING` | Can't reach %s ⏎ Still trying ⏎  ⏎ Long-press for Wi-Fi setup | %s ᑲᓱᕈᓐᓇᙱᑦᑐᖅ ⏎ ᑲᓱᒃᑲᓐᓂᖅᑐᖅ ⏎  ⏎ ᓇᕿᓪᓗᒍ ᓇᕿᒻᒥᓕ: Wi-Fi | %s kasurunnanngittuq ⏎ Kasukkanniqtuq ⏎  ⏎ Naqillugu naqimmili: `Wi-Fi` | low | "cannot reach %s / connecting again / long-press: Wi-Fi" from T_CANT_REACH and T_CONNECTING |
 | `fw:T_FIRST_SETUP` | First-time setup | ᓯᕗᓪᓕᖅ ᐋᖅᑭᒃᓱᐃᓂᖅ | Sivulliq aaqqiksuiniq | low | "first arrangement" |
 | `fw:T_RADAR` | Radar | Radar | `Radar` | medium | kept as is |
 | `fw:T_RADAR_AT` | Radar %s  ·  %s | Radar %s  ·  %s | `Radar` %s  ·  %s | medium |  |
@@ -323,3 +324,4 @@ anything that reads wrong.
 | `web:testChime` | 🔔 Test the chime | 🔔 ᓈᓚᒍᒃ ᓂᐱ | 🔔 Naalaguk nipi | medium |  |
 | `web:quietNote` | No chime during quiet hours, except for red alerts. Each alert chimes once. | ᓂᐸᐃᑦᑐᒥ ᓂᐱᖃᙱᑦᑐᖅ, ᐊᐅᐸᓗᒃᑐᑦ ᑭᓯᐊᓂ. ᐃᓂᕐᑎᕈᑎ ᐊᑕᐅᓯᐊᖅ ᓂᐱᖃᖅᑐᖅ. | Nipaittumi nipiqanngittuq, aupaluktut kisiani. Inirtiruti atausiaq nipiqaqtuq. | low |  |
 | `web:noSpeaker` | No speaker found on this display. | ᓂᐱᖃᐅᑦ ᐱᖃᙱᑦᑐᖅ. | Nipiqaut piqanngittuq. | low | Microsoft Inuktitut terminology (Pirurvik): speaker = nipiqaut |
+| `web:needKey` | To change settings, scan the code on the display: press and hold the weather screen. This phone then remembers it. | ᐋᖅᑭᔅᓯᒪᐅᑎᑦ ᐊᓯᔾᔨᖅᓱᖅᑯᓐᓇᑎᑦ, ᐊᔾᔨᓕᐅᕐᓕ ᑎᑎᕋᐅᔭᒧᑦ ᓴᖅᑭᖅᑐᒥ: ᓇᕿᓪᓗᒍ ᓇᕿᒻᒥᓕ ᓯᓚᒧᑦ. ᐅᖄᓚᐅᑎᕋᓛᕐᒧᑦ ᐳᐃᒍᖅᑕᐃᓕᓗᒍ. | Aaqqissimautit asijjiqsuqqunnatit, ajjiliurli titiraujamut saqqiqtumi: naqillugu naqimmili silamut. Uqaalautiralaarmut puiguqtaililugu. | low | "to change settings, photograph (scan) the code shown: long-press the weather screen; the phone won't forget it" from T_SETTINGS, T_OV_HELP; needs review |

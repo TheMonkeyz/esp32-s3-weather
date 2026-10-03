@@ -157,6 +157,7 @@ fw:T_CONNECTING	Connecting to\n%s\n\nLong-press for Wi-Fi setup	Kasuqtuq\n%s\n\n
 fw:T_FETCHING	Fetching forecast...\n\nLong-press for Wi-Fi setup	Silamik qaujisaqtuq...\n\nNaqillugu naqimmili: `Wi-Fi`	low	"looking up the weather"
 fw:T_CONNECTED	Connected	Kasuqsimajuq	high	Microsoft Inuktitut terminology (Pirurvik): online = kasuqsimajuq
 fw:T_CANT_REACH	Can't reach %s\nTap to try again	%s kasurunnanngittuq\nNaqilli: kasukkannirli	low	"cannot reach %s / tap: connect again"
+fw:T_STILL_TRYING	Can't reach %s\nStill trying\n\nLong-press for Wi-Fi setup	%s kasurunnanngittuq\nKasukkanniqtuq\n\nNaqillugu naqimmili: `Wi-Fi`	low	"cannot reach %s / connecting again / long-press: Wi-Fi" from T_CANT_REACH and T_CONNECTING
 fw:T_FIRST_SETUP	First-time setup	Sivulliq aaqqiksuiniq	low	"first arrangement"
 fw:T_RADAR	Radar	`Radar`	medium	kept as is
 fw:T_RADAR_AT	Radar %s  ·  %s	`Radar` %s  ·  %s	medium	
@@ -315,3 +316,4 @@ web:quietTo	Until	Tikillugu	low	until
 web:testChime	🔔 Test the chime	🔔 Naalaguk nipi	medium	
 web:quietNote	No chime during quiet hours, except for red alerts. Each alert chimes once.	Nipaittumi nipiqanngittuq, aupaluktut kisiani. Inirtiruti atausiaq nipiqaqtuq.	low	
 web:noSpeaker	No speaker found on this display.	Nipiqaut piqanngittuq.	low	Microsoft Inuktitut terminology (Pirurvik): speaker = nipiqaut
+web:needKey	To change settings, scan the code on the display: press and hold the weather screen. This phone then remembers it.	Aaqqissimautit asijjiqsuqqunnatit, ajjiliurli titiraujamut saqqiqtumi: naqillugu naqimmili silamut. Uqaalautiralaarmut puiguqtaililugu.	low	"to change settings, photograph (scan) the code shown: long-press the weather screen; the phone won't forget it" from T_SETTINGS, T_OV_HELP; needs review

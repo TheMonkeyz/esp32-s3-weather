@@ -71,7 +71,8 @@ If the computer can't find the board, hold **BOOT**, tap **RESET**, release **BO
 1. Flash the firmware: the [web flasher](https://themonkeyz.github.io/esp32-s3-weather/) (tick *Erase device* the
    first time; leave it unticked for updates to keep Wi-Fi and settings), or see
    [Flashing on Windows](#flashing-on-windows). With no Wi-Fi saved, the screen shows **Wi-Fi setup** and a QR code.
-2. Scan the QR code to join the display's network **Weather-Setup** (password `meteo1234`).
+2. Scan the QR code to join the display's network **Weather-Setup**. Its password is shown under the code: each
+   display has its own (since v1.12.0).
 3. The phone's **"Sign in to network"** page opens by itself (captive portal) and shows the setup page with the Wi-Fi
    section on top. If it doesn't, open **http://192.168.4.1**.
 4. The page scans automatically and lists nearby networks (strongest first, 🔒 = password needed). Tap yours, enter
@@ -263,7 +264,9 @@ The display and the settings page come in **English**, **French** (Canadian Fren
   [Settings on the display](#settings-on-the-display)). Places, the Wi-Fi password, custom timings and sound
   calibration are on the phone page.
 - **Location:** long-press the weather screen, tap **More on your phone**, scan the QR code and open the page. Your
-  phone must be on the same Wi-Fi. The phone will warn that the certificate isn't trusted. That's expected, because
+  phone must be on the same Wi-Fi. The code also carries the display's **key**: a page opened from it can change
+  settings, and that phone remembers it. A page opened by typing the address shows the settings but asks you to
+  scan the code before changing anything. The phone will warn that the certificate isn't trusted. That's expected, because
   the display signs its own certificate; choose *Advanced → Proceed*. HTTPS is what allows **Use my phone's
   location**. Location changes apply immediately: the map and radar reload within seconds.
 - **Places:** up to 4 (home, cottage, work...), in the **Places** card of the same page. Tap a place to change it
@@ -282,7 +285,9 @@ The display and the settings page come in **English**, **French** (Canadian Fren
 - **When the saved network can't be reached** (new place, new router, router still starting after a power cut):
   - While it says *Connecting to …* or *Fetching forecast…*, a **long-press** starts the setup network and shows its
     QR code.
-  - After about 30 s without a connection it shows the setup QR code by itself (*Can't reach … / Tap to try again*).
+  - After about 30 s without a connection it shows the setup QR code by itself (*Can't reach … / Tap to try again*),
+    for 15 minutes. After that (a long outage) it stops opening the setup network by itself and just keeps trying the
+    saved one (*Still trying*); a long-press still opens setup.
   - While the setup screen is open, the display doesn't try the saved network: that would get in the way of the
     phone. Tap the screen to try the saved network again (30 s), or wait: after 5 minutes without a phone on the
     setup network it tries again by itself, then shows the setup screen again. If you save a new network instead, it
@@ -324,8 +329,12 @@ From **v1.3.0**, the display updates itself from the [web flasher site](https://
   candidates)**, *Check for updates*, what's new, and *Install*, with a progress bar.
 - **Beta** follows the flasher's Beta channel (`vX.Y.Z-rc.N` tags) and falls back to Stable when there's no newer
   release candidate.
-- Safety: the new version is checked (image header, SHA-256, same project) before it's selected, and if it doesn't
-  run for a minute (crash or boot loop), the board goes back to the previous version by itself.
+- Safety: the download is checked for integrity (image header, SHA-256) and must be this project's firmware, at the
+  version that was offered, before it's selected. It comes over HTTPS from the project's GitHub Pages site; it isn't
+  signed (see [Security notes](#-security-notes)). A new version is kept once it has run for a minute connected to
+  Wi-Fi (ten minutes without Wi-Fi); if it restarts before that (crash, boot loop, power cut), the display goes back
+  to the previous version by itself and says so on its update screen. A restart asked for during that minute waits
+  for it.
 - **Coming from v1.2.0 or earlier:** flash v1.3.0+ once over USB (web flasher, *Erase device* unticked; settings are
   kept). It switches to a flash layout with two firmware slots; the stored radar maps download again.
 
@@ -525,12 +534,25 @@ CLAUDE.md       notes for AI-assisted development sessions
 
 ## 🔒 Security notes
 
+- **Who can change settings.** The settings page shows the settings to anyone on your Wi-Fi, but changing them
+  (places, units, sound, presence, the saved Wi-Fi network, updates) needs the display's **key**, which only the
+  settings QR code on the display carries: being able to see the display is the permission. The key is random,
+  made on each board at its first start. The API answers changes only over HTTPS on your network, only to requests
+  that name the display itself (no DNS rebinding) and only as JSON with the key header, which a web page from
+  another site can't send. Before v1.12.0 anyone on the network could change everything, the saved Wi-Fi included.
+- **The setup network** (*Weather-Setup*) has a password of its own on each display, shown on the display, and uses
+  WPA2/WPA3. On it no key is needed (seeing the password is the permission), but it doesn't hand out the places'
+  coordinates, the saved network's name or screenshots. It opens by itself for 15 minutes when the saved network is
+  unreachable, then only on a long-press.
+- **Updates** come over HTTPS from the project's GitHub Pages site, checked for integrity (SHA-256) and project
+  name, but not signed: whoever controls the GitHub account can publish firmware, so keep two-factor
+  authentication on it.
 - The settings page's TLS certificate is **generated on each board** at first boot (EC P-256, self-signed, valid
-  to 2099) and kept in NVS, so no private key ships in the firmware or this repository. Browsers still warn once
-  because it's self-signed; the certificate name includes the end of the board's MAC address
-  (`Weather Display C87598`). Erasing the flash creates a new one (accept the warning again).
-  Older versions embedded a shared key from `main/certs/`; it is no longer used anywhere.
-- The setup access point password (`meteo1234`) is in `main/net.h`.
+  to 2099) and kept in NVS (unencrypted, as are the Wi-Fi password and the key: anyone with the board and a USB
+  cable can read them). Browsers warn once because it's self-signed; the certificate name includes the end of the
+  board's MAC address. Erasing the flash creates a new one (accept the warning again).
+- Very early versions embedded a shared test key from `main/certs/`; no release used it, and it remains only in the
+  git history of the first commit.
 
 ## 📄 License
 

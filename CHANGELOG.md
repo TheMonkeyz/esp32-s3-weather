@@ -9,6 +9,15 @@ How to write an entry: add a `## vX.Y.Z - YYYY-MM-DD` section at the top **befor
 their own `## vX.Y.Z-rc.N` section. Those are shown only to Beta users, while the final release's section should
 list everything again.
 
+## v1.12.0-rc.3 - 2026-10-03
+- Changing settings from your phone now needs the code shown on the display: press and hold the weather screen, tap More on your phone, and scan it. Your phone remembers it. Anyone on your Wi-Fi can still look at the settings page.
+- The display's setup network has its own password, shown on the display next to its code (it was the same for every display).
+- When your Wi-Fi is down for a long time, the setup network opens by itself for 15 minutes, then the display just keeps trying; press and hold to open it again.
+- If an update is undone because the display restarted too early, the update screen says so. The display now waits until an update is confirmed before restarting on its own, and keeps it only once it has worked with your Wi-Fi.
+- After an interrupted download the Install button stays, and the display checks again a few minutes later. It also checks for updates as soon as your Wi-Fi comes back.
+- When a setting could not be saved, the settings page says so instead of "Saved".
+- Network names of 32 characters and passwords are checked before they are saved.
+
 ## v1.12.0-rc.2 - 2026-10-03
 - The Install button on the settings page shows again when an update is offered.
 - A red warning is never hidden behind lesser alerts when more than four are in force.

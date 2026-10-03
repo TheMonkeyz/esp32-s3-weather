@@ -50,7 +50,7 @@ void sound_get_config(sound_cfg_t *out)
     taskEXIT_CRITICAL(&mux);
 }
 
-void sound_set_config(const sound_cfg_t *in)
+bool sound_set_config(const sound_cfg_t *in)
 {
     sound_cfg_t c = *in;
     if (c.level < 0 || c.level > 3) c.level = 2;
@@ -61,19 +61,22 @@ void sound_set_config(const sound_cfg_t *in)
     cfg = c;
     taskEXIT_CRITICAL(&mux);
     nvs_handle_t h;
-    if (nvs_open("sound", NVS_READWRITE, &h) == ESP_OK) {
-        nvs_set_u8(h, "level", c.level);
-        nvs_set_u8(h, "vol", c.volume);
-        nvs_set_u16(h, "qfrom", c.quiet_from);
-        nvs_set_u16(h, "qto", c.quiet_to);
-        nvs_commit(h);
+    bool ok = nvs_check(nvs_open("sound", NVS_READWRITE, &h), "open sound");
+    if (ok) {
+        ok = nvs_check(nvs_set_u8(h, "level", c.level), "sound/level") && nvs_check(nvs_set_u8(h, "vol", c.volume), "sound/vol") &&
+             nvs_check(nvs_set_u16(h, "qfrom", c.quiet_from), "sound/qfrom") &&
+             nvs_check(nvs_set_u16(h, "qto", c.quiet_to), "sound/qto") && nvs_check(nvs_commit(h), "sound commit");
         nvs_close(h);
     }
-    ESP_LOGI(TAG, "config: level %d, volume %d%%, quiet %02d:%02d-%02d:%02d", c.level, c.volume,
-             c.quiet_from / 60, c.quiet_from % 60, c.quiet_to / 60, c.quiet_to % 60);
+    ESP_LOGI(TAG, "config: level %d, volume %d%%, quiet %02d:%02d-%02d:%02d%s", c.level, c.volume,
+             c.quiet_from / 60, c.quiet_from % 60, c.quiet_to / 60, c.quiet_to % 60, ok ? "" : " (NOT saved)");
+    return ok;
 }
 
-bool sound_ok(void) { return presence_audio_data_if() != NULL; }   // the I2S bus is up (microphones opened it)
+// A speaker: the I2S bus is up (the microphones opened it) and the ES8311 answers on I2C (probed once at start).
+// It meant only the first, so a board without the codec said it could beep.
+static bool spk_found;
+bool sound_ok(void) { return spk_found && presence_audio_data_if() != NULL; }
 
 /* ---------- alert sounds ----------
  * Beeps whose urgency follows the alert level (not a doorbell, and not Canada's official Alert Ready signal):
@@ -203,6 +206,9 @@ void sound_alert(char colour)
 void sound_start(void)
 {
     load();
+    i2c_master_bus_handle_t bus = touch_i2c_bus();
+    spk_found = bus && i2c_master_probe(bus, ES8311_ADDR >> 1, 50) == ESP_OK;
+    if (!spk_found) ESP_LOGW(TAG, "no ES8311 on I2C: no speaker");
     q = xQueueCreate(2, sizeof(int));
     xTaskCreatePinnedToCore(sound_task, "sound", 4096, NULL, 3, NULL, 0);
 }

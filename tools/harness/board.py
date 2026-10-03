@@ -19,7 +19,8 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 sys.path.insert(0, os.path.join(ROOT, 'tools'))
 import snapshot  # noqa: E402  (tools/snapshot.py)
 
-SETUP_SSID, SETUP_PASS, SETUP_IP = 'Weather-Setup', 'meteo1234', '192.168.4.1'   # main/net.h
+SETUP_SSID, SETUP_IP = 'Weather-Setup', '192.168.4.1'   # main/net.h
+OLD_SETUP_PASS = 'meteo1234'   # firmware before v1.12.0; since then each display has its own (wifi status: ap_pass)
 
 
 class Fail(Exception):
@@ -78,6 +79,7 @@ class Log:
 class Board:
     def __init__(self, ip, log):
         self.ip, self.log = ip, log
+        self._key = None                                # the display's key (main/web.c), asked once from the console
         self.ctx = ssl.create_default_context()
         self.ctx.check_hostname = False
         self.ctx.verify_mode = ssl.CERT_NONE          # the board's certificate is self-signed
@@ -142,6 +144,7 @@ class Board:
                 raise Fail('the flash helper did not start logging (is start_flash_helper.bat running?)')
             time.sleep(1)
         self.log.pos = 0
+        self._key = None                               # other firmware now (a flash): ask again
         self.log.wait(r'test: console ready', 30, 'firmware with the test console')
 
     def stop_log(self):
@@ -198,10 +201,29 @@ class Board:
             time.sleep(step)
 
     # ---- network API (home network, HTTPS) ----
+    def key(self):
+        """The display's key (changes and snapshots need it since v1.12.0): the test console's "key" command. Older
+        firmware has no key and no command: ''. Saved in tools/harness/.display_key (git-ignored) for snapshot.py."""
+        if self._key is None:
+            if self.helper_status() != 'logging':      # no console without the helper's log window (yet)
+                return ''
+            try:
+                self._key = self.cmd('key', r'test: key ([0-9a-f]{16})', timeout=5).group(1)
+                open(p('tools/harness/.display_key'), 'w').write(self._key)
+            except Fail:
+                self._key = ''
+        return self._key
+
+    def headers(self, extra=None):
+        h = dict(extra or {})
+        if self.key():
+            h['X-Key'] = self.key()
+        return h
+
     def api(self, path, data=None, timeout=10):
         req = urllib.request.Request(f'https://{self.ip}{path}', method='POST' if data is not None else 'GET',
                                      data=json.dumps(data).encode() if data is not None else None,
-                                     headers={'Content-Type': 'application/json'})
+                                     headers=self.headers({'Content-Type': 'application/json'}))
         with urllib.request.urlopen(req, context=self.ctx, timeout=timeout) as r:
             return json.loads(r.read().decode())
 
@@ -228,6 +250,7 @@ class Board:
             print(f'  {offer} (running {u.get("current")}): waiting for {want}', flush=True)
             time.sleep(60)
         print(f'  offered: installing {want}', flush=True)
+        self._key = None                               # the new firmware may have one
         at = len(self.log.lines())
         self.api('/api/update', {'action': 'install'})
         self.log.wait(r'ota: Update installed, restarting', 300, 'download and install', start=at)
@@ -236,8 +259,8 @@ class Board:
 
     def snap(self, screen, out):
         t0 = time.time()
-        with urllib.request.urlopen(f'https://{self.ip}/api/snapshot?screen={screen}', context=self.ctx,
-                                    timeout=30) as r:
+        req = urllib.request.Request(f'https://{self.ip}/api/snapshot?screen={screen}', headers=self.headers())
+        with urllib.request.urlopen(req, context=self.ctx, timeout=30) as r:
             bmp = r.read()
         ms = (time.time() - t0) * 1000
         open(out, 'wb').write(snapshot.bmp_to_png(bmp))
@@ -289,9 +312,9 @@ class PCWifi:
         ss = re.search(r'^\s*SSID\s*:\s*(.+)$', out, re.M)
         return (st.group(1) if st else '?', ss.group(1).strip() if ss else '')
 
-    def join_setup(self, timeout=40):
+    def join_setup(self, password, timeout=40):
         path = p('tools/harness/.setup_profile.xml')
-        open(path, 'w').write(self.PROFILE.format(ssid=SETUP_SSID, key=SETUP_PASS))
+        open(path, 'w').write(self.PROFILE.format(ssid=SETUP_SSID, key=password))
         self.netsh('add', 'profile', f'filename={path}', f'interface={self.iface}', 'user=current')
         os.remove(path)
         end = time.time() + timeout

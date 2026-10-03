@@ -1,6 +1,7 @@
 // Wi-Fi station with credentials in NVS, plus a SoftAP setup page to enter them
 #include "net.h"
 #include "svc.h"
+#include "ota.h"
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
@@ -20,6 +21,8 @@
 #include "esp_dpp.h"
 #include "esp_idf_version.h"
 #include "esp_attr.h"
+#include "esp_random.h"
+#include <ctype.h>
 
 static const char *TAG = "net";
 static EventGroupHandle_t ev;
@@ -69,6 +72,54 @@ static void resume_saved(void)                               // a setup mode end
 }
 
 static void ntp_synced(struct timeval *tv) { svc_ok(SVC_NTP, 0); }
+
+// Fixed-size driver fields: a 32-byte name fills ssid[32] with no NUL (strlcpy kept 31 bytes: a legal 32-character
+// network was saved but never joined); copy with the length, and read back with the length too
+static void put_field(uint8_t *dst, size_t cap, const char *src)
+{
+    size_t n = strlen(src);
+    if (n > cap) n = cap;
+    memset(dst, 0, cap);
+    memcpy(dst, src, n);
+}
+
+static void get_field(char *out, size_t n, const uint8_t *src, size_t cap)
+{
+    size_t k = strnlen((const char *)src, cap);
+    if (k >= n) k = n - 1;
+    memcpy(out, src, k);
+    out[k] = 0;
+}
+
+bool net_creds_valid(const char *ssid, const char *pass)
+{
+    size_t s = strlen(ssid), p = strlen(pass);
+    if (s < 1 || s > NET_SSID_MAX) return false;
+    if (p == 0 || (p >= 8 && p <= 63)) return true;
+    if (p != 64) return false;
+    for (size_t i = 0; i < p; i++) if (!isxdigit((unsigned char)pass[i])) return false;
+    return true;                                             // 64 hex digits: the key itself
+}
+
+/* The setup network's password, per display: 8 letters and digits without look-alikes (0/o, 1/l/i), easy to type
+ * from the screen. A fixed password printed in the README let anyone nearby join it during a router outage. */
+static char ap_pass[9];
+
+const char *net_setup_ap_pass(void)
+{
+    if (ap_pass[0]) return ap_pass;
+    nvs_handle_t h;
+    size_t n = sizeof(ap_pass);
+    bool open = nvs_open("setup", NVS_READWRITE, &h) == ESP_OK;
+    if (open && nvs_get_str(h, "pass", ap_pass, &n) == ESP_OK && strlen(ap_pass) == 8) { nvs_close(h); return ap_pass; }
+    static const char abc[] = "abcdefghjkmnpqrstuvwxyz23456789";
+    for (int i = 0; i < 8; i++) ap_pass[i] = abc[esp_random() % (sizeof(abc) - 1)];
+    ap_pass[8] = 0;
+    bool saved = open && nvs_set_str(h, "pass", ap_pass) == ESP_OK && nvs_commit(h) == ESP_OK;
+    if (open) nvs_close(h);
+    ESP_LOGI(TAG, "New setup network password%s", saved ? "" : " (not saved)");
+    return ap_pass;
+}
 
 static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data)
 {
@@ -140,17 +191,20 @@ void net_clear_creds(void)
 #define TEST_SSID "Weather-Test-Unreachable"
 #define TEST_MAGIC 0x0FF11E55u
 static RTC_NOINIT_ATTR uint32_t test_offline_boot;
+#define TEST_SHORT 0x5407u                      // with TEST_MAGIC in the high half: also a short automatic setup
+static bool short_setup;
+bool net_test_short_setup(void) { return short_setup; }
 
 static void sta_config(const char *ssid, const char *pass)
 {
     wifi_config_t wc = {0};
-    strlcpy((char *)wc.sta.ssid, ssid, sizeof(wc.sta.ssid));
-    strlcpy((char *)wc.sta.password, pass, sizeof(wc.sta.password));
+    put_field(wc.sta.ssid, sizeof(wc.sta.ssid), ssid);
+    put_field(wc.sta.password, sizeof(wc.sta.password), pass);
     wc.sta.threshold.authmode = pass[0] ? WIFI_AUTH_WPA_PSK : WIFI_AUTH_OPEN;
     esp_wifi_set_config(WIFI_IF_STA, &wc);
 }
 
-void net_test_offline_next_boot(void) { test_offline_boot = TEST_MAGIC; }
+void net_test_offline_next_boot(bool short_setup) { test_offline_boot = short_setup ? TEST_MAGIC ^ TEST_SHORT : TEST_MAGIC; }
 
 void net_test_offline(void)
 {
@@ -179,23 +233,26 @@ void net_test_info(char *out, size_t n)
     esp_wifi_get_config(WIFI_IF_STA, &wc);
     uint8_t ch = 0; wifi_second_chan_t sc;
     esp_wifi_get_channel(&ch, &sc);
-    snprintf(out, n, "connected=%d sta_ssid=%s portal=%d ap=%d ap_clients=%d dpp=%d retries=%d channel=%u",
-             net_is_connected(), (char *)wc.sta.ssid, portal_mode, ap_active, net_ap_clients(), dpp_active,
-             retries, ch);
+    char ssid[NET_SSID_MAX + 1];
+    get_field(ssid, sizeof(ssid), wc.sta.ssid, sizeof(wc.sta.ssid));
+    snprintf(out, n, "connected=%d sta_ssid=%s portal=%d ap=%d ap_clients=%d dpp=%d retries=%d channel=%u ap_pass=%s",
+             net_is_connected(), ssid, portal_mode, ap_active, net_ap_clients(), dpp_active, retries, ch,
+             net_setup_ap_pass());
 }
 
 void net_begin(const char *ssid, const char *pass)
 {
     if (!sta_netif) sta_netif = esp_netif_create_default_wifi_sta();
-    if (test_offline_boot == TEST_MAGIC) {        // one boot only
+    if (test_offline_boot == TEST_MAGIC || test_offline_boot == (TEST_MAGIC ^ TEST_SHORT)) {   // one boot only
+        short_setup = test_offline_boot != TEST_MAGIC;
         test_offline_boot = 0;
         ESP_LOGW(TAG, "TEST: this boot uses \"" TEST_SSID "\" instead of \"%s\"", ssid);
         ssid = TEST_SSID;
         pass = "unreachable";
     }
     wifi_config_t wc = {0};
-    strlcpy((char *)wc.sta.ssid, ssid, sizeof(wc.sta.ssid));
-    strlcpy((char *)wc.sta.password, pass, sizeof(wc.sta.password));
+    put_field(wc.sta.ssid, sizeof(wc.sta.ssid), ssid);
+    put_field(wc.sta.password, sizeof(wc.sta.password), pass);
     wc.sta.threshold.authmode = pass[0] ? WIFI_AUTH_WPA_PSK : WIFI_AUTH_OPEN;
     esp_wifi_set_mode(WIFI_MODE_STA);
     esp_wifi_set_config(WIFI_IF_STA, &wc);
@@ -225,20 +282,19 @@ bool net_is_connected(void) { return ev && (xEventGroupGetBits(ev) & BIT_GOT_IP)
 bool net_save_creds(const char *ssid, const char *pass)
 {
     nvs_handle_t h;
-    if (!ssid[0] || nvs_open("wifi", NVS_READWRITE, &h) != ESP_OK) return false;
-    nvs_set_str(h, "ssid", ssid);
-    nvs_set_str(h, "pass", pass);
-    nvs_commit(h);
+    if (!net_creds_valid(ssid, pass) || nvs_open("wifi", NVS_READWRITE, &h) != ESP_OK) return false;
+    bool ok = nvs_set_str(h, "ssid", ssid) == ESP_OK && nvs_set_str(h, "pass", pass) == ESP_OK && nvs_commit(h) == ESP_OK;
     nvs_close(h);
-    ESP_LOGI(TAG, "Saved credentials for \"%s\"", ssid);
-    return true;
+    if (ok) ESP_LOGI(TAG, "Saved credentials for \"%s\"", ssid);
+    else ESP_LOGE(TAG, "Credentials for \"%s\" NOT saved (NVS)", ssid);
+    return ok;
 }
 
 bool net_get_ssid(char *out, size_t n)
 {
     wifi_config_t wc;
     if (esp_wifi_get_config(WIFI_IF_STA, &wc) != ESP_OK) return false;
-    strlcpy(out, (char *)wc.sta.ssid, n);
+    get_field(out, n, wc.sta.ssid, sizeof(wc.sta.ssid));
     return out[0] != 0;
 }
 
@@ -261,11 +317,12 @@ static dns_server_handle_t dns;
 static void ap_up(void)
 {
     if (!ap_netif) ap_netif = esp_netif_create_default_wifi_ap();
+    // WPA2 + WPA3 (SAE): a phone that can uses WPA3, whose handshake can't be cracked offline from a capture
     wifi_config_t ap = {
-        .ap = { .ssid = SETUP_AP_SSID, .ssid_len = sizeof(SETUP_AP_SSID) - 1,
-                .password = SETUP_AP_PASS, .max_connection = 3,
-                .authmode = WIFI_AUTH_WPA2_PSK, .channel = 6 },
+        .ap = { .ssid = SETUP_AP_SSID, .ssid_len = sizeof(SETUP_AP_SSID) - 1, .max_connection = 3,
+                .authmode = WIFI_AUTH_WPA2_WPA3_PSK, .channel = 6, .pmf_cfg = { .capable = true } },
     };
+    put_field(ap.ap.password, sizeof(ap.ap.password), net_setup_ap_pass());
     esp_wifi_set_mode(WIFI_MODE_APSTA);   // AP follows the station's channel when connected
     esp_wifi_set_config(WIFI_IF_AP, &ap);
 
@@ -289,7 +346,7 @@ void net_start_portal(void)
     if (!sta_netif) sta_netif = esp_netif_create_default_wifi_sta();
     ap_up();
     esp_wifi_start();
-    ESP_LOGI(TAG, "Setup portal up: join \"%s\" (password %s)", SETUP_AP_SSID, SETUP_AP_PASS);
+    ESP_LOGI(TAG, "Setup portal up: join \"%s\" (password on the screen)", SETUP_AP_SSID);
 }
 
 void net_setup_ap_start(void)
@@ -367,7 +424,7 @@ static net_dpp_uri_cb_t dpp_uri_cb;
 static net_dpp_done_cb_t dpp_done_cb;
 static bool dpp_inited;
 
-static void restart_cb(void *arg) { esp_restart(); }
+static void restart_cb(void *arg) { ota_restart_when_safe(); }   // (not in an update's first minute)
 
 static void dpp_event(esp_supp_dpp_event_t evt, void *data)
 {
@@ -382,10 +439,17 @@ static void dpp_event(esp_supp_dpp_event_t evt, void *data)
         }
         break;
     case ESP_SUPP_DPP_CFG_RECVD: {
+        // The driver's fields aren't NUL-terminated when full: a 32-byte name ran into the password (in the log and
+        // in NVS)
         wifi_config_t *wc = data;
-        ESP_LOGI(TAG, "Easy Connect: received \"%s\" from the phone", (char *)wc->sta.ssid);
-        bool ok = net_save_creds((char *)wc->sta.ssid, (char *)wc->sta.password);
-        if (dpp_done_cb) dpp_done_cb(ok, (char *)wc->sta.ssid);
+        char ssid[NET_SSID_MAX + 1], pass[NET_PASS_MAX + 1];
+        get_field(ssid, sizeof(ssid), wc->sta.ssid, sizeof(wc->sta.ssid));
+        get_field(pass, sizeof(pass), wc->sta.password, sizeof(wc->sta.password));
+        ESP_LOGI(TAG, "Easy Connect: received \"%s\" from the phone", ssid);
+        bool ok = net_save_creds(ssid, pass);
+        if (dpp_done_cb) dpp_done_cb(ok, ssid);
+        // This runs on the system event task, which restarts 2.5 s later: the only chance to see its stack use
+        ESP_LOGI(TAG, "Easy Connect: event task stack %u B spare", (unsigned)uxTaskGetStackHighWaterMark(NULL));
         if (ok) {                                            // same as the setup page: restart and join
             static esp_timer_handle_t t;
             const esp_timer_create_args_t ta = { .callback = restart_cb, .name = "dpp_restart" };

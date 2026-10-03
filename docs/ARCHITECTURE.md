@@ -21,17 +21,22 @@ The panel's init sequence and pin map come from Waveshare's BSP
 
 | Task | Core / priority | Job |
 |---|---|---|
-| `main` (app_main) | 0 / 1 | Boot flow, then weather loop: fetch every 10 min; woken early by a location change |
+| `main` (app_main) | 0 / 1, 10 KB stack | Boot flow, then weather loop: fetch every 10 min; woken early by a location change. Also draws the alert region map (TLS tile downloads + inflate when the basemap isn't cached): `app: alert map … stack N B spare` |
 | `lvgl` | 1 / 4 | `lv_timer_handler()` loop under a recursive mutex (`display_lock()`) |
 | `radar` | 0 / 3, 10 KB stack | Basemap, latest radar frame, history frames; sleeps unless the radar screen is visible |
 | `presence` | 0 / 2 | Reads 100 ms of audio, computes the level, runs the dim/off state machine, fades brightness |
 | `diag` | 0 / 1 | Every 60 s logs heap, frame timing, CPU and stack per task |
 | `bench` | 1 / 4, one-shot, 10 KB stack (6 KB overflowed) | Times full-screen renders of each screen without showing them (UI blocked ~1.5 s); only on request (test console `bench`, the harness's `perf`). Until v1.11.0 it also ran by itself 45 s after boot and swallowed the swipes made meanwhile (`BENCH_AT_S` in `diag.c`, now 0) |
 | `svc_probe` | any / 2, one-shot, 8 KB stack | Status page opened: one small request to each service idle for 5 min, then exits |
-| httpd (HTTPS :443, HTTP :80) | – | Settings page + JSON API. Stacks 7 KB (TLS handshake peaks ~3.3 KB) / 4 KB |
+| httpd (HTTPS :443, HTTP :80) | – | Settings page + JSON API. Stacks 10 KB (TLS handshake ~3.3 KB, and a snapshot renders a whole screen here: 992 B spare was seen with 7 KB; `web: snapshot … stack N B spare`) / 6 KB (portal page: 1.1 KB spare with 4 KB) |
+| `ota` | 0 / 2, 8 KB stack | Update checks and the install (TLS + flash writes); `ota: Update installed, restarting (… B of stack spare)` |
+| `sound` | 0 / 3, 4 KB stack | Renders a warning sound into PSRAM and streams it to the speaker |
+| `testcon` | 0 / 3, 4 KB stack | USB test console (568 B spare with 3 KB, 664 B with 3.5 KB); heavy commands start their own task |
+| `sys_evt` (ESP-IDF) | 0 / 20, 3.5 KB stack | Wi-Fi / IP events, and Easy Connect's success path (log, NVS write, display labels): 2.3 KB left ~600 B; `net: Easy Connect: event task stack N B spare` |
 
-Main task stack is 6 KB. Stack sizes come from the measured high-water marks in `diag: tasks` lines; re-check
-them there after adding work to a task.
+Stack sizes come from the measured high-water marks in `diag: tasks` lines; re-check them there after adding work
+to a task. Paths that end in a restart (an update's install, Easy Connect's success) or run rarely (a snapshot, the
+alert map) log their own high-water mark, because the 60 s `diag` report never sees them.
 
 **Rule:** any LVGL call from outside the `lvgl` task must be wrapped in `display_lock(-1)` / `display_unlock()`.
 Keep lock holds short: `diag: display` reports the longest hold and which task did it (the radar holds it up to
@@ -309,11 +314,18 @@ order, and ~11 ms on the bus.
   "vX|Month D, YYYY" header lines and one line per change, in PSRAM; `notes_id` in the status changes when it does.
   The update screen (`update_notes()`) builds an accent header and a bulleted label per release in its scrolling
   column; `GET /api/update` adds `notes` while an update is available. Missing notes don't block an update.
-- **Task** `ota` (core 0, prio 2): first check 60 s after boot, then every 6 h, or on request. `ota_install()` →
-  `esp_https_ota` (begin / perform / finish), progress to the listener, project name must match, restart 2.5 s later.
-- **Rollback**: `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE`. A new image boots `PENDING_VERIFY`; after 60 s running the
-  task calls `esp_ota_mark_app_valid_cancel_rollback()`. A reset before that makes the bootloader return to the
-  previous slot. (Needs the new bootloader: one USB flash.) `GET /api/update` reports `pending_verify` and
+- **Task** `ota` (core 0, prio 2): first check 60 s after boot, then every 6 h, or on request, and whenever the
+  station comes back online (a check missed during an outage waited up to 6 h). `ota_install()` → `esp_https_ota`
+  (begin / perform / finish), progress to the listener; the image's project name **and version** must be the ones
+  offered; restart 2.5 s later. A failed download goes back to "available" with the reason (Install stays) and the
+  channel is checked again 2 min later (it hid the pill and Install until the next check, up to 6 h).
+- **Rollback**: `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE`. A new image boots `PENDING_VERIFY`; once it has run 60 s
+  **connected to Wi-Fi** (10 min without: a home without Wi-Fi keeps a working display) the task calls
+  `esp_ota_mark_app_valid_cancel_rollback()`. Until v1.12.0 60 s were enough, counted before Wi-Fi had even started:
+  an image whose network never worked would have been kept. A reset before that makes the bootloader return to the
+  previous slot; that one finds the undone image (`esp_ota_get_last_invalid_partition()`) and says so once: log,
+  update screen, `rolled_back` in `GET /api/update` (NVS `ota/rb_seen` remembers it was shown). Restarts asked for
+  in that window (Settings → Restart, Save Wi-Fi, Easy Connect) wait for the confirmation (`ota_restart_when_safe()`). (Needs the new bootloader: one USB flash.) `GET /api/update` reports `pending_verify` and
   `uptime_s` (since v1.10.0-rc.3) so tools don't restart a board during those 60 s: the test harness did once and
   tested the rolled-back firmware.
 - **UI**: `ui_ota()` from the OTA task: pill at the bottom of the weather screen (tap region y > 408), `scr_update`
@@ -486,7 +498,10 @@ order, and ~11 ms on the bus.
 - **Boot** (`main.c`): no saved network → `portal()` (AP only, until credentials are saved and the board
   restarts). Saved network → `net_begin()` + `web_start()` right away, then `net_wait(30000)`. If that fails,
   `offline_setup()` loops: open the Wi-Fi setup screen; when it closes (a tap, or 5 idle minutes), show
-  *Connecting to …* and wait 30 s for the saved network; still nothing → setup again. New credentials restart the board.
+  *Connecting to …* and wait 30 s for the saved network; still nothing → setup again. New credentials restart the
+  board. For 15 minutes only (`AUTO_SETUP_S`, the owner's choice): after that the setup network no longer opens by
+  itself and the screen says *Still trying* (a long-press opens setup). `wifi offline-boot-short` on the test console
+  makes it 60 s for one boot (harness `setup_stops_opening_by_itself`).
 - **Reconnects pause while a setup mode is on** (`net.c`, `setup_on()` = first-time portal, setup AP or Easy
   Connect): each disconnect schedules `esp_wifi_connect()` on an `esp_timer` (1 s for the first 8 tries, then 3 s,
   then 30 s). `ap_up()` and `net_dpp_start()` stop the timer and cancel an attempt in progress (`pause_saved()`);
@@ -519,10 +534,17 @@ order, and ~11 ms on the bus.
   `wifi_config_t`: saved with `net_save_creds()`, restart after 2.5 s. `ESP_SUPP_DPP_FAIL` re-listens; its data is
   the error code on IDF 5.4 but a `wifi_event_dpp_failed_t *` on 5.5 (`failure_reason`). Leaving page 2
   deinitialises DPP and resumes reconnects.
-- **Settings overlay state machine** (`ui.c`): 0 = hidden, 1 = settings QR (`https://<ip>`), 2 = Wi-Fi setup.
+- **Settings overlay state machine** (`ui.c`): 0 = hidden, 1 = settings QR (`https://<ip>/#k=<key>`, see Settings /
+  web), 2 = Wi-Fi setup.
   The Settings screen's *More on your phone* goes to 1; a long-press on the overlay opens the Wi-Fi setup screen.
   Gestures are ignored while the overlay is open.
 - **Access point:** `ap_up()` switches to APSTA, so the station connection stays up and the AP follows its channel.
+  WPA2/WPA3 mixed (`WIFI_AUTH_WPA2_WPA3_PSK`, PMF capable) with this display's own password (`net_setup_ap_pass()`:
+  8 letters and digits without look-alikes, made at the first start, NVS `setup/pass`), shown on the setup screen and
+  in its QR code. Until v1.12.0 every display used the published `meteo1234`. Names and passwords go into the driver's
+  fixed fields with their length (`put_field()` / `get_field()`): a 32-byte name has no NUL there, and `strlcpy` kept
+  31 bytes (a legal 32-character network was saved but never joined) while Easy Connect's handler read past it into
+  the password. `net_creds_valid()`: a 1–32 byte name, a password empty, 8–63 characters or 64 hex digits.
   It sets DHCP option 114 (captive-portal URI `http://192.168.4.1/`) and starts the DNS server
   (`components/dns_server`), which answers every name with the AP's IP. The DNS server is started once and **never
   stopped**: `stop_dns_server()` deletes its task without closing the socket, so port 53 stayed taken and every later
@@ -532,7 +554,8 @@ order, and ~11 ms on the bus.
   - On the setup AP it *is* the portal. `/` serves the page over plain HTTP, because phone sign-in browsers reject the
     self-signed certificate. `/api/*` works, and every other URL (OS connectivity checks such as `/generate_204` or
     `/hotspot-detect.html`) gets a 302 to `http://192.168.4.1/` with a small HTML body, which iOS requires.
-  - On the home network, everything redirects to HTTPS.
+  - On the home network, everything redirects to HTTPS: to the device's own address, never the Host header. The API
+    answers only setup-network clients here (GET → 302 to the HTTPS page, POST → 403; see Settings / web).
 - On the plain-HTTP page the GPS button can't work (browsers only allow geolocation on secure pages). The page shows a
   link to the HTTPS version instead, and puts the Wi-Fi card first when opened on 192.168.4.1.
 
@@ -599,9 +622,22 @@ order, and ~11 ms on the bus.
 
 ## Settings / web (`web.c`, `config.c`)
 
-- HTTPS server (`esp_https_server`, per-device self-signed EC P-256 cert from `tlscert.c`) on 443. The plain HTTP server on 80 sends
-  everything to HTTPS with a 302 redirect. The HTTPS server uses control port 32769 and the HTTP one the default
-  32768; they must not share a port.
+- HTTPS server (`esp_https_server`, per-device self-signed EC P-256 cert from `tlscert.c`) on 443. The plain HTTP
+  server on 80 is the captive portal on the setup network and redirects to HTTPS on the home network. The HTTPS
+  server uses control port 32769 and the HTTP one the default 32768; they must not share a port.
+- **Who may change things** (`guarded()` wraps every API route on both servers, one table `api[]`):
+  - the Host header must be the device's own address (192.168.4.1 on the setup network): another name is a
+    DNS-rebinding attempt, 421;
+  - on the home network the API is HTTPS only: on port 80, GET → 302 to `https://<own ip>/`, POST → 403;
+  - a change (every POST) must be `Content-Type: application/json` (415) and carry `X-Key` = the device's key (401),
+    as must `GET /api/snapshot`. The key: 16 hex digits from `esp_fill_random()` at the first start, NVS
+    `web/key`, compared in constant time. It travels in the settings QR code as `https://<ip>/#k=<key>` (a fragment:
+    never sent to a server, not in Referer); the page stores it in `localStorage`, strips it from the address bar and
+    adds the header to every `/api/` request (a `fetch` wrapper); a 401 shows how to get it. A custom header also
+    forces a CORS preflight, which this server never answers: another site's page can't send one;
+  - on the setup network no key is needed (its password is on the screen), but `GET /api/config` leaves out the
+    coordinates and the saved network's name and `/api/snapshot` answers 403.
+  The test console's `key` prints it (USB = someone at the display); the harness and `tools/snapshot.py` use it.
 - API:
   - `GET /api/config`
   - `GET /api/scan`: Wi-Fi scan, returning `[{ssid, rssi, secure}]` strongest first, one entry per name, without
@@ -611,9 +647,14 @@ order, and ~11 ms on the bus.
   - `POST /api/location {name, lat, lon, index}`: `index` = which place (count = add one); without it, the place
     shown. `GET /api/config` returns `places [{name, lat, lon}]`, `active`, `max_places`.
   - `POST /api/places {select: i}` shows place i on the display; `{delete: i}` removes it (not the last one).
-  - `POST /api/units {temp:"c"|"f", wind:"kmh"|"mph"|"ms", clock:24|12}` (any subset); `GET /api/config` returns
-    `units` in the same form. Both servers; `max_uri_handlers` is 14 (12 were all used).
-  - `POST /api/wifi {ssid, pass}`: restarts the device.
+  - `POST /api/units {temp:"c"|"f", wind:"kmh"|"mph"|"ms", clock:24|12, lang:"en"|"fr"|"iu"}` (any subset);
+    `GET /api/config` returns `units` in the same form.
+  - `POST /api/wifi {ssid, pass}`: 400 unless `net_creds_valid()`; restarts the device (after an update's
+    confirmation if one is pending).
+  - `GET|POST /api/presence`, `POST /api/calibrate {seconds}`, `GET|POST /api/sound`, `GET|POST /api/update
+    {channel, action: check|install}` (`pending_verify`, `uptime_s`, `rolled_back`, `notes`).
+  - A setting that NVS refused answers 500 "not saved" (`nvs_check()`); the page shows *Not saved (500)*.
+  - Routes: 14 on each server (`API_N`), plus `/` (and the port-80 wildcard); `max_uri_handlers` = `API_N + 2`.
   - `GET /api/snapshot?screen=weather|extras|status|radar|update|alert|hourly0..hourly6|current` (HTTPS only): the
     screen rendered
     off-display (`ui_snapshot()` → `lv_snapshot_take`, RGB565 in PSRAM, needs `CONFIG_LV_USE_SNAPSHOT`), streamed as
@@ -627,7 +668,11 @@ order, and ~11 ms on the bus.
 - **Map:** Leaflet 1.9.4 with OpenStreetMap tiles, loaded from unpkg the first time the editor opens, pinned and
   integrity-checked (SRI hashes in the page; `tools/webtest` checks them against the npm package). The phone needs
   internet for it, as for the city search; without it the editor says so and opens the coordinate fields.
-- Location is stored in NVS namespace `loc`. `config_local_time()` uses Open-Meteo's `utc_offset_seconds`, which
+- Places: the first in NVS namespace `loc` (`name`, `lat`, `lon` in micro-degrees), the others in `places` as typed
+  keys `pNn`, `pNa`, `pNo` (N = 1..3) with the count `n` (written last) and the place shown `act`. Until v1.12.0
+  places 2–4 were raw `location_t` blobs `p1..p3`, accepted only if their size matched: the first field added to
+  `location_t` would have dropped them all. The blobs are read once and rewritten as typed keys. Names are cut to 47
+  bytes without splitting a UTF-8 character (`utf8.h`); the page refuses longer ones (15 syllabics). `config_local_time()` uses Open-Meteo's `utc_offset_seconds`, which
   handles any time zone and DST; before the first fetch it falls back to the `EST5EDT` TZ rule.
 - **Units** (NVS namespace `units`: `temp`, `wind`, `h12`; default °C, km/h, 24 h). Data is always fetched in metric;
   every screen formats through `config.c`: `config_temp()` (rounded °C or °F), `config_fmt_wind()`,
@@ -726,7 +771,6 @@ allocates internal DMA bounce buffers, and that failed mid-response, which trunc
 - GeoMet drops idle keep-alive connections. `GetCapabilities` retries up to 3× and frames retry once, reconnecting each time.
 - The frame count is fixed at 15 and the radar layer is rain rate only (`RADAR_1KM_RRAI`). `Radar_1km_SfcPrecipType`
   would colour snow and rain separately.
-- One TLS key is shared by all builds (see README, Security notes).
 - ~~Flash writes stalled drags~~ (fixed after v1.10.1-rc.2): a map saved to flash (`cache_save()`) pauses both
   cores in bursts for ~3 s, and a drag then waited ~2 s for its first frame and crawled at 3–9 fps (the harness's
   hourly swipe failed once). Two causes. (1) Every return to the first place wrote flash twice: the other place's

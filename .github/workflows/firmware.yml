@@ -8,13 +8,19 @@
 #                                 editing web/flash/index.html).
 #
 # The flasher site is always assembled from the files attached to the releases, so people install
-# exactly what was released. Beta is offered only while the newest pre-release is newer than the
-# newest stable release.
+# exactly what was released. Beta is offered only while the highest pre-release version is above the
+# highest stable one (compared as the display does, not by publish date).
+#
+# Every push also runs the board-free tests (the settings page in Playwright against the mock display, the host unit
+# tests of the firmware's C code); a release needs them to pass. Actions are pinned to commit SHAs (the comment says
+# which tag) and Dependabot proposes updates (.github/dependabot.yml); esptool is pinned too.
 #
 # One-time setup on GitHub:
 #  - Settings -> Pages -> Build and deployment -> Source = "GitHub Actions"
 #  - Settings -> Environments -> github-pages -> Deployment branches and tags -> add a Tag rule "v*"
 #    (by default only main may deploy to Pages)
+#  - Settings -> Rules -> Rulesets: a tag ruleset on "v*" that only the owner may create, update or delete (a tag
+#    is a release: the displays install what it builds)
 name: Firmware
 
 on:
@@ -30,11 +36,11 @@ permissions:
 jobs:
   build:
     if: github.event_name != 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04             # (ubuntu-latest moves to 26.04 in October 2026)
     outputs:
       version: ${{ steps.ver.outputs.version }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:
           fetch-depth: 0            # tags, for git describe
 
@@ -47,14 +53,14 @@ jobs:
           echo "Firmware version: $v"
 
       - name: Build (ESP-IDF v5.5.4, same as the PC test builds)
-        uses: espressif/esp-idf-ci-action@v1
+        uses: espressif/esp-idf-ci-action@9d38657f3d789ca759b2b37aaf5ceffbc42c4f0d  # v1
         with:
           esp_idf_version: v5.5.4
           target: esp32s3
           path: "."
           command: idf.py build
 
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7
         with:
           python-version: "3.12"
 
@@ -64,27 +70,62 @@ jobs:
           v="${{ steps.ver.outputs.version }}"
           python3 tools/make_flasher_site.py dist --build build --out dist --version "$v"
           # Full image for a first install with esptool (flash at 0x0). Overwrites saved settings.
-          pip install --quiet "esptool>=4.8,<5"
+          pip install --quiet "esptool==4.8.1"
           (cd build && python3 -m esptool --chip esp32s3 merge_bin -o "../dist/weather_amoled-$v-full.bin" @flash_args)
           ls -l dist
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
         with:
           name: firmware-${{ steps.ver.outputs.version }}
           path: dist/
 
+  webtest:
+    # The settings page (main/web/index.html) in Playwright against the mock display: no board needed
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38  # v6
+        with:
+          node-version: "22"
+      - name: Playwright tests
+        working-directory: tools/webtest
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+          npm test
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
+        if: always()
+        with:
+          name: webtest-shots
+          path: tools/webtest/shots/
+
+  host-tests:
+    # Firmware C files built with gcc against shims of the ESP-IDF headers (tests/host), AddressSanitizer on
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+      - name: cJSON (the version ESP-IDF v5.5.4 bundles)
+        run: |
+          mkdir -p cjson
+          curl -fsSL -o cjson/cJSON.c https://raw.githubusercontent.com/DaveGamble/cJSON/v1.7.19/cJSON.c
+          curl -fsSL -o cjson/cJSON.h https://raw.githubusercontent.com/DaveGamble/cJSON/v1.7.19/cJSON.h
+      - name: Host tests
+        run: make -C tests/host CJSON="$PWD/cjson"
+      - name: Harness unit tests
+        run: python3 -m unittest discover -s tools/harness -p "test_*.py"
+
   release:
-    needs: build
+    needs: [build, webtest, host-tests]
     if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8
         with:
           name: firmware-${{ needs.build.outputs.version }}
           path: dist
-      - uses: softprops/action-gh-release@v3
+      - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64  # v3
         with:
           files: dist/*
           prerelease: ${{ contains(github.ref_name, '-') }}
@@ -102,7 +143,7 @@ jobs:
     needs: release
     # after every release, or by hand from main
     if: always() && (needs.release.result == 'success' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       pages: write
@@ -114,7 +155,7 @@ jobs:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
 
       - name: Download the latest stable release and any newer pre-release
         env:
@@ -123,10 +164,17 @@ jobs:
           gh release list --exclude-drafts --limit 100 --json tagName,isPrerelease,publishedAt > releases.json
           read -r stable beta < <(python3 - <<'EOF'
           import json
-          rs = sorted(json.load(open("releases.json")), key=lambda r: r["publishedAt"], reverse=True)
+          import re
+          def ver(tag):                       # as ota.c: X.Y.Z, then rc < release; rc.N by N
+              m = re.match(r"v(\d+)\.(\d+)\.(\d+)(?:-rc\.(\d+))?$", tag)
+              if not m: return None
+              x, y, z, rc = m.groups()
+              return (int(x), int(y), int(z), 0 if rc else 1, int(rc or 0))
+          rs = [r for r in json.load(open("releases.json")) if ver(r["tagName"])]
+          rs.sort(key=lambda r: ver(r["tagName"]), reverse=True)
           stable = next((r for r in rs if not r["isPrerelease"]), None)
           beta = next((r for r in rs if r["isPrerelease"]), None)
-          if beta and stable and beta["publishedAt"] < stable["publishedAt"]:
+          if beta and stable and ver(beta["tagName"]) < ver(stable["tagName"]):
               beta = None                     # an older release candidate: nothing to offer
           print(stable["tagName"] if stable else "-", beta["tagName"] if beta else "-")
           EOF
@@ -141,9 +189,9 @@ jobs:
           fi
           python3 tools/make_flasher_site.py site $args --out _site
 
-      - uses: actions/upload-pages-artifact@v5
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9  # v5
         with:
           path: _site
 
       - id: deploy
-        uses: actions/deploy-pages@v5
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346  # v5

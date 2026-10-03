@@ -141,6 +141,12 @@ static void cmd_heap(void)
              esp_timer_get_time() / 1000000, (unsigned long)diag_failed_allocs(), (unsigned long)lvgl_mem_fallbacks());
 }
 
+static int ms_arg(const char *s)                          // 0..10000 ms
+{
+    int v = atoi(s);
+    return v < 0 ? 0 : v > 10000 ? 10000 : v;
+}
+
 static void run(char *line)
 {
     char *argv[8];
@@ -168,14 +174,14 @@ static void run(char *line)
         press(atoi(argv[1]), atoi(argv[2]), 120);   // a real tap is ~80-150 ms; 60 ms fitted inside one full redraw
         ESP_LOGI(TAG, "ok tap");
     } else if (!strcmp(c, "press") && argc >= 3) {           // long-press: press X Y [ms, default 1200]
-        press(atoi(argv[1]), atoi(argv[2]), argc > 3 ? atoi(argv[3]) : 1200);
+        press(atoi(argv[1]), atoi(argv[2]), argc > 3 ? ms_arg(argv[3]) : 1200);
         ESP_LOGI(TAG, "ok press");
     } else if (!strcmp(c, "swipe") && argc == 2) {
         swipe(argv[1]);
         ESP_LOGI(TAG, "ok swipe %s", argv[1]);
     } else if (!strcmp(c, "drag") && argc >= 5) {            // drag X1 Y1 X2 Y2 [ms]
         int x1 = atoi(argv[3]), y1 = atoi(argv[4]);
-        finger_path(atoi(argv[1]), atoi(argv[2]), x1, y1, argc > 5 ? atoi(argv[5]) : 400);
+        finger_path(atoi(argv[1]), atoi(argv[2]), x1, y1, argc > 5 ? ms_arg(argv[5]) : 400);
         finger_up(x1, y1);
         ESP_LOGI(TAG, "ok drag");
     } else if (!strcmp(c, "wake")) {
@@ -190,12 +196,12 @@ static void run(char *line)
         char info[200];
         if (!strcmp(argv[1], "offline")) net_test_offline();
         else if (!strcmp(argv[1], "online")) net_test_online();
-        else if (!strcmp(argv[1], "offline-boot")) {
-            net_test_offline_next_boot();
+        else if (!strcmp(argv[1], "offline-boot") || !strcmp(argv[1], "offline-boot-short")) {
+            net_test_offline_next_boot(argv[1][12] != 0);
             ESP_LOGI(TAG, "ok restarting; the next boot can't reach the saved network");
             vTaskDelay(pdMS_TO_TICKS(200));
             esp_restart();
-        } else if (strcmp(argv[1], "status")) { ESP_LOGW(TAG, "error wifi: status, offline, offline-boot, online"); return; }
+        } else if (strcmp(argv[1], "status")) { ESP_LOGW(TAG, "error wifi: status, offline, offline-boot[-short], online"); return; }
         net_test_info(info, sizeof(info));
         ESP_LOGI(TAG, "wifi %s", info);
     } else if (!strcmp(c, "portal") && argc == 2 && !strcmp(argv[1], "windows-quiet")) {
@@ -230,6 +236,8 @@ static void run(char *line)
         snprintf(tasks, sizeof(tasks), "lvgl_task_state=%d", (int)ts);
         ESP_LOGI(TAG, "where slide_phase=%d raw_phase=%d raw_band=%d lvgl_inflight=%d %s", slide_phase, raw_phase,
                  raw_band, display_lvgl_inflight(), tasks);
+    } else if (!strcmp(c, "key")) {                       // the settings key (web.c): USB = someone at the display
+        ESP_LOGI(TAG, "key %s", web_key());
     } else if (!strcmp(c, "heap")) {
         cmd_heap();
     } else if (!strcmp(c, "bench")) {
@@ -241,7 +249,7 @@ static void run(char *line)
         esp_restart();
     } else if (!strcmp(c, "help")) {
         ESP_LOGI(TAG, "commands: ping, screen, tap X Y, press X Y [ms], swipe left|right|up|down, "
-                      "drag X1 Y1 X2 Y2 [ms], wake, presence, wifi status|offline|offline-boot|online, portal windows-quiet, "
+                      "drag X1 Y1 X2 Y2 [ms], wake, presence, key, wifi status|offline|offline-boot|online, portal windows-quiet, "
                       "fps [reset], page, pictest, where, memspeed, heap, bench, reboot");
     } else {
         ESP_LOGW(TAG, "error unknown command '%s' (help lists them)", c);
@@ -273,6 +281,6 @@ void testcon_start(void)
     if (usb_serial_jtag_driver_install(&cfg) != ESP_OK) { ESP_LOGW(TAG, "USB serial driver not installed"); return; }
     // Stack in internal RAM: commands read and write flash (saved network, Wi-Fi config), and a task with a PSRAM
     // stack can't run while flash is busy (tried: "wifi online" reset the board). 3 KB: check "testcon" in diag tasks.
-    xTaskCreatePinnedToCore(testcon_task, "testcon", 3584, NULL, 3, NULL, 0);   // 3 KB left only 568 B
+    xTaskCreatePinnedToCore(testcon_task, "testcon", 4096, NULL, 3, NULL, 0);   // 3 KB left 568 B, 3.5 KB 664 B
     ESP_LOGI(TAG, "console ready on USB (send 'help')");
 }

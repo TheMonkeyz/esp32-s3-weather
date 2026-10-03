@@ -13,7 +13,7 @@ typedef struct {
 
 void sound_start(void);                    // after presence_start() (it opens the shared I2S bus)
 void sound_get_config(sound_cfg_t *out);
-void sound_set_config(const sound_cfg_t *in);   // saved
+bool sound_set_config(const sound_cfg_t *in);   // saved; false if NVS refused (still applied)
 // A new alert of this colour ('r' red, 'o' orange, 'y' yellow, 'g' statement/grey) appeared: chime if the level
 // setting includes it and it isn't quiet hours (red always sounds).
 void sound_alert(char colour);

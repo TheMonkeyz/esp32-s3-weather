@@ -1,7 +1,11 @@
 // Over-the-air updates (see ota.h).
-// Safety: the bootloader has rollback enabled. A freshly installed image starts "pending verify"; if it doesn't
-// run for 60 s (crash, boot loop), the bootloader goes back to the previous one. The download is checked by
-// esp_https_ota (image header, SHA-256) and we also require the same project name before switching.
+// Safety: the bootloader has rollback enabled. A freshly installed image starts "pending verify"; it is confirmed
+// after 60 s *and* a Wi-Fi connection (else after 10 min: a home without Wi-Fi keeps a working display). Until
+// v1.12.0 any image that stayed up 60 s was confirmed, before Wi-Fi had even started: one whose network never worked
+// would have been kept. A restart before that (crash, boot loop, power cut) goes back to the previous image, and that
+// one tells the user once (rolled_back). The download is checked by esp_https_ota (image header, SHA-256: integrity,
+// not authenticity: the site is trusted through HTTPS); we also require the same project name and the version that
+// was offered before switching.
 #include "ota.h"
 #include <string.h>
 #include <stdio.h>
@@ -29,6 +33,8 @@
 static const char *TAG = "ota";
 #define CHECK_EVERY_S (6 * 3600)
 #define VALID_AFTER_S 60
+#define VALID_OFFLINE_S 600             // confirmed without Wi-Fi after this
+#define RETRY_FAILED_S 120              // a failed download: offered again, re-checked after this
 
 static ota_status_t st;
 static ota_listener_t listener;
@@ -37,7 +43,7 @@ static TaskHandle_t task;
 static char app_url[256];
 #define NOTES_MAX 3072
 static char *notes;                 // PSRAM, NOTES_MAX, under mux
-static volatile bool want_check, want_install;
+static volatile bool want_check, want_install, retry_check;
 
 static void publish(void)
 {
@@ -197,7 +203,7 @@ static void check(void)
     if (!cJSON_IsObject(c)) c = cJSON_GetObjectItem(ch, "stable");      // no beta right now: stable
     const char *ver = cJSON_GetStringValue(cJSON_GetObjectItem(c, "version"));
     const char *man = cJSON_GetStringValue(cJSON_GetObjectItem(c, "manifest"));
-    if (!ver || !man) { cJSON_Delete(ch); set_state(OTA_FAILED, "Unexpected channels.json"); return; }
+    if (!ver || !man) { cJSON_Delete(ch); set_state(OTA_FAILED, tr(T_OTA_BAD_SITE)); return; }
     xSemaphoreTake(mux, portMAX_DELAY);
     strlcpy(st.latest, ver, sizeof(st.latest));
     xSemaphoreGive(mux);
@@ -213,6 +219,7 @@ static void check(void)
     snprintf(url, sizeof(url), OTA_SITE "%s", man);
     cJSON_Delete(ch);
     cJSON *m = get_json(url, 8192);
+    if (!m) { set_state(OTA_FAILED, tr(T_OTA_NO_SITE)); return; }      // (was reported as "no app image")
     cJSON *parts = cJSON_GetObjectItem(cJSON_GetArrayItem(cJSON_GetObjectItem(m, "builds"), 0), "parts");
     const char *path = NULL;
     cJSON *p;
@@ -252,9 +259,13 @@ static void install(void)
     if (err != ESP_OK) { set_state(OTA_FAILED, tr(T_OTA_NO_START)); return; }
 
     esp_app_desc_t desc;
+    char offered[32];
+    xSemaphoreTake(mux, portMAX_DELAY);
+    strlcpy(offered, st.latest, sizeof(offered));
+    xSemaphoreGive(mux);
     if (esp_https_ota_get_img_desc(h, &desc) != ESP_OK ||
-        strcmp(desc.project_name, esp_app_get_description()->project_name)) {
-        ESP_LOGE(TAG, "Not this project's firmware (%s)", desc.project_name);
+        strcmp(desc.project_name, esp_app_get_description()->project_name) || strcmp(desc.version, offered)) {
+        ESP_LOGE(TAG, "Not the firmware offered (%s %s, expected %s)", desc.project_name, desc.version, offered);
         esp_https_ota_abort(h);
         set_state(OTA_FAILED, tr(T_OTA_WRONG));
         return;
@@ -273,7 +284,10 @@ static void install(void)
     if (err != ESP_OK || !esp_https_ota_is_complete_data_received(h)) {
         ESP_LOGE(TAG, "Download failed: %s", esp_err_to_name(err));
         esp_https_ota_abort(h);
-        set_state(OTA_FAILED, tr(T_OTA_INTERRUPTED));
+        // Still offered: Install stays (with the reason), and the channel is checked again soon. A failed state hid
+        // the pill and the button until the next check, up to 6 h later.
+        set_state(OTA_AVAILABLE, tr(T_OTA_INTERRUPTED));
+        retry_check = true;
         return;
     }
     err = esp_https_ota_finish(h);                  // verifies the image and selects it for the next boot
@@ -282,7 +296,7 @@ static void install(void)
         set_state(OTA_FAILED, tr(T_OTA_INVALID));
         return;
     }
-    ESP_LOGI(TAG, "Update installed, restarting");
+    ESP_LOGI(TAG, "Update installed, restarting (ota task: %u B of stack spare)", (unsigned)uxTaskGetStackHighWaterMark(NULL));
     xSemaphoreTake(mux, portMAX_DELAY);
     st.progress = 100;
     xSemaphoreGive(mux);
@@ -293,31 +307,80 @@ static void install(void)
 
 /* ---------- task ---------- */
 
+bool ota_pending_verify(void)
+{
+    esp_ota_img_states_t s;
+    return esp_ota_get_state_partition(esp_ota_get_running_partition(), &s) == ESP_OK && s == ESP_OTA_IMG_PENDING_VERIFY;
+}
+
+static void restart_task(void *arg)
+{
+    vTaskDelay(pdMS_TO_TICKS(1500));                     // let the answer / the screen go out
+    for (int i = 0; i < 600 && ota_pending_verify(); i++) {
+        if (i == 0) ESP_LOGW(TAG, "Restart waits until the new firmware is confirmed (a restart now would undo it)");
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+    esp_restart();
+}
+
+void ota_restart_when_safe(void)
+{
+    if (xTaskCreate(restart_task, "rst", 3072, NULL, 5, NULL) != pdPASS) esp_restart();
+}
+
 static void ota_task(void *arg)
 {
     TickType_t started = xTaskGetTickCount();
-    bool validated = false;
+    bool validated = !ota_pending_verify(), was_online = false;
     TickType_t next_check = started + pdMS_TO_TICKS(60 * 1000);          // first check a minute after boot
     while (1) {
-        if (!validated && xTaskGetTickCount() - started >= pdMS_TO_TICKS(VALID_AFTER_S * 1000)) {
+        TickType_t up = xTaskGetTickCount() - started;
+        bool online = net_is_connected();
+        if (!validated && up >= pdMS_TO_TICKS(VALID_AFTER_S * 1000) &&
+            (online || up >= pdMS_TO_TICKS(VALID_OFFLINE_S * 1000))) {
             validated = true;
-            esp_ota_img_states_t s;
-            if (esp_ota_get_state_partition(esp_ota_get_running_partition(), &s) == ESP_OK && s == ESP_OTA_IMG_PENDING_VERIFY) {
-                esp_ota_mark_app_valid_cancel_rollback();
-                ESP_LOGI(TAG, "New firmware ran %d s: marked valid (no rollback)", VALID_AFTER_S);
-            }
+            esp_ota_mark_app_valid_cancel_rollback();
+            ESP_LOGI(TAG, "New firmware ran %lu s%s: marked valid (no rollback)", (unsigned long)(up / configTICK_RATE_HZ),
+                     online ? " with Wi-Fi" : " (no Wi-Fi)");
         }
         if (want_install) {
             want_install = false;
-            if (st.state == OTA_AVAILABLE && net_is_connected()) install();
+            if (st.state == OTA_AVAILABLE && online) install();
         }
+        if (retry_check) {                                // a failed download: check again in RETRY_FAILED_S
+            retry_check = false;
+            next_check = xTaskGetTickCount() + pdMS_TO_TICKS(RETRY_FAILED_S * 1000);
+        }
+        // Wi-Fi back after an outage, or not up for the first check: check now (the next one was up to 6 h away)
+        if (online && !was_online && up >= pdMS_TO_TICKS(60 * 1000) && st.state != OTA_DOWNLOADING) want_check = true;
+        was_online = online;
         if (want_check || (int32_t)(xTaskGetTickCount() - next_check) >= 0) {
             want_check = false;
             next_check = xTaskGetTickCount() + pdMS_TO_TICKS(CHECK_EVERY_S * 1000LL);
-            if (net_is_connected()) check();
+            if (online) { ESP_LOGI(TAG, "checking %s", st.channel); check(); }
         }
         ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(5000));
     }
+}
+
+// The bootloader undid an update (it restarted before it was confirmed): say so once (log, update screen, page)
+static void note_rollback(void)
+{
+    const esp_partition_t *bad = esp_ota_get_last_invalid_partition();
+    esp_app_desc_t d;
+    if (!bad || esp_ota_get_partition_description(bad, &d) != ESP_OK) return;
+    nvs_handle_t h;
+    char seen[32] = "";
+    size_t n = sizeof(seen);
+    if (nvs_open("ota", NVS_READWRITE, &h) != ESP_OK) return;
+    nvs_get_str(h, "rb_seen", seen, &n);
+    if (strcmp(seen, d.version)) {
+        ESP_LOGW(TAG, "%s was rolled back: it restarted before it was confirmed (running %s)", d.version, st.current);
+        strlcpy(st.rolled_back, d.version, sizeof(st.rolled_back));
+        nvs_set_str(h, "rb_seen", d.version);
+        nvs_commit(h);
+    }
+    nvs_close(h);
 }
 
 void ota_start(ota_listener_t l)
@@ -333,8 +396,10 @@ void ota_start(ota_listener_t l)
         nvs_close(h);
     }
     const esp_partition_t *run = esp_ota_get_running_partition();
-    ESP_LOGI(TAG, "Running %s from %s, channel %s", st.current, run ? run->label : "?", st.channel);
-    xTaskCreatePinnedToCore(ota_task, "ota", 6144, NULL, 2, &task, 0);
+    ESP_LOGI(TAG, "Running %s from %s, channel %s%s", st.current, run ? run->label : "?", st.channel,
+             ota_pending_verify() ? " (new: not confirmed yet)" : "");
+    note_rollback();
+    xTaskCreatePinnedToCore(ota_task, "ota", 8192, NULL, 2, &task, 0);   // install = TLS + flash writes (IDF examples: 8 KB)
 }
 
 void ota_check_now(void)
@@ -358,7 +423,10 @@ void ota_set_channel(const char *channel)
     strlcpy(st.channel, channel, sizeof(st.channel));
     xSemaphoreGive(mux);
     nvs_handle_t h;
-    if (nvs_open("ota", NVS_READWRITE, &h) == ESP_OK) { nvs_set_str(h, "channel", channel); nvs_commit(h); nvs_close(h); }
+    if (nvs_open("ota", NVS_READWRITE, &h) == ESP_OK) {
+        if (nvs_set_str(h, "channel", channel) != ESP_OK || nvs_commit(h) != ESP_OK) ESP_LOGE(TAG, "channel NOT saved");
+        nvs_close(h);
+    }
     ota_check_now();
 }
 
