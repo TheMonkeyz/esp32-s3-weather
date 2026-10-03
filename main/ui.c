@@ -42,7 +42,7 @@ static lv_obj_t *scr_msg, *msg_title, *msg_body, *msg_qr;
 static lv_obj_t *scr_cfg;                     // settings screen (cfg_create)
 static bool back_to_cfg;                      // the phone QR / Wi-Fi setup was opened from it: close back to it
 static lv_obj_t *overlay, *ov_qr, *ov_url, *ov_title;
-static int ov_state;          // 0 hidden, 1 settings QR
+static int ov_state;          // 0 hidden, 1 settings QR, 2 gesture hint (text only)
 static lv_obj_t *scr_hour;       // hourly detail screen
 static int hr_day;
 static void hour_fill(int day);
@@ -325,10 +325,30 @@ static void clock_tick(lv_timer_t *t)
 /* Settings overlay (long-press on the weather screen) */
 static uint32_t overlay_opened;
 
+static bool gesture_pending;                            // the gesture hint comes after the location hint
+
 static void overlay_hide(void)
 {
     ov_state = 0;
     lv_obj_add_flag(overlay, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_remove_flag(ov_qr, LV_OBJ_FLAG_HIDDEN);      // (the gesture hint has no code)
+    lv_obj_align(ov_url, LV_ALIGN_TOP_MID, 0, 276);
+}
+
+// Once: how to get around (nothing on screen says it: swipes, drags, a tap on a day, the long-press). The settings
+// overlay with text only (ov_state 2: its long-press doesn't open Wi-Fi setup). A tap closes it.
+static void show_gestures(void)
+{
+    gesture_pending = false;
+    ESP_LOGI("ui", "first run: gesture hint");
+    lv_label_set_text(ov_title, tr(T_GEST_TITLE));
+    lv_obj_add_flag(ov_qr, LV_OBJ_FLAG_HIDDEN);
+    lv_label_set_text(ov_url, tr(T_GEST_HELP));
+    lv_obj_align(ov_url, LV_ALIGN_TOP_MID, 0, 150);
+    ov_state = 2;
+    lv_obj_remove_flag(overlay, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(overlay);
+    overlay_opened = lv_tick_get();
 }
 
 static void overlay_show(void)
@@ -346,6 +366,7 @@ static void overlay_close(lv_event_t *e)
     ESP_LOGI("ui", "overlay closed");
     overlay_hide();
     if (back_to_cfg) { back_to_cfg = false; lv_screen_load_anim(scr_cfg, LV_SCR_LOAD_ANIM_FADE_IN, 200, 0, false); }
+    else if (gesture_pending) show_gestures();
 }
 
 static void show_wifi_setup(lv_event_t *e);
@@ -378,12 +399,13 @@ static void show_settings(lv_event_t *e)
 // A new display ends on the built-in place with nothing pointing to the settings page (the only way there was
 // long-press, "More on your phone", the QR code): once, the first time a forecast is on screen, the settings QR
 // comes up by itself with "Choose your location". A tap closes it. Any task.
-void ui_first_run(void)
+void ui_first_run(bool location, bool gestures)
 {
     display_lock(-1);
     if (lv_screen_active() == scr_main && lv_obj_has_flag(overlay, LV_OBJ_FLAG_HIDDEN)) {
-        hint_text = true;
-        show_settings(NULL);
+        gesture_pending = gestures;
+        if (location) { hint_text = true; show_settings(NULL); }
+        else if (gestures) show_gestures();
     }
     display_unlock();
 }
@@ -2529,6 +2551,8 @@ static void day_name(const char *date, int idx, char *out, size_t n)
     } else snprintf(out, n, "-");
 }
 
+static void place_jump(void *user) { pager_go(place_pager, (int)(intptr_t)user, false); }
+
 void ui_places(int n, int active)
 {
     display_lock(-1);
@@ -2543,7 +2567,13 @@ void ui_places(int n, int active)
     n_places = n;
     cur_place = active;
     place_dots(active);
-    if (pager_current(place_pager) != active) pager_go(place_pager, active, true);   // chosen on the settings page
+    int from = pager_current(place_pager);
+    if (from != active) {                            // chosen on the settings page: slide the pictures (slide.c)
+        bool shown = lv_screen_active() == scr_main && lv_obj_has_flag(overlay, LV_OBJ_FLAG_HIDDEN);
+        if (!shown || !slide_page(pager_page(place_pager, from), pager_page(place_pager, active), true,
+                                  active > from ? 1 : -1, place_jump, (void *)(intptr_t)active))
+            pager_go(place_pager, active, false);
+    }
     if (moved) {
         clock_shown[0] = 0;
         clock_tick(NULL);

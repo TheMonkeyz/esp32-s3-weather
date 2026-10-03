@@ -6,3 +6,6 @@ ota_0,    app,  ota_0,   0x10000,  3M,
 ota_1,    app,  ota_1,   0x310000, 3M,
 otadata,  data, ota,     0x610000, 0x2000,
 mapcache, data, 0x40,    0x620000, 4M,
+# The last crash, kept for the next boot (diag.c logs it and erases it). Boards updated over the air keep the table
+# they had and so have no core dump (one "No core dump partition" line at boot); a USB / web-flasher install adds it.
+coredump, data, coredump, 0xa20000, 128K,

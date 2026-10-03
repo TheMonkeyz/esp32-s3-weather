@@ -138,10 +138,30 @@
   "note": "LVGL blocks put in internal RAM because PSRAM was full (lvgl_mem.c)",
   "ref": 0
  },
+ "page_fps.web_place_0": {
+  "min": 40,
+  "note": "a place chosen on the settings page, drawn by slide_page (LVGL scrolled the pager at ~10 fps until rc.6); ref to be set from the first runs",
+  "ref": 65
+ },
+ "page_fps.web_place_1": {
+  "min": 40,
+  "note": "a place chosen on the settings page, drawn by slide_page (LVGL scrolled the pager at ~10 fps until rc.6); ref to be set from the first runs",
+  "ref": 65
+ },
  "page_kb": {
   "max": 70,
   "note": "settings page size (sent in 1 KB TLS records); a big jump is worth a look",
   "ref": 53
+ },
+ "page_start_ms.web_place_0": {
+  "max": 300,
+  "note": "pictures rendered before the first frame (0 if both ready, ~130 ms each when not)",
+  "ref": 130
+ },
+ "page_start_ms.web_place_1": {
+  "max": 300,
+  "note": "pictures rendered before the first frame (0 if both ready, ~130 ms each when not)",
+  "ref": 130
  },
  "psram_min_kb": {
   "min": 300,
@@ -178,8 +198,8 @@
   "ref": 43.7
  },
  "render_ms.weather": {
-  "max": 56.6,
-  "note": "v1.11.1 with QIO flash (DIO: weather 67, hourly 51, radar 56, with panel 94); a board updated over the air keeps a DIO bootloader and renders at the DIO speed",
+  "max": 70,
+  "note": "v1.11.1+ with QIO flash. Depends on the weather shown: the big moon icon ~45 ms (night), the sun ~57 ms (day, measured October 3 at noon on fix.8/fix.9; the daytime cost was there before, the QIO references were all taken at night). DIO: weather 67, hourly 51, radar 56, with panel 94",
   "ref": 45.3
  },
  "render_ms.weather_with_panel": {

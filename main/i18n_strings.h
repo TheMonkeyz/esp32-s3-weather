@@ -307,6 +307,11 @@ X(T_HINT_TITLE,     "Choose your location",        "Choisissez votre endroit",
 X(T_HINT_HELP,      "%s\nScan with your phone to choose\nyour city and other settings.\n\nTap to close",
                     "%s\nBalayez le code avec votre\ntéléphone pour choisir votre\nville et vos réglages.\n\nTouchez pour fermer",
                     "%s\nᐊᔾᔨᓕᐅᕐᓕ ᐅᖄᓚᐅᑎᕋᓛᕐᒧᑦ\nᓄᓇᓖᑦ ᐋᖅᑭᔅᓯᒪᐅᑎᓪᓗ ᕿᓂᕐᓗᒋᑦ.\n\nᓇᕿᓪᓕ: ᒪᑐᓕ")
+X(T_GEST_TITLE,     "Getting around",              "Pour naviguer",
+                    "ᖃᓄᖅ ᐊᑐᖅᑕᐅᕚ")
+X(T_GEST_HELP,      "Swipe sideways: other screens\nDrag up or down: your places\nTap a day: hour by hour\nPress and hold: settings\n\nTap to close",
+                    "Glissez de côté : autres écrans\nVers le haut ou le bas : endroits\nTouchez un jour : heure par heure\nAppuyez longuement : réglages\n\nTouchez pour fermer",
+                    "ᓂᕈᓗᓪᓕ ᓴᐅᒥᒧᑦ ᑕᓕᕐᐱᒧᓪᓗ: ᐊᓯᖏᑦ\nᖁᓕᒧᑦ ᐊᑖᓄᓪᓗ: ᐃᓂᒋᔭᑎᑦ\nᐅᓪᓗ ᓇᕿᓗᒍ: ᐃᑲᕐᕌᓂ\nᓇᕿᓪᓗᒍ ᓇᕿᒻᒥᓕ: ᐋᖅᑭᔅᓯᒪᐅᑎᑦ\n\nᓇᕿᓪᓕ: ᒪᑐᓕ")
 X(T_OV_HELP,        "%s\nScan with your phone and accept\nthe certificate warning.\n\nLong-press for Wi-Fi setup\nTap to close",
                     "%s\nBalayez le code avec votre\ntéléphone et acceptez\nl'avertissement de certificat.\n\nAppuyez longuement : Wi-Fi\nTouchez pour fermer",
                     "%s\nᐊᔾᔨᓕᐅᕐᓕ ᐅᖄᓚᐅᑎᕋᓛᕐᒧᑦ ᐊᒻᒪᓗ\nᐃᓂᕐᑎᕈᑎ ᐊᖏᖅᑕᐅᓕ.\n\nᓇᕿᓪᓗᒍ ᓇᕿᒻᒥᓕ: Wi-Fi\nᓇᕿᓪᓕ: ᒪᑐᓕ")

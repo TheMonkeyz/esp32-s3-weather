@@ -299,9 +299,12 @@ void app_main(void)
             if (i == a) ok = c;
         }
         if (!ok && !shown_once && net && fails[a]) ui_message(tr(T_WEATHER), tr(T_FORECAST_RETRY));   // at start-up
-        if (ok && !shown_once && config_place_is_default() && config_hint_wanted()) {   // a new display
-            ui_first_run();
-            config_hint_done();
+        if (ok && !shown_once) {                             // first forecast on screen: the one-time hints
+            bool loc = config_place_is_default() && config_hint_wanted();   // a new display
+            bool gest = config_gesture_hint_wanted();       // every display once (v1.12.0 added it)
+            if (loc || gest) ui_first_run(loc, gest);
+            if (loc) config_hint_done();
+            if (gest) config_gesture_hint_done();
         }
         if (ok) shown_once = true;
         if (ok && a == config_active_place() && (extras_now || esp_timer_get_time() >= extras_due)) {

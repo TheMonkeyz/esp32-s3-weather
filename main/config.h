@@ -20,6 +20,8 @@ bool config_place_is_default(void);
 bool config_hint_wanted(void);
 void config_hint_done(void);
 void config_hint_next_boot(void);
+bool config_gesture_hint_wanted(void);       // the gesture hint, once (NVS "ui"/"gest"); also on a "hint next-boot"
+void config_gesture_hint_done(void);
 bool config_set_location(const location_t *loc);    // edits the place shown; saves to NVS
 int config_place_count(void);
 int config_active_place(void);

@@ -73,9 +73,11 @@ bool sound_set_config(const sound_cfg_t *in)
     return ok;
 }
 
-// A speaker: the I2S bus is up (the microphones opened it) and the ES8311 answers on I2C (probed once at start).
-// It meant only the first, so a board without the codec said it could beep.
+// A speaker: the codec device could be created once the I2S bus is up (spk_open(), the same call a sound uses: it
+// talks to the ES8311 over I2C). v1.12.0-rc.3 probed the ES8311 at sound_start(), before the presence task had
+// opened the bus: the page said "No speaker found" while the sounds played. Before rc.3 it only meant "I2S is up".
 static bool spk_found;
+static bool spk_open(void);
 bool sound_ok(void) { return spk_found && presence_audio_data_if() != NULL; }
 
 /* ---------- alert sounds ----------
@@ -150,7 +152,8 @@ static bool spk_open(void)
 
 static void play(int level)
 {
-    if (!spk_open()) { ESP_LOGW(TAG, "no speaker"); return; }
+    if (!spk_open()) { ESP_LOGW(TAG, "no speaker"); spk_found = false; return; }
+    spk_found = true;
     int frames;
     int16_t *pcm = render(level, &frames);
     if (!pcm) { ESP_LOGW(TAG, "no memory for the sound"); return; }
@@ -170,6 +173,11 @@ static void play(int level)
 
 static void sound_task(void *arg)
 {
+    // The speaker check needs the shared I2S bus, which the presence task opens a moment after start-up: checked at
+    // sound_start() it was never there yet, and the page said "No speaker found" (v1.12.0-rc.3..rc.5)
+    for (int i = 0; i < 100 && !presence_audio_data_if(); i++) vTaskDelay(pdMS_TO_TICKS(100));
+    spk_found = spk_open();
+    ESP_LOGI(TAG, "speaker %s", spk_found ? "ready (ES8311)" : "NOT found (no I2S bus or ES8311 codec)");
     int level;
     while (1) {
         if (xQueueReceive(q, &level, portMAX_DELAY) == pdTRUE) {
@@ -204,9 +212,6 @@ void sound_alert(char colour)
 void sound_start(void)
 {
     load();
-    i2c_master_bus_handle_t bus = touch_i2c_bus();
-    spk_found = bus && i2c_master_probe(bus, ES8311_ADDR >> 1, 50) == ESP_OK;
-    if (!spk_found) ESP_LOGW(TAG, "no ES8311 on I2C: no speaker");
     q = xQueueCreate(2, sizeof(int));
     xTaskCreatePinnedToCore(sound_task, "sound", 4096, NULL, 3, NULL, 0);
 }

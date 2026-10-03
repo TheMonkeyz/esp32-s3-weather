@@ -32,7 +32,10 @@ CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC=y
 CONFIG_LV_USE_QRCODE=y
 CONFIG_LV_USE_SNAPSHOT=y
 CONFIG_HTTPD_MAX_URI_LEN=600
-CONFIG_MBEDTLS_HARDWARE_AES=n
+# Hardware AES: on again since v1.12.0-rc.6. It was turned off in v1.0 because it couldn't get internal DMA memory and
+# the settings page arrived truncated; with LVGL's heap in PSRAM (v1.4) and the radar palettes out of internal RAM
+# (rc.2) it works: snapshots over HTTPS 2.2 -> 1.5 s, the page whole every time, the same internal RAM (harness 14/14).
+CONFIG_MBEDTLS_HARDWARE_AES=y
 CONFIG_COMPILER_OPTIMIZATION_PERF=y
 CONFIG_LV_DEF_REFR_PERIOD=15
 # No theme style transitions (80 ms fades on press): one ran on the weather screen after every drag and redrew it
@@ -45,3 +48,8 @@ CONFIG_FREERTOS_VTASKLIST_INCLUDE_COREID=y
 CONFIG_ESP_WIFI_DPP_SUPPORT=y
 CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y
 CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
+# A crash is kept in the coredump partition and summarised at the next boot (diag.c): crash details used to exist
+# only if someone was watching the USB log at the time
+CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH=y
+CONFIG_ESP_COREDUMP_DATA_FORMAT_ELF=y
+CONFIG_ESP_COREDUMP_CHECKSUM_CRC32=y

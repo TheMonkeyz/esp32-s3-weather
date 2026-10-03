@@ -458,7 +458,9 @@ static struct { lv_obj_t *list; int y0, y1; int64_t t0, t1; bool queued; } scrol
 static struct { lv_obj_t *img; const uint16_t *src; int32_t from, to; uint32_t ms; slide_swipe_cb_t swipe;
                 bool queued; } zoomq;                                  // a zoom (below)
 
-static bool req_pending(void) { return req.queued || drag.queued || scroll.queued || zoomq.queued; }
+static struct { const void *from, *to; int dir; bool vertical; slide_done_cb_t done; void *user; bool queued; } pageq;
+
+static bool req_pending(void) { return req.queued || drag.queued || scroll.queued || zoomq.queued || pageq.queued; }
 
 bool slide_screen_busy(void) { return req_pending() || touch_idle_ms() < 500; }
 
@@ -594,6 +596,53 @@ static void drag_run(void *unused)
                   (t1 - t0) / 1000, go || blind ? (side < 0 ? "to prev" : "to next") : "back");
     drag.queued = false;
     slide_phase = 0;
+}
+
+/* ---------- a page change decided elsewhere ----------
+ * The settings page picked another place: the place pager scrolled there with LVGL's animation, which redraws the
+ * whole screen every frame (~10 fps on the weather screen: "sluggish"). Now the two pages' pictures slide like the end
+ * of a drag (~65 fps), then done() moves the pager there without an animation. */
+
+static void page_run(void *unused)
+{
+    const int S = pageq.vertical ? DISP_H : DISP_W;
+    slide_phase = 41;
+    int64_t t0 = esp_timer_get_time();
+    lv_draw_buf_t *bc = get(pageq.from, true, true, pageq.to);
+    lv_draw_buf_t *bn = bc ? get(pageq.to, true, true, pageq.from) : NULL;
+    int frames = 0;
+    int64_t t1 = esp_timer_get_time();
+    if (bc && bn) {
+        frame_t f = { .cur = bc->data, .stride = bc->header.stride, .vertical = pageq.vertical };
+        if (pageq.dir > 0) f.next = bn->data; else f.prev = bn->data;
+        slide_phase = 42;
+        frames = animate(&f, -pageq.dir * S, 300);
+    }
+    int64_t t2 = esp_timer_get_time();
+    committing = true;                                   // the pager moving is not a change of the pages
+    if (pageq.done) pageq.done(pageq.user);
+    committing = false;
+    lv_obj_invalidate(lv_screen_active());
+    touch_resync(false);
+    if (frames) ESP_LOGI(TAG, "page: pictures %lld ms, %d frames in %lld ms (%.0f fps)", (t1 - t0) / 1000, frames,
+                         (t2 - t1) / 1000, frames * 1e6f / (t2 - t1));
+    else ESP_LOGW(TAG, "page: no pictures (PSRAM busy), no animation");
+    pageq.queued = false;
+    slide_phase = 0;
+}
+
+bool slide_page(const void *from, const void *to, bool vertical, int dir, slide_done_cb_t done, void *user)
+{
+    if (req_pending() || !from || !to || from == to || !dir) return false;
+    pageq.from = from;
+    pageq.to = to;
+    pageq.vertical = vertical;
+    pageq.dir = dir;
+    pageq.done = done;
+    pageq.user = user;
+    pageq.queued = true;
+    lv_async_call(page_run, NULL);
+    return true;
 }
 
 /* ---------- list scrolling ----------

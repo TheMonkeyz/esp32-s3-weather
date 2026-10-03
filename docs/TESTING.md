@@ -177,7 +177,7 @@ the window at the end.
 | `web` | the Playwright suite (`tools/webtest`) and the live API on the board; the page must arrive whole; who may change things (`main/web.c`): 403 for a POST over plain HTTP, 302 to the device itself, 401 without or with a wrong key, 415 for a non-JSON POST, 421 for another Host, 401 for a snapshot without the key, 200 with it |
 | `perf` | boot stage times and internal RAM, heap low points, full-screen render bench (best of 3), radar first frame and lightning, frame rate of each move (`fps`: screen to screen, places, days, the hourly list and Settings scrolling; for drags also `drag_fps` and `drag_start_ms` from slide.c's log line, and a place drag back 2 s after a switch); compared with `tools/harness/baseline.json`. The radar animation plays at 3 fps by design: not measured |
 | `presence` | dim, off and wake with short delays set through the API (the user's put back after, even on a failure): ACTIVE → DIM → OFF → `wake`; three fades up during a swipe (the brightness command from core 0 while LVGL sends bands from core 1), and `where` must show `raw_phase=0` after each |
-| `firstrun` | `hint next-boot` + restart: the "Choose your location" settings QR comes up by itself after the first forecast, a tap closes it (places and the real once-only flag untouched) |
+| `firstrun` | `hint next-boot` + restart: the "Choose your location" settings QR comes up by itself after the first forecast, then the gesture hint; a tap closes each (places and the real once-only flags untouched) |
 | `wifi_runtime` | network lost while running: retries go on; long-press opens setup and **pauses them**; tap closes it; reconnects, and an update check follows at once |
 | `wifi_setup` | start-up with the network unreachable (the October 1 path): setup after 30 s, no retries while open, **the PC joins the setup network like a phone** (DNS answers every name with 192.168.4.1, the Android check gets the 302, the page and `/api/config` load without the places' coordinates, the Sound card's API answers, a snapshot is refused, the PC is not dropped for 15 s; it joins with this display's own password, read from `wifi status`), Easy Connect listens on the router's 2.4 GHz channel as the PC sees it, the setup network works again after Easy Connect (DNS socket bug), tap → 30 s retry → setup again, network back → weather screen. `--phone` adds the real Easy Connect scan |
 | `wifi_setup` (2) | `setup_stops_opening_by_itself`: a boot that can't reach the network with a 60 s automatic-setup window (`wifi offline-boot-short`; 15 min normally): setup opens by itself, then no longer after the window (*Still trying*), a long-press still opens it, recovery |
@@ -292,7 +292,11 @@ wsl -d Ubuntu --cd /mnt/c/Users/<you>/ESPDEV/weather_amoled/tests/host -- make  
   same printf conversions as the English, and `tr()` falls back to English.
 - `test_version.c`: what the updater offers (`version.c`: rc order, test labels below every rc, git-describe builds)
   and which alerts sound when (`sound_wanted()`: levels, quiet hours across midnight, equal times, red always).
-- Not covered yet: `png_rows.c` (it needs the ROM's `tinfl` on the host) and `web.c`'s handlers.
+- `test_png.c`: `png_rows.c` against PNGs built with miniz 3.0.2 (the ROM's `tinfl` is miniz's inflate; the
+  Makefile downloads it once into `build/`): grey, RGB, palette + tRNS, grey + alpha, RGBA, all five row filters,
+  data over two IDAT chunks, a wrapped chunk length, refused inputs. (The wrap only bit a 32-bit `size_t`: on the
+  64-bit host that case guards the behaviour, not the original overflow.)
+- Not covered yet: `web.c`'s handlers.
 - CI runs them on every push (`host-tests` job, cJSON fetched at ESP-IDF's version); a release needs them to pass.
 - A fix that can be reproduced off the board gets a case here; check that the case fails on the old code
   (`git show HEAD:main/x.c`) before calling it a test.

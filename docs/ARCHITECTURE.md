@@ -68,6 +68,11 @@ LVGL timer and event callbacks already run inside the lock.
 - **Flush hook** (`display_set_flush_hook()`): every area LVGL sends is also handed, before the byte swap, to
   `slide.c`, which copies it into its picture of the screen shown (see Moves, Cache).
 - Fonts: Montserrat TTF embedded and rendered by TinyTTF at 15–96 px, so accents and "°" render correctly.
+- **Core dump** (since v1.12.0-rc.6): a crash is written to the `coredump` partition (128 KB at 0xA20000, ELF,
+  CRC32) and the next boot logs `diag: last crash (core dump): task …, PC …, backtrace …` and erases it (decode
+  with `xtensa-esp32s3-elf-addr2line -pfC -e build/v55/weather_amoled.elf <addresses>`). The partition comes with a
+  USB / web-flasher install (the table isn't updated over the air); without it the firmware logs that once and
+  carries on.
 
 ## Weather screen (`ui.c`)
 
@@ -108,6 +113,11 @@ LVGL timer and event callbacks already run inside the lock.
   offline). `ui_place()` drops the days before the place's local date (`weather_from_today()`, host-tested), and the
   minute tick re-sends a place's forecast when its midnight has passed: the hourly view's "Now", the graph's dot, the
   day names and the "Today" column are right from 00:00. Until v1.12.0 they showed yesterday.
+- **Gesture hint:** once per display (NVS `ui/gest`, every display once since v1.12.0-rc.6), the overlay without its
+  QR code says how to get around (sideways, up/down, a day, the long-press), `ov_state` 2; after the location hint
+  when both are due.
+- **A place chosen on the settings page** slides like the end of a drag (`slide_page()`: the two pages' pictures, then
+  `pager_go()` without an animation). LVGL's scroll of the place pager redrew the whole screen each frame (~10 fps).
 - **First run:** a display still on the built-in place (no place saved, one place) shows the settings QR by itself
   once, the first time a forecast is on screen, titled "Choose your location" (`ui_first_run()`; NVS `ui/hint`). A
   tap closes it. The test console's `hint next-boot` asks for it on the next boot without touching the places or the
@@ -699,7 +709,8 @@ order, and ~11 ms on the bus.
   handles any time zone and DST; before the first fetch it falls back to the `EST5EDT` TZ rule.
 - **Units** (NVS namespace `units`: `temp`, `wind`, `h12`; default °C, km/h, 24 h). Data is always fetched in metric;
   every screen formats through `config.c`: `config_temp()` (rounded °C or °F), `config_fmt_wind()`,
-  `config_fmt_time()` / `config_fmt_hour()` / `config_fmt_hhmm()` (the forecast's "HH:MM" strings),
+  `config_fmt_time()` / `config_fmt_hour()` / `config_fmt_hhmm()` (the forecast's "HH:MM" strings; 12-hour in
+  French is Québec style, "2 h 45 p.m." and "3 p.m.", since v1.12.0-rc.6),
   `config_miles()` (radar distances in miles when the wind is in mph). The forecast's 0.1 °C and 0.1 km/h are
   converted exactly and rounded only for display, so °F can differ by 1° from a source that rounds the unrounded
   model value, which the forecast's own rounding does anyway. The graph's shape doesn't change (linear), only its
@@ -791,8 +802,11 @@ how to measure again (`reboot.request` + `tools/diag_summary.py`) and the refere
 
 Internal DMA-capable RAM is the scarce resource. Everything under 16 KB that goes through plain `malloc` lands
 there first (`CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL`), which is why LVGL has its own PSRAM allocator. Fonts use
-`LV_FONT_KERNING_NONE`: kerning lookups were 71% of the rendering time. `CONFIG_MBEDTLS_HARDWARE_AES` is **off**: the AES peripheral
-allocates internal DMA bounce buffers, and that failed mid-response, which truncated the settings page.
+`LV_FONT_KERNING_NONE`: kerning lookups were 71% of the rendering time. `CONFIG_MBEDTLS_HARDWARE_AES` was **off** from v1.0 to
+v1.12.0-rc.5: the AES peripheral allocates internal DMA bounce buffers, and that failed mid-response, which truncated
+the settings page. With internal RAM no longer short (LVGL's heap and the radar palettes in PSRAM) it is on again
+since rc.6: HTTPS snapshots 2.2 → 1.5 s, the page whole every time, internal RAM the same (measured on the board, then
+the full harness).
 
 ## Known issues / TODO
 

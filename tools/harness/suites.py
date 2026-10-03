@@ -159,6 +159,8 @@ def live_api(ctx):
     for path, key in (('/api/config', 'units'), ('/api/presence', 'state'), ('/api/sound', 'level')):
         j = b.api(path)
         check(key in j, f'GET {path}: no "{key}"')
+    # This board has a speaker: the page said "No speaker found" in v1.12.0-rc.3..rc.5 (a probe that never answered)
+    check(b.api('/api/sound').get('ok') is True, 'GET /api/sound says there is no speaker (the page shows "No speaker found")')
     import urllib.request
     with urllib.request.urlopen(f'https://{b.ip}/', context=b.ctx, timeout=15) as r:
         page = r.read()
@@ -414,8 +416,21 @@ def swipes(ctx):
         # Back on the first place, the radar fetches its maps and saves them to flash (both cores pause in bursts):
         # a tap then can go unseen and a move crawls. Wait for it, and tap twice if needed.
         radar_settled(ctx, since)
+        # A place chosen on the settings page: the pictures slide (slide_page), ~65 fps; LVGL's own scroll of the
+        # place pager ran at ~10 fps and the owner found it sluggish (v1.12.0-rc.5)
+        for sel in (1, 0):
+            at = len(ctx.log.lines())
+            b.api('/api/places', {'select': sel})
+            m = ctx.log.wait(r'slide: page: pictures (\d+) ms, (\d+) frames in (\d+) ms', 10,
+                             'the place change from the settings page drawn by slide.c', start=at)
+            pics, frames, ms = (int(x) for x in m.groups())
+            ctx.metric(f'page_fps.web_place_{sel}', round(frames * 1000 / ms, 1) if ms else 0)
+            ctx.metric(f'page_start_ms.web_place_{sel}', pics)
+            time.sleep(2)
+        radar_settled(ctx, len(ctx.log.lines()) - 1)
     else:
         ctx.skip('*.drag_place*', 'one place on the display: no place drag')
+        ctx.skip('page_*', 'one place on the display: no place change')
     for attempt in range(2):
         b.cmd('tap 125 350')                         # a day: the hourly view
         try:
@@ -694,6 +709,15 @@ def location_hint(ctx):
     ctx.log.wait(r'ui: first run: location hint', 90, 'the hint once the forecast is shown', start=at)
     b.wait_screen('phone', 5)
     b.snap('current', ctx.out('screen_first_run_hint.png'))
+    at = len(ctx.log.lines())
     b.cmd('tap 233 233')
+    try:                                             # then the gesture hint (v1.12.0-rc.6)
+        ctx.log.wait(r'ui: first run: gesture hint', 3, 'the gesture hint after the location hint', start=at)
+        time.sleep(1)
+        b.snap('current', ctx.out('screen_first_run_gestures.png'))
+        b.cmd('tap 233 233')
+        gest = ', then the gesture hint'
+    except Fail:
+        gest = ''
     b.wait_screen('weather', 6)
-    ctx.note('first-run hint: shown after the first forecast, closed by a tap')
+    ctx.note(f'first-run hint: shown after the first forecast{gest}, closed by a tap')

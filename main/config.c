@@ -162,6 +162,27 @@ void config_hint_done(void)
 
 void config_hint_next_boot(void) { hint_test = HINT_TEST; }
 
+static bool gest_test;                               // this boot is a "hint next-boot" test: show it, keep the flag
+
+bool config_gesture_hint_wanted(void)
+{
+    if (hint_test == HINT_TEST) { gest_test = true; return true; }
+    nvs_handle_t h;
+    uint8_t v = 0;
+    if (nvs_open("ui", NVS_READONLY, &h) == ESP_OK) { nvs_get_u8(h, "gest", &v); nvs_close(h); }
+    return !v;
+}
+
+void config_gesture_hint_done(void)
+{
+    if (gest_test) return;
+    nvs_handle_t h;
+    if (nvs_open("ui", NVS_READWRITE, &h) != ESP_OK) return;
+    nvs_check(nvs_set_u8(h, "gest", 1), "ui/gest");
+    nvs_commit(h);
+    nvs_close(h);
+}
+
 int config_place_count(void) { load(); return nplaces; }
 int config_active_place(void) { load(); return active; }
 
@@ -305,11 +326,14 @@ void config_fmt_wind(double kmh, char *out, int n)
     else snprintf(out, n, "%.0f km/h", kmh);
 }
 
+// 12-hour clock: "2:45 PM" in English (and Inuktitut, which has no convention of its own here); in French, Québec
+// style (OQLF): "2 h 45 p.m.", an hour alone "3 p.m." (the owner's choice, October 2026)
 void config_fmt_time(int h, int m, char *out, int n)
 {
     units_t u;
     config_get_units(&u);
-    if (u.h12) snprintf(out, n, "%d:%02d %s", (h + 11) % 12 + 1, m, h < 12 ? "AM" : "PM");
+    if (u.h12 && u.lang == LANG_FR) snprintf(out, n, "%d h %02d %s", (h + 11) % 12 + 1, m, h < 12 ? "a.m." : "p.m.");
+    else if (u.h12) snprintf(out, n, "%d:%02d %s", (h + 11) % 12 + 1, m, h < 12 ? "AM" : "PM");
     else snprintf(out, n, "%02d:%02d", h, m);
 }
 
@@ -317,7 +341,8 @@ void config_fmt_hour(int h, char *out, int n)
 {
     units_t u;
     config_get_units(&u);
-    if (u.h12) snprintf(out, n, "%d %s", (h + 11) % 12 + 1, h < 12 ? "AM" : "PM");
+    if (u.h12 && u.lang == LANG_FR) snprintf(out, n, "%d %s", (h + 11) % 12 + 1, h < 12 ? "a.m." : "p.m.");
+    else if (u.h12) snprintf(out, n, "%d %s", (h + 11) % 12 + 1, h < 12 ? "AM" : "PM");
     else snprintf(out, n, "%02d:00", h);
 }
 

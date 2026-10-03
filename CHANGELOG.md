@@ -10,6 +10,14 @@ their own `## vX.Y.Z-rc.N` section. Those are shown only to Beta users, while th
 list everything again. (Two tags have no section: v1.3.0-rc.1, and v1.12.0-rc.1, whose build failed and was published
 as v1.12.0-rc.2.)
 
+## v1.12.0-rc.6 - 2026-10-03
+- The settings page no longer says "No speaker found" on displays that have one.
+- Choosing another place on the settings page slides to it smoothly on the display.
+- In French, the 12-hour clock reads "2 h 45 p.m.".
+- A one-time screen shows how to get around: swipe for the other screens, drag up or down for your places, tap a day for the hours, press and hold for settings.
+- If the display ever crashes, the details are kept and reported at the next start (after a USB or web-flasher install).
+- The settings page and its screenshots load faster (the chip's encryption hardware is used again).
+
 ## v1.12.0-rc.5 - 2026-10-03
 - The setup network's name lookups (which open the setup page on your phone) are answered only on the setup network, no longer on your home network.
 - A slightly smaller firmware (an unused image decoder removed), and the map requests name the project.

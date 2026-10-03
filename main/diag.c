@@ -11,6 +11,7 @@
 #include "esp_timer.h"
 #include "esp_partition.h"
 #include "esp_ota_ops.h"
+#include "esp_core_dump.h"
 #include "esp_psram.h"
 #include "esp_flash.h"
 #include "nvs.h"
@@ -64,6 +65,20 @@ static void startup_info(void)
              KB(esp_psram_get_size()));
     const esp_partition_t *app = esp_ota_get_running_partition();      // (the first app partition was printed)
     if (app) ESP_LOGI(TAG, "running from %s, %u KB at 0x%lx", app->label, KB(app->size), (unsigned long)app->address);
+    // The last crash, if the core dump partition holds one: the task, the PC and the backtrace (decode it with
+    // xtensa-esp32s3-elf-addr2line -pfC -e build/v55/weather_amoled.elf <addresses>), then erased
+#if CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH
+    esp_core_dump_summary_t *cd = malloc(sizeof(*cd));
+    if (cd && esp_core_dump_image_check() == ESP_OK && esp_core_dump_get_summary(cd) == ESP_OK) {
+        char bt[16 * 11 + 1] = "";
+        for (uint32_t i = 0, n = 0; i < cd->exc_bt_info.depth && i < 16; i++)
+            n += snprintf(bt + n, sizeof(bt) - n, " 0x%08lx", (unsigned long)cd->exc_bt_info.bt[i]);
+        ESP_LOGW(TAG, "last crash (core dump): task %s, PC 0x%08lx, backtrace%s%s", cd->exc_task,
+                 (unsigned long)cd->exc_pc, bt, cd->exc_bt_info.corrupted ? " (corrupted)" : "");
+        esp_core_dump_image_erase();
+    }
+    free(cd);
+#endif
     nvs_stats_t ns;
     if (nvs_get_stats(NULL, &ns) == ESP_OK)
         ESP_LOGI(TAG, "NVS entries: %u used, %u free of %u", (unsigned)ns.used_entries,

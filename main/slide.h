@@ -14,6 +14,12 @@
 void slide_screen(lv_obj_t *to, lv_screen_load_anim_t how, uint32_t ms);
 bool slide_running(void);          // a slide is waiting to start
 
+// A page change decided elsewhere (the settings page picked another place): page `from`'s picture slides away and
+// `to`'s comes in (dir +1: from below / the right, -1: from above / the left), then done(user) moves the pager there
+// without an animation. Pictures come from the cache (rendered now if missing). False if a move is already running.
+typedef void (*slide_done_cb_t)(void *user);
+bool slide_page(const void *from, const void *to, bool vertical, int dir, slide_done_cb_t done, void *user);
+
 // A drag that follows the finger (read from the touch chip directly while LVGL is paused), from the press point
 // x0,y0, like LVGL's elastic scrolling: the neighbour on each side comes in under the finger; with no neighbour the
 // screen resists and bounces back. On release: on to the neighbour past a third of the screen or after a flick,

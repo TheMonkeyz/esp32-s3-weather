@@ -133,6 +133,15 @@ class Board:
             md5 = lambda f: hashlib.md5(open(f, 'rb').read()).hexdigest()
             if md5(flash_bin) != md5(p('firmware/weather_amoled.bin')):
                 raise Fail('staged firmware differs from the build (md5)')
+            # The build's partition table and bootloader too: the helper flashes firmware\*.bin, and a table change
+            # (the coredump partition, v1.12.0-rc.6) never reached the board when only the app was staged
+            bdir = os.path.dirname(flash_bin)
+            for src, dst in (('partition_table/partition-table.bin', 'partition-table.bin'),
+                             ('bootloader/bootloader.bin', 'bootloader.bin')):
+                if os.path.exists(os.path.join(bdir, src)):
+                    shutil.copy(os.path.join(bdir, src), p('firmware/' + dst))
+                    if md5(os.path.join(bdir, src)) != md5(p('firmware/' + dst)):
+                        raise Fail(f'staged {dst} differs from the build (md5)')
             req = 'flash.request'
         else:
             req = 'reboot.request'

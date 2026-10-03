@@ -97,7 +97,8 @@ Windows build gets both from `main/idf_component.yml`. `components/dns_server` *
    `static`.
 4. **HTTPS page arrived truncated, so the buttons "did nothing":** hardware AES failed to allocate internal DMA
    memory. We disabled `CONFIG_MBEDTLS_HARDWARE_AES`, reduced the LVGL buffers to 32 lines, and send the page in
-   1 KB chunks.
+   1 KB chunks. Hardware AES is on again since v1.12.0-rc.6 (internal RAM is no longer short; measured: snapshots
+   30 % faster, the page whole): if pages ever arrive truncated again, look at internal DMA memory first.
 5. **Two httpd servers:** the HTTPS default control port is already 32769, so don't also set the HTTP server to 32769.
 6. **CST9217 touch:** after each read you must write `D0 00 AB` (ack), or the controller stops reporting. NACKs while
    idle are normal, so we silence the `i2c.master` logs. Coordinates are mirrored in both X and Y.

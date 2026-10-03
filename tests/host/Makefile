@@ -8,7 +8,7 @@ OUT := build
 CFLAGS := -std=gnu11 -D_DEFAULT_SOURCE -g -O1 -Wall -Wno-unused-function -fsanitize=address,undefined \
           -fno-sanitize-recover=undefined -Ishim -I$(MAIN) -I$(CJSON) -include shim/host.h
 COMMON := fake.c $(CJSON)/cJSON.c
-TESTS := weather alerts utf8 i18n version
+TESTS := weather alerts utf8 i18n version png
 
 all: $(TESTS:%=$(OUT)/test_%)
 	@set -e; for t in $(TESTS); do ./$(OUT)/test_$$t; done
@@ -17,6 +17,15 @@ $(OUT)/test_weather: test_weather.c $(MAIN)/weather.c $(COMMON) | $(OUT)
 	$(CC) $(CFLAGS) -o $@ test_weather.c $(MAIN)/weather.c $(COMMON) -lm
 $(OUT)/test_alerts: test_alerts.c $(MAIN)/alerts.c $(COMMON) | $(OUT)
 	$(CC) $(CFLAGS) -o $@ test_alerts.c $(COMMON) -lm
+
+# miniz 3.0.2 (MIT) for test_png: its inflate is the ROM's tinfl, its deflate builds the test images. Downloaded once.
+MINIZ := $(OUT)/miniz
+$(MINIZ)/miniz.c: | $(OUT)
+	mkdir -p $(MINIZ)
+	curl -fsSL -o $(OUT)/miniz.zip https://github.com/richgel999/miniz/releases/download/3.0.2/miniz-3.0.2.zip
+	python3 -c "import zipfile; zipfile.ZipFile('$(OUT)/miniz.zip').extractall('$(MINIZ)', ['miniz.c', 'miniz.h'])"
+$(OUT)/test_png: test_png.c $(MAIN)/png_rows.c $(MINIZ)/miniz.c | $(OUT)
+	$(CC) $(CFLAGS) -I$(MINIZ) -o $@ test_png.c $(MAIN)/png_rows.c $(MINIZ)/miniz.c
 
 $(OUT):
 	mkdir -p $(OUT)

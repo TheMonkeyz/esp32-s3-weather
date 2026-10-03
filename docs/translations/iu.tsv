@@ -144,6 +144,8 @@ fw:T_BRIGHTNESS	Brightness %d%%	Qaumaninga %d%%	high	Microsoft Inuktitut termino
 fw:T_SETTINGS	Settings	Aaqqissimautit	medium	Microsoft Inuktitut terminology (Pirurvik): setting = aaqqissimaut
 fw:T_HINT_TITLE	Choose your location	Inigijait qinirlugu	low	"choose your place"; inigi- (place where one lives) + qinir- (look for); needs review
 fw:T_HINT_HELP	%s\nScan with your phone to choose\nyour city and other settings.\n\nTap to close	%s\nAjjiliurli uqaalautiralaarmut\nnunaliit aaqqissimautillu qinirlugit.\n\nNaqilli: matuli	low	"photograph (scan) with your phone / choose the town and settings / tap: close"; from T_OV_HELP
+fw:T_GEST_TITLE	Getting around	Qanuq atuqtauvaa	low	"how it is used"; needs review
+fw:T_GEST_HELP	Swipe sideways: other screens\nDrag up or down: your places\nTap a day: hour by hour\nPress and hold: settings\n\nTap to close	Nirululli saumimut talirpimullu: asingit\nQulimut ataanullu: inigijatit\nUllu naqilugu: ikarraani\nNaqillugu naqimmili: aaqqissimautit\n\nNaqilli: matuli	low	"swipe left and right: the others / up and down: your places / tap a day: by the hour / long-press: settings / tap: close"; from T_WIFI_JOIN, T_CONNECTING, T_SETTINGS; needs review
 fw:T_OV_HELP	%s\nScan with your phone and accept\nthe certificate warning.\n\nLong-press for Wi-Fi setup\nTap to close	%s\nAjjiliurli uqaalautiralaarmut ammalu\ninirtiruti angiqtauli.\n\nNaqillugu naqimmili: `Wi-Fi`\nNaqilli: matuli	low	Microsoft Inuktitut terminology (Pirurvik): scan = ajjiliurli, press and hold = naqillugu naqimmili, tap = naqilli, close = matuli
 fw:T_WIFI_RECEIVED	Wi-Fi received	`Wi-Fi` pijaujuq	low	"Wi-Fi received"
 fw:T_WIFI_GOT	Got \"%s\" from your phone.\nRestarting...	"%s" uqaalautiralaarmit.\nIkitikkannirtuq...	low	"%s" from the phone, restarting

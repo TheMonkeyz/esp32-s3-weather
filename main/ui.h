@@ -21,7 +21,8 @@ bool ui_wifi_setup_close(void);          // close it now, unless a phone is on t
 // Place i's last forecast attempt: ok (the page's "Updated N min ago" counts from now) or failed (its page says it
 // can't reach the service while it has no forecast; an old one gets an age line)
 void ui_place_state(int i, bool ok);
-void ui_first_run(void);                 // the one-time "choose your location" settings QR (a new display)
+// Once: the "choose your location" settings QR (a new display) and/or the gesture hint (after it, or alone)
+void ui_first_run(bool location, bool gestures);
 void ui_pages(int *place, int *day, int *places, int *days);   // test console (display lock held)
 const char *ui_screen_name(void);        // "weather", "radar", "settings", "setup0"... (display lock held)
 void ui_alerts(const alerts_t *al);     // weather alerts for the location (empty = none)
