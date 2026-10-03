@@ -38,6 +38,14 @@ def go_weather(ctx):
             b.cmd('swipe right')
         elif s in ('phone', 'hourly'):                # a tap closes them
             b.cmd('tap 233 233')
+        elif s == 'message':                         # no forecast yet (a service outage): wait for it, up to 3 min
+            end = time.time() + 180
+            while b.screen() == 'message' and time.time() < end:
+                time.sleep(5)
+            if b.screen() == 'message':
+                raise Fail('still no forecast after 3 min (the message screen: is Open-Meteo answering?)')
+            ctx.note('waited on the message screen for the first forecast (a slow forecast service)')
+            continue
         else:
             b.cmd('swipe right')
         time.sleep(1.2)

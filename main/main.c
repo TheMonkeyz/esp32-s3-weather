@@ -264,12 +264,18 @@ void app_main(void)
     static location_t tried[MAX_PLACES];    // where the last attempt was for (an edit: fetch at once)
     int64_t extras_due = 0;
     bool shown_once = false;                 // a forecast has replaced the start-up message
+    bool was_net = true;
     while (1) {
         int64_t now = esp_timer_get_time();
         int a = config_active_place(), n = config_place_count();
         location_t loc;
         config_get_place(a, &loc);
         bool net = net_is_connected(), ok = false;
+        if (net && !was_net) {                               // Wi-Fi back: failed places now, from the first delay
+            for (int i = 0; i < MAX_PLACES; i++) if (fails[i]) { fails[i] = 0; due[i] = 0; }
+            extras_now = true;                               // (a place that had failed kept a 2-10 min wait:
+        }                                                    // the screen came back minutes after Wi-Fi did)
+        was_net = net;
         int64_t next = now + REFRESH_MIN * 60 * 1000000LL;
         for (int k = 0; k < n; k++) {                        // the place shown first
             int i = k == 0 ? a : k <= a ? k - 1 : k;

@@ -101,7 +101,9 @@ LVGL timer and event callbacks already run inside the lock.
   deletions never show one place's weather under another's name). Each place is due 10 min after its last success
   (the place shown first); a failure is retried after 30 s, 1, 2, 5, then every 10 min (HTTP 429: 10 min), per
   place (until v1.12.0 every place was refetched every 30 s during an outage: ~11,500 requests a day, over
-  Open-Meteo's free quota). New or edited places (`tried[i]` ≠ their coordinates) are fetched at once. Alerts, air
+  Open-Meteo's free quota). New or edited places (`tried[i]` ≠ their coordinates) are fetched at once, and so are
+  failed ones when Wi-Fi comes back, from the first delay again (rc.6 kept a 2–10 min wait across a reconnect: after
+  an Open-Meteo bad patch the weather screen came back minutes after Wi-Fi did). Alerts, air
   quality and the radar are for the place shown: every 10 min, and at once after a switch, an edit or a language
   change (`extras_now`).
 - **When the forecast can't be had** (`ui_place_state(i, ok)`): a page without a forecast says "Can't reach the

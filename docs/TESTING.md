@@ -247,6 +247,10 @@ Pitfalls met while building it:
 - After a **place change**, the radar saves the new location's map to flash (both cores pause in bursts for ~3 s): a
   tap then can go unseen, and a drag measured then crawled (3 fps, first frame after 2 s). `perf` waits until the
   radar has been quiet for 5 s with no map preload running (`radar_settled`), and taps the forecast twice if needed.
+- **A forecast outage is not a firmware failure:** with no forecast the display shows its message screen ("Can't
+  reach the forecast service. Retrying."); `go_weather` waits up to 3 min for it to clear and notes it. On October 3
+  an Open-Meteo bad patch (10 of 16 forecasts timed out on the display while the PC got answers in 0.07 s) failed
+  five tests of rc.6's run that way; four restarts later 8 of 8 forecasts worked.
 - **A wait must outlast the firmware's own retry:** after the network comes back the weather screen needs the first
   forecast, and a failed fetch is retried after 30 s. A 30 s wait failed v1.11.1's run when Open-Meteo timed out
   once; it now waits 75 s and notes the retry. Check the firmware's interval before choosing a timeout.
