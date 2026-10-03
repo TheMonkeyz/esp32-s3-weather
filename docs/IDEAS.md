@@ -17,6 +17,10 @@ charging (AXP2101).
 
 ## Everyday use
 
+- [ ] **First setup with Easy Connect opens the settings page** — when a brand-new display gets its Wi-Fi from
+  Android Easy Connect, take the phone to the settings page (place, units) on its own, as the setup network's
+  sign-in page does (the user's request, October 2). Easy Connect gives no channel back to the phone, so it needs
+  another way: e.g. a QR code with the page's address on the display right after it connects for the first time.
 - [ ] **Home Assistant (MQTT)** — publish room presence from the microphones; show an indoor temperature.
 
 ## Done
