@@ -66,17 +66,28 @@ struct dns_server_handle {
 
 /*
     Parse the name from the packet from the DNS name format to a regular .-seperated name
-    returns the pointer to the next part of the packet
+    returns the pointer to the next part of the packet, NULL if the name is malformed or runs past `end`
+    (weather_amoled: bounded by the packet; the upstream example read labels past the 128-byte buffer)
 */
-static char *parse_dns_name(char *raw_name, char *parsed_name, size_t parsed_name_max_len)
+static char *parse_dns_name(char *raw_name, const char *end, char *parsed_name, size_t parsed_name_max_len)
 {
 
     char *label = raw_name;
     char *name_itr = parsed_name;
-    int name_len = 0;
+    size_t name_len = 0;
 
+    if (label >= end) {
+        return NULL;
+    }
+    if (*label == 0) {                                   // the root name
+        parsed_name[0] = '\0';
+        return label + 1;
+    }
     do {
-        int sub_name_len = *label;
+        int sub_name_len = (uint8_t)*label;
+        if (sub_name_len > 63 || label + 1 + sub_name_len >= end) {   // a compression pointer or past the packet
+            return NULL;
+        }
         // (len + 1) since we are adding  a '.'
         name_len += (sub_name_len + 1);
         if (name_len > parsed_name_max_len) {
@@ -99,7 +110,7 @@ static char *parse_dns_name(char *raw_name, char *parsed_name, size_t parsed_nam
 // Parses the DNS request and prepares a DNS response with the IP of the softAP
 static int parse_dns_request(char *req, size_t req_len, char *dns_reply, size_t dns_reply_max_len, dns_server_handle_t h)
 {
-    if (req_len > dns_reply_max_len) {
+    if (req_len > dns_reply_max_len || req_len < sizeof(dns_header_t)) {
         return -1;
     }
 
@@ -121,12 +132,11 @@ static int parse_dns_request(char *req, size_t req_len, char *dns_reply, size_t 
     header->flags |= QR_FLAG;
 
     uint16_t qd_count = ntohs(header->qd_count);
-    header->an_count = htons(qd_count);
-
-    int reply_len = qd_count * sizeof(dns_answer_t) + req_len;
-    if (reply_len > dns_reply_max_len) {
+    int answers = 0;
+    if (qd_count * sizeof(dns_answer_t) + req_len > dns_reply_max_len) {
         return -1;
     }
+    const char *end = dns_reply + req_len;
 
     // Pointer to current answer and question
     char *cur_ans_ptr = dns_reply + req_len;
@@ -135,13 +145,15 @@ static int parse_dns_request(char *req, size_t req_len, char *dns_reply, size_t 
 
     // Respond to all questions based on configured rules
     for (int qd_i = 0; qd_i < qd_count; qd_i++) {
-        char *name_end_ptr = parse_dns_name(cur_qd_ptr, name, sizeof(name));
-        if (name_end_ptr == NULL) {
-            ESP_LOGE(TAG, "Failed to parse DNS question: %s", cur_qd_ptr);
+        char *name_end_ptr = parse_dns_name(cur_qd_ptr, end, name, sizeof(name));
+        if (name_end_ptr == NULL || name_end_ptr + sizeof(dns_question_t) > end) {
+            ESP_LOGD(TAG, "Malformed DNS question");
             return -1;
         }
 
         dns_question_t *question = (dns_question_t *)(name_end_ptr);
+        char *this_qd = cur_qd_ptr;
+        cur_qd_ptr = name_end_ptr + sizeof(dns_question_t);    // the next question (it never moved on)
         uint16_t qd_type = ntohs(question->type);
         uint16_t qd_class = ntohs(question->class);
 
@@ -169,7 +181,7 @@ static int parse_dns_request(char *req, size_t req_len, char *dns_reply, size_t 
             }
             dns_answer_t *answer = (dns_answer_t *)cur_ans_ptr;
 
-            answer->ptr_offset = htons(0xC000 | (cur_qd_ptr - dns_reply));
+            answer->ptr_offset = htons(0xC000 | (this_qd - dns_reply));
             answer->type = htons(qd_type);
             answer->class = htons(qd_class);
             answer->ttl = htonl(ANS_TTL_SEC);
@@ -178,9 +190,12 @@ static int parse_dns_request(char *req, size_t req_len, char *dns_reply, size_t 
 
             answer->addr_len = htons(sizeof(ip.addr));
             answer->ip_addr = ip.addr;
+            cur_ans_ptr += sizeof(dns_answer_t);
+            answers++;
         }
     }
-    return reply_len;
+    header->an_count = htons(answers);                   // the answers written (it claimed one per question)
+    return req_len + answers * sizeof(dns_answer_t);
 }
 
 /*
@@ -199,6 +214,14 @@ void dns_server_task(void *pvParameters)
 
         struct sockaddr_in dest_addr;
         dest_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+        // weather_amoled: only on the interface of the first rule (the setup AP): bound to INADDR_ANY it also answered
+        // every name with 192.168.4.1 for anyone on the home network
+        esp_netif_ip_info_t ap_ip;
+        if (handle->num_of_entries && handle->entry[0].if_key &&
+            esp_netif_get_ip_info(esp_netif_get_handle_from_ifkey(handle->entry[0].if_key), &ap_ip) == ESP_OK &&
+            ap_ip.ip.addr) {
+            dest_addr.sin_addr.s_addr = ap_ip.ip.addr;
+        }
         dest_addr.sin_family = AF_INET;
         dest_addr.sin_port = htons(DNS_PORT);
         addr_family = AF_INET;
@@ -219,7 +242,7 @@ void dns_server_task(void *pvParameters)
         ESP_LOGI(TAG, "Socket bound, port %d", DNS_PORT);
 
         while (handle->started) {
-            ESP_LOGI(TAG, "Waiting for data");
+            ESP_LOGD(TAG, "Waiting for data");
             struct sockaddr_in6 source_addr; // Large enough for both IPv4 or IPv6
             socklen_t socklen = sizeof(source_addr);
             int len = recvfrom(sock, rx_buffer, sizeof(rx_buffer) - 1, 0, (struct sockaddr *)&source_addr, &socklen);
@@ -228,6 +251,7 @@ void dns_server_task(void *pvParameters)
             if (len < 0) {
                 ESP_LOGE(TAG, "recvfrom failed: errno %d", errno);
                 close(sock);
+                sock = -1;                               // (closed twice below before)
                 break;
             }
             // Data received
@@ -245,9 +269,9 @@ void dns_server_task(void *pvParameters)
                 char reply[DNS_MAX_LEN];
                 int reply_len = parse_dns_request(rx_buffer, len, reply, DNS_MAX_LEN, handle);
 
-                ESP_LOGI(TAG, "Received %d bytes from %s | DNS reply with len: %d", len, addr_str, reply_len);
+                ESP_LOGD(TAG, "Received %d bytes from %s | DNS reply with len: %d", len, addr_str, reply_len);
                 if (reply_len <= 0) {
-                    ESP_LOGE(TAG, "Failed to prepare a DNS reply");
+                    ESP_LOGD(TAG, "No DNS reply (malformed query)");
                 } else {
                     int err = sendto(sock, reply, reply_len, 0, (struct sockaddr *)&source_addr, sizeof(source_addr));
                     if (err < 0) {

@@ -7,7 +7,7 @@ the story that connects them.
 
 ## In numbers
 
-- Four days, ~100 commits, 12 stable releases (v1.0.0 to v1.11.0) and 17 release candidates (29 tags).
+- Four days to v1.11.1 (98 commits, 13 stable releases, 30 tags); then the October 3 fix plan (v1.12.0-rc.1..rc.4).
 - 23 C files, ~10,000 lines (`main/`), plus the settings page (`main/web/index.html`), the web flasher, CI, and the
   test harness (`tools/harness/`).
 - One board (Waveshare ESP32-S3-Touch-AMOLED-1.75, COM5 on the user's Windows PC), one user so far.
@@ -64,7 +64,8 @@ user's word.
 ## How the work is done now
 
 1. **Change, then a test build** labelled above the current release (`vX.Y.Z-name.N` in `version.txt`; the
-   firmware compares version numbers first, so a test label above an rc hides that rc from the updater).
+   firmware compares version numbers first; for the same X.Y.Z a test label counts below any rc, so a board on
+   `v1.12.0-fix.N` is offered `v1.12.0-rc.N`, while `v1.12.1-x` would hide it).
 2. **Flash and observe**: `harness.py --flash` or a probe script in the scratchpad (`Board`/`Log` from the harness):
    act through the test console, read `serial_live.txt`. For hangs: breadcrumbs + `where`. For "why is X slow":
    time the parts, in a throwaway build with temporary logging (removed before committing).

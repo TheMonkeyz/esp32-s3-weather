@@ -11,7 +11,7 @@
 | Speaker | ES8311 codec (I2C `0x18`, 8-bit `0x30`, shared bus) + amplifier enabled on GPIO 46; same I2S port as the microphones (DOUT 8) | DOUT 8, PA 46 |
 | Motion sensor | QMI8658 6-axis IMU, I2C `0x6B` (shared bus with touch); only the accelerometer is used, polled at 10 Hz (its INT pins aren't used). Waveshare's BSP doesn't drive it (`BSP_CAPS_IMU 0`) | SDA 15, SCL 14 |
 | Buttons | BOOT = GPIO0 (also the strapping pin) | |
-| USB | COM5 on the dev PC | |
+| USB | USB serial/JTAG (COM5 on the dev PC) | |
 
 The panel's init sequence and pin map come from Waveshare's BSP
 (`waveshareteam/Waveshare-ESP32-components`, `bsp/esp32_s3_touch_amoled_1_75`). We don't use the BSP itself;
@@ -80,8 +80,8 @@ LVGL timer and event callbacks already run inside the lock.
   (`LV_EVENT_DRAW_MAIN`), not typed.
   Decorative objects are made non-clickable so presses bubble up to the screen.
 - Moves between screens (status | extras | weather | radar), between places and between days follow the finger:
-  they are drawn as pictures by `slide.c` ("Moves" below), started by `drag_read` in `ui.c` (in the touch read). `LV_EVENT_GESTURE`
-  (`gesture_cb`) still handles the radar's zoom swipes, and screen swipes while a slide is running. Every other
+  they are drawn as pictures by `slide.c` ("Moves" below), started by `drag_read` in `ui.c` (in the touch read).
+  `LV_EVENT_GESTURE` (`gesture_cb`) is left with the radar's zoom swipes (up / down). Every other
   screen change (hourly view, Settings, alerts, update) calls `slide_screen()`, which takes the same arguments as
   `lv_screen_load_anim()`.
 - **Places:** the weather widgets live on one page per place (`place_page_t pp[MAX_PLACES]`) in a vertical pager
@@ -300,7 +300,8 @@ order, and ~11 ms on the bus.
 - `scr_cfg`, opened by a long-press on the weather screen (offline: the Wi-Fi setup screen instead). Rows in a
   scrolling box (y 70–360) under a fixed *Done* button: Dim when quiet and Wake on pick-up (`lv_switch`, the whole
   row is the button), Timing (cycles Short / Normal / Long; the same presets as the page's `PRESETS`, *Custom* if
-  none matches), Temperature / Wind / Clock (cycle), More on your phone (the QR overlay), Wi-Fi network
+  none matches), Temperature / Wind / Clock (cycle), Language (cycles English / Français / Inuktitut (draft)), Alert
+  sound (Off / Red / Orange+ / All), Volume, Test the sound, Location & more (phone) (the QR overlay), Wi-Fi network
   (`ui_wifi_setup`), Updates (*Check now* → `ota_check_now()`, shows *Checking...* then the result for 6 s; with an
   update offered, opens the update screen), Restart (a second tap within 4 s). Every change goes through
   `presence_set_config()` / `presence_set_motion()` / `config_set_units()` + `ui_units_changed()`, the same calls
@@ -350,8 +351,8 @@ order, and ~11 ms on the bus.
 
 ## Extras page (`ui.c`, `weather.c`)
 
-- Screens left to right: status, extras, weather, radar (page dots show 4, `N_PAGES`). `gesture_cb` handles every
-  move between them.
+- Screens left to right: status, extras, weather, radar (page dots show 4, `N_PAGES`). Moves between them are drags
+  drawn by `slide.c`, started in the touch read (`drag_read`, see Moves).
 - Data: the weather request adds `current=uv_index` and `daily=sunrise,sunset,uv_index_max`; a second request goes to
   `air-quality-api.open-meteo.com` (`current=us_aqi,pm2_5,alder_pollen,birch_pollen,grass_pollen,ragweed_pollen`), same
   10-minute cycle. Pollen comes from CAMS Europe: `null` elsewhere, and the row is hidden.
@@ -431,11 +432,14 @@ order, and ~11 ms on the bus.
   `forecast_days=7` → `weather_t.day[WX_DAYS]` and `hour[WX_DAYS*24]` (`WX_DAYS` = 7, hours start at 00:00 local
   today). Response is about 7 KB (receive buffer 48 KB in PSRAM). The weather screen shows `day[0..2]`.
 - `SHORT_CLICKED` on the weather screen with y ≥ 296 → forecast column by x → `scr_hour` (move-top animation).
-  `ui_weather()` keeps a copy of the forecast (`wx`) for this screen.
+  `place_current()` (called by `ui_place()` for the place shown) keeps a copy of its forecast (`wx`) for this
+  screen and the extras page.
 - `scr_hour` holds a horizontal pager (`pager.c`) with one full-screen page per forecast day (`WX_DAYS`). Moving
   between days follows the finger, snaps, and bounces at the ends (drawn by `slide.c`, the pager is frozen).
-  Each page has its own vertically scrollable hour list; LVGL picks the scroll direction from the drag.
-  Page dots update on `LV_EVENT_SCROLL`. A tap closes the view.
+  Each page has its own vertically scrollable hour list. Drags are recognised in the touch read (`drag_read`):
+  sideways → `slide_drag()` (the neighbouring day's picture follows the finger, `pager_switch()` at the end);
+  vertical on the list → `slide_scroll()` (the list scrolls by moving the picture of the screen, see Moves). The page
+  dots follow the day shown. A tap closes the view.
 - **Rows are drawn, not created:** each list has one tall object with an `LV_EVENT_DRAW_MAIN` callback that draws
   only the rows inside the clip area (`lv_draw_label` with `text_local`, `lv_draw_rect`). The weather icons have a
   painter mode (`P_layer`) that draws the same shapes straight into a layer: since v1.11.1 once per kind, day or
@@ -528,8 +532,8 @@ order, and ~11 ms on the bus.
   mode and starts the other in between). **Why:** an attempt makes the radio hop channels, so phones couldn't join
   the setup network and Easy Connect failed (October 1 bug). The old rule (wait only while a phone was joined) wasn't
   enough. `BIT_FAIL` only ends `net_wait()`. SNTP starts on the first `GOT_IP`, whenever that happens.
-- **Status screens** (`scr_msg`) take a long-press too: it starts the AP and shows the Wi-Fi QR (not in first-boot
-  setup, which already shows it). A 10-minute timer stops that AP only once the board is online.
+- **Status screens** (`scr_msg`) take a long-press too: it opens the Wi-Fi setup screen (not in first-boot setup,
+  which already shows it); the setup screen's own timer closes it (see below).
 - On the weather screen, a long-press while offline skips the Settings screen (useless without a network) and opens
   the Wi-Fi setup screen directly.
 - **Wi-Fi setup screen** (`scr_setup` in `ui.c`, `ui_wifi_setup(note)`): used by first-time setup, offline setup,
@@ -553,9 +557,9 @@ order, and ~11 ms on the bus.
   `wifi_config_t`: saved with `net_save_creds()`, restart after 2.5 s. `ESP_SUPP_DPP_FAIL` re-listens; its data is
   the error code on IDF 5.4 but a `wifi_event_dpp_failed_t *` on 5.5 (`failure_reason`). Leaving page 2
   deinitialises DPP and resumes reconnects.
-- **Settings overlay state machine** (`ui.c`): 0 = hidden, 1 = settings QR (`https://<ip>/#k=<key>`, see Settings /
-  web), 2 = Wi-Fi setup.
-  The Settings screen's *More on your phone* goes to 1; a long-press on the overlay opens the Wi-Fi setup screen.
+- **Settings overlay** (`ui.c`, `ov_state`): 0 = hidden, 1 = settings QR (`https://<ip>/#k=<key>`, see Settings /
+  web). The Settings screen's *Location & more (phone)* row and the first-run hint open it; a long-press on it opens
+  the Wi-Fi setup screen (a screen of its own, not an overlay state).
   Gestures are ignored while the overlay is open.
 - **Access point:** `ap_up()` switches to APSTA, so the station connection stays up and the AP follows its channel.
   WPA2/WPA3 mixed (`WIFI_AUTH_WPA2_WPA3_PSK`, PMF capable) with this display's own password (`net_setup_ap_pass()`:
@@ -700,8 +704,8 @@ order, and ~11 ms on the bus.
   converted exactly and rounded only for display, so °F can differ by 1° from a source that rounds the unrounded
   model value, which the forecast's own rounding does anyway. The graph's shape doesn't change (linear), only its
   labels (12-hour: 12a 3a … 12p … 12a).
-- A change calls `ui_units_changed()`: re-renders the weather screen from the kept copy (`ui_weather(&wx)`, which
-  also bumps `wx_gen` so the graph canvases redraw), the alerts' "Until", and `radar_units_changed()` (clock, frame
+- A change calls `ui_units_changed()`: re-renders every place page from its kept copy (`ui_place(i, name, &pw[i])`,
+  which also bumps `wx_gen` through `place_current()` so the graph canvases redraw), the alerts' "Until", and `radar_units_changed()` (clock, frame
   time, range ring in km or mi, radius). No refetch.
 
 ## TLS certificate (`tlscert.c`)
@@ -755,6 +759,9 @@ by `GET /api/config` as `version`.
 | Item | Where | Size |
 |---|---|---|
 | LVGL draw buffers | internal DMA | 2 × 30 KB |
+| Radar frame structs (46 × ~1 KB of palettes) | PSRAM (`EXT_RAM_BSS_ATTR`, since v1.12.0) | 48 KB |
+| cJSON parse trees (forecast ~10 KB of JSON) | PSRAM (`cJSON_InitHooks`, since v1.12.0) | transient, ~100 KB |
+| Alert region map (shape download, full basemap copy, crop) | PSRAM (transient, main task) | ~160 KB + 434 KB + 117 KB |
 | LVGL heap (objects, styles, glyph cache) | PSRAM (`lvgl_mem.c`, `LV_USE_CUSTOM_MALLOC`) | ~40–50 KB |
 | Basemap + composed screen | PSRAM | 2 × 434 KB |
 | Hourly temperature graphs (7 canvases) | PSRAM (LVGL heap) | 7 × 76 KB |
@@ -773,8 +780,13 @@ runs the same app at DIO speed (checked: v1.11.1-qio.1 on the IDF 5.4.2 DIO boot
 The flash helper writes `firmware\bootloader.bin` (copy it from `build\v55\bootloader\` after a config change;
 the old one is kept as `firmware\bootloader-idf542-dio.bin`).
 
-Measured: internal RAM ~69 KB free steady, 30 KB min; PSRAM ~3.3 MB free, 1.1 MB min (v1.4.0, with the graph
-canvases). See `docs/DIAGNOSTICS.md` for
+Measured (v1.12.0, harness `perf` and `wifi_setup`): internal RAM ~84 KB free steady, 36–40 KB min ever in a normal
+boot, 38–43 KB min after the reconnect path (rc.2 had 96 / 50 / 76 KB, before the task stacks grew by ~12.7 KB); PSRAM ~450 KB min ever with the picture cache. (v1.11.1: 48 KB steady,
+8–10 KB min, 4–5 KB after a reconnect: the 46 radar frame structs were in internal RAM.) App image ~2.06 MB of the
+3 MB slot (~23 KB more per release lately; the two TTF fonts are 318 KB of it).
+
+`EXT_RAM_BSS_ATTR` data and anything in PSRAM is unreachable while the flash cache is off (a flash erase or write):
+only tasks may touch it, never an interrupt handler. See `docs/DIAGNOSTICS.md` for
 how to measure again (`reboot.request` + `tools/diag_summary.py`) and the reference numbers.
 
 Internal DMA-capable RAM is the scarce resource. Everything under 16 KB that goes through plain `malloc` lands

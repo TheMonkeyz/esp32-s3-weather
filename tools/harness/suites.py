@@ -140,9 +140,10 @@ def settings_page_tests(ctx):
     browsers = os.path.join(wt, '.browsers')
     if os.path.isdir(browsers):
         env['PLAYWRIGHT_BROWSERS_PATH'] = browsers
-    npm = r'C:\Program Files\nodejs\npm.cmd'
+    import shutil
+    npm = shutil.which('npm') or r'C:\Program Files\nodejs\npm.cmd'
     if not os.path.exists(npm):
-        raise Fail('Node.js not found (C:\\Program Files\\nodejs)')
+        raise Fail('Node.js (npm) not found')
     r = subprocess.run([npm, 'test'], cwd=wt, env=env, capture_output=True, text=True, errors='replace', timeout=600)
     out = r.stdout + r.stderr
     m = re.search(r'(\d+) passed', out)
@@ -293,8 +294,10 @@ def radar_timing(ctx):
     lt = [int(x) for x in re.findall(r'radar: Lightning \S+: \d+ px, (\d+) marks', '\n'.join(ctx.log.lines()[at:]))]
     ctx.note(f'{frames} radar frames loaded during playback; lightning marks per frame: {lt[:15]}')
     b.cmd('tap 233 233')                             # stop
-    # Zoom in, then back out: drawn by slide.c (LVGL's own zoom transformed the whole image: ~10 fps)
-    time.sleep(1)
+    # Zoom in, then back out: drawn by slide.c (LVGL's own zoom transformed the whole image: ~10 fps). From one level
+    # out first: at the closest zoom a swipe down does nothing and the check failed
+    b.cmd('swipe up')
+    time.sleep(4)
     start = len(ctx.log.lines())
     b.cmd('swipe down')
     m = ctx.log.wait(r'slide: zoom \d+ -> \d+: overlays (\d+) px in (\d+) ms, (\d+) frames in (\d+) ms', 10,
@@ -586,6 +589,12 @@ def unreachable_at_startup(ctx):
     # taken before these tests, never saw it)
     ctx.log.wait(r'diag: mark first weather', 60, 'the first round of fetches after reconnecting', start=back)
     ctx.metric('internal_min_kb.reconnect', b.heap()['min'])
+    # The captive portal's DNS server (running since the setup network started) answers the setup network only:
+    # bound to all interfaces it also answered every name with 192.168.4.1 on the home network (v1.12.0-rc.5)
+    a = dns_query(b.ip, 'example.com', timeout=2)
+    check(a is None or not ctx.board.dns_lan_ok_expected(), f'the display answers DNS on the home network (example.com -> {a})')
+    if a is not None:
+        ctx.note(f'the display answers DNS on the home network ({a}) (firmware before v1.12.0-rc.5)')
     ctx.note('start-up offline path: setup, captive portal x2, Easy Connect channel, retry, recovery')
 
 

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Save a screen of the display as a PNG, rendered by the device itself (GET /api/snapshot).
 
-    python tools/snapshot.py 192.168.1.156 status            -> snapshot_status.png
-    python tools/snapshot.py 192.168.1.156 weather out.png
+    python tools/snapshot.py <ip> status            -> snapshot_status.png
+    python tools/snapshot.py <ip> weather out.png
 
 Screens: weather, extras, status, radar, update, alert, hourly0..hourly6, settings, settings1..settings3 (scrolled
 down), phone (settings QR), setup0 / setup1 (Wi-Fi setup texts), current (the one shown). The device renders the screen

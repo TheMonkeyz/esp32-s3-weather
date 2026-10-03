@@ -111,7 +111,7 @@ static void probe_task(void *arg)
         probe_url(i, url, sizeof(url));
         esp_http_client_config_t cfg = {
             .url = url, .crt_bundle_attach = esp_crt_bundle_attach, .timeout_ms = 10000,
-            .user_agent = "QuebecWeatherDisplay/1.0 (ESP32 hobby device; personal use)",   // OSM tile policy
+            .user_agent = "esp32-s3-weather/1.12 (open-source weather display; +https://github.com/TheMonkeyz/esp32-s3-weather)",   // OSM tile policy
         };
         int64_t t0 = esp_timer_get_time();
         int status;

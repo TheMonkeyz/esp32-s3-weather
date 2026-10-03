@@ -15,7 +15,7 @@ release candidate and tests it with `harness.py --ota` → a stable release only
   `C:\Users\lmathieu\ESPDEV\weather_amoled`.
 - **Two ways to work:**
   1. **Claude Code on Windows** (preferred): run it in this folder. It can use `idf.py` and the COM port directly.
-     ESP-IDF v5.4 may still need installing on the PC (look in `~\.espressif`).
+     ESP-IDF v5.5.4 is installed at `C:\Espressif\esp-idf` (see below).
   2. **Claude desktop app (Cowork):** builds happen in a cloud container. Its shell on the PC is a Linux VM with **no
      USB access**, and it can't type into Windows terminals. Flashing then goes through the **flash helper**: the user
      starts `start_flash_helper.bat` once, Claude writes `flash.request` (containing the log seconds) and polls for
@@ -50,9 +50,9 @@ cmake -S . -B build -G Ninja -DIDF_TARGET=esp32s3 -DPYTHON=$(which python) -DPYT
 ninja -C build
 ```
 
-With the component manager off, LVGL is vendored at `components/lvgl`, and `esp_codec_dev` (v1.5.2, sparse-cloned
+With the component manager off, LVGL (a v9.2.2 clone) is vendored at `components/lvgl`, and `esp_codec_dev` (v1.5.11, as pinned in `main/idf_component.yml`; sparse-cloned
 from `espressif/esp-adf`) at `components/esp_codec_dev`. Its Kconfig warns that `ESP_IDF_VERSION` isn't set; that's
-harmless and keeps `CODEC_I2C_BACKWARD_COMPATIBLE` off, which we need because we use the new I2C driver. LVGL is (a v9.2.2 clone). Keep its `examples/` and
+harmless and keeps `CODEC_I2C_BACKWARD_COMPATIBLE` off, which we need because we use the new I2C driver. Keep LVGL's `examples/` and
 `demos/` directories, because the CMake file adds them as include paths. Neither vendored directory is in this repo; the
 Windows build gets both from `main/idf_component.yml`. `components/dns_server` *is* in the repo.
 

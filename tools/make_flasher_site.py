@@ -115,8 +115,11 @@ def add_channel(out, name, src):
     return {"version": info["version"], "built": info["built"], "manifest": f"{name}/manifest.json"}
 
 
-def read_changelog(path, keep=15):
-    """CHANGELOG.md -> [{"version", "date", "notes": [str]}], newest first.
+def read_changelog(path, keep=15, max_bytes=20000):
+    """CHANGELOG.md -> [{"version", "date", "notes": [str]}], newest first: the `keep` newest stable releases, and the
+    release candidates newer than the newest stable one (older rc sections are repeated by their release's section).
+    Counting rc sections in the 15 made a display a few releases behind miss stable notes. At most `max_bytes` of
+    JSON: the display reads notes.json into a 24 KB buffer (ota.c fetch_notes).
 
     Sections start with "## vX.Y.Z" (optionally followed by " - YYYY-MM-DD" or " — YYYY-MM-DD"), items with
     "- ". Markdown emphasis and code marks are dropped: the display shows plain text."""
@@ -134,7 +137,19 @@ def read_changelog(path, keep=15):
             out[-1]["notes"][-1] += " " + line.strip()          # continuation of the previous item
     for r in out:
         r["notes"] = [re.sub(r"[*_`#]", "", n).strip() for n in r["notes"]]
-    return out[:keep]
+    kept, stable = [], 0
+    for r in out:
+        pre = "-" in r["version"]
+        if pre and stable:                                   # an rc of an already released version
+            continue
+        if not pre:
+            stable += 1
+            if stable > keep:
+                break
+        if len(json.dumps({"releases": kept + [r]})) > max_bytes:
+            break
+        kept.append(r)
+    return kept
 
 
 def cmd_site(a):

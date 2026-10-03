@@ -1,7 +1,8 @@
 # Testing on the device
 
 How a change gets built, flashed, observed and shown before it is called done. Every change is verified on the
-board (log, snapshot, or both). The Windows PC drives the board on **COM5**; the board is on the home network.
+board (log, snapshot, or both). The Windows PC drives the board on its USB serial port (COM5 on the dev PC); the
+board is on the home network. `<ip>` below is the display's address (`net: Connected, IP …` in the log).
 
 ## 1. Build
 
@@ -33,9 +34,12 @@ idf.py -B build\v55 -D SDKCONFIG=build\v55\sdkconfig build
 - After changing `sdkconfig.defaults`, delete `build\v55\sdkconfig` and run `idf.py ... reconfigure`: an existing
   sdkconfig keeps its old values (an option that exists as "not set" ignores the new default).
 - **Keep the PC and CI on the same ESP-IDF.** Until v1.9.0 CI used v5.4.2 while the PC had v5.5.4, so test builds
-  didn't match releases (Easy Connect's failure event differs between them). Change both together. Flashing a test
-  build keeps the board's v5.4.2 bootloader (the helper flashes `firmware\bootloader.bin`), which is what boards updated over
-  Wi-Fi have.
+  didn't match releases (Easy Connect's failure event differs between them). Change both together.
+- **Bootloader:** the flash helper writes whatever is in `firmware\bootloader.bin` with the app. Since v1.11.1 that is
+  the QIO bootloader from `build\v55\bootloader\bootloader.bin` (copy it there after a build that changes it); the
+  render-time baselines assume QIO (~30 % faster than DIO). `firmware\bootloader-idf542-dio.bin` is the old DIO one:
+  flash it to reproduce a board updated over the air (they keep the bootloader they had). The harness prints the
+  mode it finds in the boot log next to "Testing vX".
 
 ## 2. Flash and log (flash helper)
 
@@ -70,9 +74,9 @@ the screen **off-display** with `lv_snapshot_take` and streams a 24-bit BMP, so 
 has to swipe:
 
 ```bash
-python tools/snapshot.py 192.168.1.156 status            # -> snapshot_status.png
-python tools/snapshot.py 192.168.1.156 weather out.png
-python tools/snapshot.py 192.168.1.156 weather --key <key>   # the key: see §1 (else $WEATHER_KEY, else the harness's file)
+python tools/snapshot.py <ip> status            # -> snapshot_status.png
+python tools/snapshot.py <ip> weather out.png
+python tools/snapshot.py <ip> weather --key <key>   # the key: see §1 (else $WEATHER_KEY, else the harness's file)
 ```
 
 - Screens: `weather`, `extras`, `status`, `radar`, `update`, `alert`, `settings`, `hourly0`…`hourly6` (the hourly view of that
@@ -144,7 +148,7 @@ on October 1. Needs the flash helper running; the board's firmware must have the
 v1.10.0).
 
 ```bash
-python tools/harness/harness.py                       # all suites, on the firmware already on the board (~6 min)
+python tools/harness/harness.py                       # all suites, on the firmware already on the board (~12 min)
 python tools/harness/harness.py --flash build/v55/weather_amoled.bin   # flash a build first
 python tools/harness/harness.py smoke wifi_runtime    # some suites
 python tools/harness/harness.py wifi_setup --phone    # + Easy Connect with a real phone (asks the user)
@@ -283,6 +287,13 @@ wsl -d Ubuntu --cd /mnt/c/Users/<you>/ESPDEV/weather_amoled/tests/host -- make  
 - `test_alerts.c` includes `alerts.c` itself (its static parsers): the severity cap (a red warning listed fifth is
   kept), the beep rule (once per warning, again if worse, re-issues silent), the region map key, the shape scanner on
   `-]` (it looped forever), failures.
+- `test_utf8.c`: names and texts cut without splitting a character.
+- `test_i18n.c` includes `i18n.c`: every text exists in every language (an empty one showed as nothing) with the
+  same printf conversions as the English, and `tr()` falls back to English.
+- `test_version.c`: what the updater offers (`version.c`: rc order, test labels below every rc, git-describe builds)
+  and which alerts sound when (`sound_wanted()`: levels, quiet hours across midnight, equal times, red always).
+- Not covered yet: `png_rows.c` (it needs the ROM's `tinfl` on the host) and `web.c`'s handlers.
+- CI runs them on every push (`host-tests` job, cJSON fetched at ESP-IDF's version); a release needs them to pass.
 - A fix that can be reproduced off the board gets a case here; check that the case fails on the old code
   (`git show HEAD:main/x.c`) before calling it a test.
 

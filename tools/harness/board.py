@@ -214,6 +214,20 @@ class Board:
                 self._key = ''
         return self._key
 
+    def dns_lan_ok_expected(self):
+        """Firmware v1.12.0-rc.5 and later bind the portal's DNS server to the setup network (version compare)."""
+        try:
+            v = self.cmd('ping', r'test: pong (\S+)', timeout=10).group(1)
+        except Fail:
+            return True
+        m = re.match(r'v(\d+)\.(\d+)\.(\d+)(?:-rc\.(\d+)|-fix\.(\d+))?', v)
+        if not m:
+            return True
+        x, y, z, rc, fix = m.groups()
+        if (int(x), int(y), int(z)) != (1, 12, 0):
+            return (int(x), int(y), int(z)) > (1, 12, 0)
+        return (rc and int(rc) >= 5) or (fix and int(fix) >= 7) or (not rc and not fix)
+
     def headers(self, extra=None):
         h = dict(extra or {})
         if self.key():

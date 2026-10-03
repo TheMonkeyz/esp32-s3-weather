@@ -53,7 +53,9 @@ the display with a USB-C data cable, and follow the steps. It has two channels: 
 **Beta** (a release candidate, offered only while it's newer than the latest release).
 
 > [!TIP]
-> Tick **Erase device** the first time. Leave it unticked for updates, to keep Wi-Fi and settings.
+> Tick **Erase device** the first time. Leave it unticked for updates, to keep Wi-Fi and settings. An erased display
+> starts like a new one: Wi-Fi setup, the built-in place (Québec City) until you choose yours, a new settings
+> certificate (the phone warns once again) and a new settings key, and the radar maps download again.
 
 Other ways:
 
@@ -209,10 +211,14 @@ brightness (it follows the finger). **Done** or swipe **right** to close. Restar
 A phone-friendly page, opened from the QR code and served over HTTPS. See
 [Changing settings later](#-changing-settings-later) for how to open it.
 
-- **Location:** *Use my phone's location* (GPS), city search, or manual lat/lon.
-- **Units:** °C/°F, wind in km/h, mph or m/s (miles on the radar with mph), 24- or 12-hour clock.
-- **Screen & presence:** live sound meter, calibration, delays, brightness.
-- **Wi-Fi network.**
+- **Places:** up to 4; *Use my phone's location* (GPS), city search, a map, or manual lat/lon.
+- **Units:** language, °C/°F, wind in km/h, mph or m/s (miles on the radar with mph), 24- or 12-hour clock.
+- **Screen & presence:** live sound meter, calibration, delays, brightness, wake on pick-up.
+- **Sound:** which alerts sound, volume, quiet hours, a test.
+- **Wi-Fi network:** scan, choose, password.
+- **Firmware:** version, Stable or Beta channel, check, what's new, install.
+
+Changing anything needs the display's key, which comes with the QR code (see [Security notes](#-security-notes)).
 
 ### Presence dimming
 
@@ -351,8 +357,8 @@ What changed in each version: [CHANGELOG.md](CHANGELOG.md).
   10 min, last 3 h, Canada and up to 250 km beyond). Each radar frame shows the flashes of its 10-minute window.
 - Basemap: OpenStreetMap standard tiles (zoom 4–10, one level per radar zoom step). After boot, any level that isn't
   cached yet downloads in the background (about 45 s for all 7) and is saved in flash, so zooming is instant
-  afterwards. If you open the radar before it's done, a "Preparing maps" panel shows the progress. Attribution is
-  shown on screen.
+  afterwards. If you open the radar before it's done, a "Preparing maps" panel shows the progress. The radar screen
+  credits OpenStreetMap and ECCC; the alert details' map credits OpenStreetMap.
 
 In short: the forecast works anywhere in the world; the radar covers Canada and the northern US border region;
 weather alerts and lightning cover Canada (lightning up to about 250 km beyond).
@@ -369,7 +375,8 @@ The prebuilt binaries go in `firmware/` (they're ignored by git, so you get them
 https://github.com/espressif/esptool/releases (`esptool-v4.8.1-win64.zip`) and also ignored by git.
 
 Flash layout: bootloader at `0x0`, partition table at `0x8000`, app at `0x10000`, OTA data
-(`ota_data_initial.bin`) at `0x610000`. Flash settings: DIO, 80 MHz, 16 MB.
+(`ota_data_initial.bin`) at `0x610000`. Flash settings: QIO, 80 MHz, 16 MB (the bootloader switches the flash to QIO
+itself; esptool's header for it stays `dio`, which is expected).
 
 <details>
 <summary><b>flash.bat, monitor.ps1 and the flash helper</b></summary>
@@ -377,7 +384,7 @@ Flash layout: bootloader at `0x0`, partition table at `0x8000`, app at `0x10000`
 - `flash.bat`: flashes `firmware\*.bin` (COM port auto-detected), then logs serial output to `serial_log.txt`.
   - `flash.bat`: interactive, logs for 40 s, then waits for a key press.
   - `flash.bat auto 90`: no pause at the end (for scripts or Claude Code), logs for 90 s.
-- `monitor.ps1 -Port COM5 -Seconds 60`: serial log only. Press Q or Esc (or create `stop.request`) to stop early.
+- `monitor.ps1 -Port <your COM port> -Seconds 60`: serial log only. Press Q or Esc (or create `stop.request`) to stop early.
 - `start_flash_helper.bat`: opens the **flash helper** window (`flash_helper.ps1`). Whenever a file named
   `flash.request` appears in this folder, it flashes `firmware\*.bin` and logs serial output for the number of
   seconds written in the file (default 60). This lets tools that can only write files (like the Claude desktop app)
@@ -403,8 +410,7 @@ logs, screenshots with `tools/snapshot.py`) is in [docs/TESTING.md](docs/TESTING
 
 ### Web flasher and automatic builds (GitHub Actions)
 
-The [web flasher](https://themonkeyz.github.io/esp32-s3-weather/) has two channels, like capsule-radar's board
-picker: **Stable** (the latest release) and **Beta** (a release candidate, offered only while it's newer than the
+The [web flasher](https://themonkeyz.github.io/esp32-s3-weather/) has two channels: **Stable** (the latest release) and **Beta** (a release candidate, offered only while it's newer than the
 latest release). `?channel=beta` in the address preselects Beta.
 
 `.github/workflows/firmware.yml` builds the firmware with ESP-IDF v5.5.4 on every push and pull request, but only
@@ -426,11 +432,17 @@ Releasing a new version: first add a section to [`CHANGELOG.md`](CHANGELOG.md) (
 between its version and the offered one before installing.
 
 ```
-git tag -a v1.1.0-rc.1 -m "Release candidate"      # optional: test it from the Beta channel first
+git tag v1.1.0-rc.1                # on the changelog commit; test it from the Beta channel first
 git push origin main v1.1.0-rc.1
-git tag -a v1.1.0 -m "What's new"                  # same commit once it's good
+git tag v1.1.0                     # on the stable changelog commit, once it's good
 git push origin v1.1.0
 ```
+
+- Tags are lightweight. Among pre-releases only `-rc.N` is ordered (by N); other suffixes count below every rc of
+  the same version. **Never rename the repository or the account:** every display looks for its updates at the
+  Pages address built in (`OTA_SITE` in `main/ota.h`).
+- Protect the tags: a repository ruleset on `v*` that only the owner may create or move (a tag is a release, and
+  the displays install what it builds).
 
 - The version is `git describe --tags --always` (e.g. `v1.0.0`, `v1.0.0-3-g1a2b3c4` or just a commit hash before
   the first tag). CI writes it to `version.txt`, which ESP-IDF uses as the app version. It appears in the boot log
@@ -458,19 +470,21 @@ git push origin v1.1.0
 
 ### Building from source
 
-With an ESP-IDF **v5.5.4** environment (on Windows, the ESP-IDF PowerShell shortcut, or
-`. C:\Espressif\esp-idf\export.ps1` in PowerShell):
+Install [ESP-IDF v5.5.4](https://docs.espressif.com/projects/esp-idf/en/v5.5.4/esp32s3/get-started/) (on Windows,
+the ESP-IDF installer; then the ESP-IDF PowerShell shortcut, or `. C:\Espressif\esp-idf\export.ps1`), then:
 
 ```powershell
+git clone https://github.com/TheMonkeyz/esp32-s3-weather.git
+cd esp32-s3-weather
 idf.py set-target esp32s3
 idf.py build
-idf.py -p COM5 flash monitor
+idf.py -p <your COM port> flash monitor
 ```
 
 LVGL 9.2.2 and esp_codec_dev are fetched automatically by the component manager (`main/idf_component.yml`). To
 refresh the prebuilt files used by `flash.bat`, copy `build\bootloader\bootloader.bin`,
 `build\partition_table\partition-table.bin`, `build\ota_data_initial.bin` and `build\weather_amoled.bin` into
-`firmware\`.
+`firmware\` (create it: it isn't in the repository).
 
 ### Project layout
 
@@ -525,8 +539,13 @@ tools/harness/        the whole display tested without a person (screens, page, 
 tools/make_flasher_site.py  release files (dist) and the web-flasher site with Stable/Beta channels (site)
 web/flash/            web flasher page (ESP Web Tools) + screenshots
 web/flash/img/        screenshots of the screens, used by the flasher page and this README
-.github/workflows/firmware.yml  CI: build, GitHub Pages flasher, releases
+tests/host/           host unit tests of firmware C code (gcc, Linux or WSL: make -C tests/host); see docs/TESTING.md
+.github/workflows/firmware.yml  CI: build, board-free tests, GitHub Pages flasher, releases
+.github/dependabot.yml          update proposals for the pinned actions and test tools
+flash.bat             Windows: flash firmware\*.bin over USB, then log (COM port auto-detected)
+monitor.ps1           serial log to serial_log.txt / serial_live.txt (used by the two below)
 flash_helper.ps1      flash.request = flash + log, reboot.request = restart + log (no flashing)
+start_flash_helper.bat  starts flash_helper.ps1 (the harness and AI sessions drive the board through it)
 CLAUDE.md       notes for AI-assisted development sessions
 ```
 

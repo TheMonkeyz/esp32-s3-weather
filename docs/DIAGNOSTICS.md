@@ -28,7 +28,7 @@ after boot blocked the screen for 1.5 s and swallowed swipes.
 |---|---|
 | `diag: reset reason …, flash …, PSRAM …` | once at boot; also app partition size and NVS entries used/free |
 | `diag: mark <stage> internal N KB free (largest N), DMA N KB, PSRAM N KB` | heap after each boot stage (`diag_mark()` calls in `main.c`) |
-| `diag: bench render-only full screen: blank … weather … hourly … radar …` | on request (`bench`), when the weather screen is idle (otherwise retried every 20 s; its last step repaints the weather screen, which flashed over the hourly view once): time to render each whole screen, not sent to the panel (invisible to the user; blocks the UI ~1.5 s) |
+| `diag: bench render-only full screen: blank … weather … hourly … radar …` | on request (`bench`), when the weather screen is idle (otherwise "postponed"; the harness asks again; its last step repaints the weather screen, which flashed over the hourly view once): time to render each whole screen, not sent to the panel (invisible to the user; blocks the UI ~1.5 s) |
 | `diag: bench weather incl. panel transfer` | same for the weather screen repainted *with* the SPI transfer; minus the render-only time = cost of the panel |
 | `diag: heap: internal … (min ever …, largest block now … / worst …) \| DMA … \| PSRAM …` | every period. *min ever* is since boot. *worst* largest block is sampled every second |
 | `diag: display: N frames, render avg/max, Mpx sent \| animation fps (frames, worst gap) \| LVGL lock wait max, longest hold by <task>` | per period. *Animation* counts frames rendered less than 250 ms apart. *Lock wait* is how long the LVGL task waited for `display_lock()`; *hold* is the longest time another task kept it |
@@ -58,7 +58,8 @@ Since then (from the harness, which is now the reference: `internal_free_kb`, `i
 `internal_min_kb.reconnect`): by v1.11.1 the 5-picture cache, TLS and the hourly graphs had brought it to ~48 KB
 steady and **8–10 KB min ever** (3 KB once), 4–5 KB on the reconnect path (three TLS clients and the forecast parse at
 once). v1.12.0 moved the radar's 46 frame structs (48 KB of palettes) and cJSON's parse trees to PSRAM: **~96 KB
-steady, 48–50 KB min ever, 76 KB after the reconnect path**. The `heap` lines also count failed allocations and LVGL
+steady, 48–50 KB min ever, 76 KB after the reconnect path** (rc.2). rc.3 then gave six task stacks the room their
+measured peaks asked for (~12.7 KB): **~84 KB steady, 36–40 KB min ever, 38–43 KB after the reconnect path**. The `heap` lines also count failed allocations and LVGL
 blocks put in internal RAM (both 0 expected).
 
 Causes and fixes:

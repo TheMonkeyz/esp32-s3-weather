@@ -54,12 +54,15 @@ class Ctx:
         open(os.path.join(ROOT, 'harness.ask'), 'w', encoding='utf-8').write(text)
 
 
-def crash_summary(lines):
-    """The panic reason and the backtrace decoded with the test build's ELF (build/v55; wrong for other builds)."""
-    import glob, re, subprocess
+def crash_summary(lines, version=None):
+    """The panic reason and the backtrace decoded with the test build's ELF (build/v55), if that ELF is the firmware
+    that crashed (its version string is in it); else says so instead of printing wrong function names."""
+    import glob, subprocess
     why = next((l.strip() for l in lines if re.search(r'assert failed|Guru Meditation|abort\(\) was called|panic', l)), '')
     bt = next((l for l in lines if l.startswith('Backtrace:')), '')
     elf = os.path.join(ROOT, 'build', 'v55', 'weather_amoled.elf')
+    if bt and version and os.path.exists(elf) and version.encode() not in open(elf, 'rb').read():
+        return (why[:90] + ' | ' if why else '') + f'backtrace not decoded: build/v55 is not {version}' 
     a2l = glob.glob(os.path.expanduser('~/.espressif/tools/xtensa-esp-elf/*/xtensa-esp-elf/bin/xtensa-esp32s3-elf-addr2line*'))
     frames = []
     if bt and a2l and os.path.exists(elf):
@@ -117,10 +120,23 @@ def propose(metrics, base):
     return out
 
 
+def find_ip(log):
+    """The display's address from its log ('net: Connected, IP x.x.x.x'), the last one; None if not there."""
+    m = next((m for m in map(re.compile(r'net: Connected, IP (\d+\.\d+\.\d+\.\d+)').search, reversed(log.lines())) if m),
+             None)
+    if m:
+        return m.group(1)
+    try:                                                  # a previous run's address (git-ignored)
+        return open(os.path.join(os.path.dirname(BASELINE), '.display_ip')).read().strip() or None
+    except OSError:
+        return None
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('suites', nargs='*', help='any of: ' + ', '.join(ORDER) + ' (default: all)')
-    ap.add_argument('--ip', default='192.168.1.156', help="the display's address on the home network")
+    ap.add_argument('--ip', help="the display's address on the home network (default: from the log, "
+                    "'net: Connected, IP …')")
     ap.add_argument('--flash', help='firmware .bin to flash first')
     ap.add_argument('--phone', action='store_true', help='wifi_setup: ask for a phone to test Easy Connect fully')
     ap.add_argument('--update-baseline', action='store_true', help='store the measured numbers as the reference')
@@ -140,7 +156,7 @@ def main():
     outdir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'reports', time.strftime('%Y-%m-%d_%H%M%S'))
     os.makedirs(outdir, exist_ok=True)
     log = Log()
-    board = Board(opts.ip, log)
+    board = Board(opts.ip or find_ip(log) or '', log)
     ctx = Ctx(board, log, PCWifi(), outdir, opts)
     results = []
     started = time.time()
@@ -169,7 +185,17 @@ def main():
             version = board.cmd('ping', r'test: pong (\S+)', timeout=10).group(1)
         if opts.expect and version != opts.expect:
             raise Fail(f'the board runs {version}, not {opts.expect}')
-        print(f'Testing {version}', flush=True)
+        if not opts.ip:
+            board.ip = find_ip(log) or board.ip
+        if not board.ip:
+            raise Fail('the display\'s address is not in the log yet: pass --ip')
+        # The flash mode decides the render speed (render_ms limits assume QIO): a board updated over the air keeps
+        # its old bootloader, DIO until a USB or web-flasher install (v1.11.1)
+        mode = next((m.group(1).upper() for m in map(re.compile(r'(?:boot\.esp32s3: SPI Mode\s*:|spi_flash: flash io:)\s*(\w+)').search,
+                                                        reversed(log.lines())) if m), '?')
+        print(f'Testing {version} at {board.ip} (flash {mode})', flush=True)
+        if mode not in ('QIO', '?'):
+            ctx.note(f'flash mode {mode}: render times run ~30 % slower than the QIO baseline')
     except Fail as e:
         print('Cannot start:', e)
         return 2
@@ -195,8 +221,14 @@ def main():
                 traceback.print_exc()
             resets = [l for l in log.since_mark() if 'rst:0x' in l]
             if resets and not ctx.reset_ok:             # a crash (also when a check failed after it): panic + backtrace
-                status, detail = 'FAIL', (f'unexpected restart: {resets[0][:60]}; {crash_summary(log.since_mark())}'
+                status, detail = 'FAIL', (f'unexpected restart: {resets[0][:60]}; {crash_summary(log.since_mark(), version)}'
                                           + (f' (then: {detail})' if detail else ''))
+            if status != 'pass' and s in ('wifi_runtime', 'wifi_setup'):   # leave the board and the PC as they were
+                for undo in (lambda: board.cmd('wifi online', r'test: wifi (.*)'), ctx.wifi.leave):
+                    try:
+                        undo()
+                    except Exception as e:
+                        print(f'  (cleanup: {e})', flush=True)
             for rx, what in watch:
                 n = sum(1 for l in log.since_mark() if re.search(rx, l))
                 if n:
@@ -241,6 +273,10 @@ def main():
         if vd in BAD:
             print(f'  {vd}: {k} {v} {lim}'.replace('≤', '<=').replace('≥', '>='))   # (a cp1252 console)
     print('Report:', os.path.relpath(os.path.join(outdir, 'report.md'), ROOT))
+    try:
+        open(os.path.join(os.path.dirname(BASELINE), '.display_ip'), 'w').write(board.ip)
+    except OSError:
+        pass
     return 1 if failed or perf_bad else 0
 
 

@@ -119,19 +119,19 @@
   "ref": 0
  },
  "internal_free_kb": {
-  "min": 70,
-  "note": "one reading; 25-55 KB until v1.12.0, ~96 KB since (radar palettes, cJSON in PSRAM)",
-  "ref": 96
+  "min": 65,
+  "note": "one reading; 25-55 KB until v1.12.0, ~96 KB in rc.2, ~84 KB since rc.3 (larger task stacks)",
+  "ref": 84
  },
  "internal_min_kb": {
-  "min": 35,
-  "note": "lowest internal RAM since boot, read in perf. 8-10 KB until v1.12.0 (3 KB once); 48-50 KB since the radar palettes and cJSON moved to PSRAM",
-  "ref": 50
+  "min": 25,
+  "note": "lowest internal RAM since boot, read in perf. 8-10 KB until v1.12.0 (3 KB once); 50 KB with the radar palettes and cJSON in PSRAM (rc.2), 36-40 KB since the task stacks grew ~12.7 KB in rc.3 (main, HTTPS, HTTP, ota, event task, console)",
+  "ref": 38
  },
  "internal_min_kb.reconnect": {
-  "min": 40,
-  "note": "lowest since boot after wifi_setup's reconnect path (three TLS clients + the forecast parse): 4-5 KB until v1.12.0, 76 KB since",
-  "ref": 76
+  "min": 28,
+  "note": "lowest since boot after wifi_setup's reconnect path (three TLS clients + the forecast parse): 4-5 KB until v1.12.0, 76 KB in rc.2, 38-43 KB since rc.3's larger task stacks",
+  "ref": 41
  },
  "lvgl_internal_fallbacks": {
   "max": 0,

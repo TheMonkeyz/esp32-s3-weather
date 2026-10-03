@@ -360,7 +360,8 @@ static void ap_down(void)
 {
     if (!ap_active) return;
     // The DNS server stays up: stop_dns_server() deletes its task without closing the socket, so port 53 stayed
-    // taken and the next setup network had no DNS (no captive portal). It only answers phones on the setup AP.
+    // taken and the next setup network had no DNS (no captive portal). It is bound to the setup AP's address
+    // (192.168.4.1), so it answers phones on the setup network only, not the home network.
     esp_wifi_set_mode(WIFI_MODE_STA);
     ap_active = false;
     ESP_LOGI(TAG, "Setup AP stopped");

@@ -191,14 +191,12 @@ void sound_alert(char colour)
     sound_cfg_t c;
     sound_get_config(&c);
     int sev = colour == 'r' ? 3 : colour == 'o' ? 2 : colour == 'y' ? 1 : 0;
-    int min = c.level == 1 ? 3 : c.level == 2 ? 2 : 0;
-    if (c.level == 0 || sev < min) { ESP_LOGI(TAG, "new alert (%c): no chime at this level", colour); return; }
     struct tm tm;
-    if (sev < 3 && c.quiet_from != c.quiet_to && config_local_time((long)time(NULL), &tm)) {
-        int now = tm.tm_hour * 60 + tm.tm_min;
-        bool quiet = c.quiet_from < c.quiet_to ? now >= c.quiet_from && now < c.quiet_to
-                                               : now >= c.quiet_from || now < c.quiet_to;   // across midnight
-        if (quiet) { ESP_LOGI(TAG, "new alert (%c): quiet hours", colour); return; }
+    int now = config_local_time((long)time(NULL), &tm) ? tm.tm_hour * 60 + tm.tm_min : -1;
+    if (!sound_wanted(c.level, sev, c.quiet_from, c.quiet_to, now)) {
+        int min = c.level == 1 ? 3 : c.level == 2 ? 2 : 0;
+        ESP_LOGI(TAG, "new alert (%c): %s", colour, c.level <= 0 || sev < min ? "no sound at this level" : "quiet hours");
+        return;
     }
     request(sev < 1 ? 1 : sev);
 }

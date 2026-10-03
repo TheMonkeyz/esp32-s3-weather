@@ -7,7 +7,12 @@ publishes them as `notes.json`, built by `tools/make_flasher_site.py`.
 How to write an entry: add a `## vX.Y.Z - YYYY-MM-DD` section at the top **before** tagging the release, with one
 `- ` line per change. Write for the person holding the display, not for developers. Release candidates can get
 their own `## vX.Y.Z-rc.N` section. Those are shown only to Beta users, while the final release's section should
-list everything again.
+list everything again. (Two tags have no section: v1.3.0-rc.1, and v1.12.0-rc.1, whose build failed and was published
+as v1.12.0-rc.2.)
+
+## v1.12.0-rc.5 - 2026-10-03
+- The setup network's name lookups (which open the setup page on your phone) are answered only on the setup network, no longer on your home network.
+- A slightly smaller firmware (an unused image decoder removed), and the map requests name the project.
 
 ## v1.12.0-rc.4 - 2026-10-03
 - The hourly view and the "Today" column are right just after midnight (they showed the day before until the next update).

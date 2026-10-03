@@ -20,3 +20,16 @@ void sound_alert(char colour);
 void sound_test(int level);                // play the sound for level 1 yellow / 2 orange / 3 red now, whatever
                                            // the settings
 bool sound_ok(void);                       // speaker found
+
+// Does an alert of severity sev (3 red, 2 orange, 1 yellow, 0 statement) sound, for the level setting and the quiet
+// hours, at minute `now` of the day (-1: the clock isn't set)? Red always does; equal from/to = no quiet hours; quiet
+// hours may cross midnight. (tests/host/test_version.c)
+static inline bool sound_wanted(int level, int sev, int quiet_from, int quiet_to, int now)
+{
+    int min = level == 1 ? 3 : level == 2 ? 2 : 0;
+    if (level <= 0 || sev < min) return false;
+    if (sev >= 3 || quiet_from == quiet_to || now < 0) return true;
+    bool quiet = quiet_from < quiet_to ? now >= quiet_from && now < quiet_to
+                                       : now >= quiet_from || now < quiet_to;   // across midnight
+    return !quiet;
+}
