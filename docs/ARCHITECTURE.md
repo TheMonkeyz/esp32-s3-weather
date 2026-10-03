@@ -149,10 +149,19 @@ order, and ~11 ms on the bus.
     and of a drag's switch (the pager's scroll redraws the page being left, which didn't change). `pictures_tick`
     keeps the picture of every screen shown (any screen can have a list), plus the neighbours of the four drag screens.
   - For the screens not shown, the `ui_*` functions mark what they change: `ui_place` its page (and, for the place
-    shown, extras and the hourly days via `place_current`), `ui_air` the extras page, `ui_alerts`, `ui_ota`,
-    `ui_units_changed` and a new place count everything (`slide_cache_dirty(NULL)`), the minute tick every picture
-    but the shown one (`slide_cache_dirty_hidden()`); the radar marks its own screen in `show_live()`. New code that
-    changes a screen while it isn't shown must do the same, or a drag shows stale content for a moment.
+    shown, extras and the hourly days via `place_current`), `ui_air` the extras page, `ui_ota` the update, status
+    and Settings screens (the places only when the weather screen's update pill changes: every update check used to
+    mark everything), `ui_alerts`, `ui_units_changed` and a new place count everything (`slide_cache_dirty(NULL)`);
+    the radar marks its own screen in `show_live()`. New code that changes a screen while it isn't shown must do the
+    same, or a drag shows stale content for a moment.
+  - **Rows only** (`slide_cache_dirty_rows(key, y0, y1)`): a picture is out of date in a row range (`d0`..`d1`,
+    widened by later marks), and only those rows are rendered again (`get()`, the idle strips). A range of one strip
+    or less renders at once, without waiting for a quiet screen. The minute tick: `clock_tick` marks each other
+    place's clock rows (from the label's position in its page), the radar its pill's rows when `radar_clock` changes
+    it, and `slide_cache_dirty_hidden(minute_marks_own)` marks every other hidden picture whole (extras: the sun moves
+    and `extras_refresh()` only runs before a whole render). A drag 0.6 s after the minute now starts in 15 ms (it
+    rendered a whole neighbour, ~130 ms; at the very start of this work two). `drag_paint` moves the pager's dots
+    only when the rows it renders include them (twice a whole-screen layout: ~50 ms for 36 clock rows).
   - **Redraws that change nothing still make a picture out of date, and the next drag waits for it** (0.2–0.5 s:
     long enough for a quick drag to end before its first frame). A place switch sends the place shown, "no alerts"
     and air quality again; each used to redraw. So: `ui_place`, `ui_alerts` and `ui_air` return early when nothing
@@ -164,9 +173,8 @@ order, and ~11 ms on the bus.
     date with `__builtin_return_address(0)`, and each redraw of the shown screen with its area and
     `esp_backtrace_print()` (decoded with `addr2line`). Measured with 10 place drags 1.5–20 s apart: before, 4 of 10
     waited 0.2–0.6 s; after, all started within 14–18 ms.
-  - Left: the minute tick makes the other screens' pictures out of date (their clocks); a drag in the next ~2 s
-    waits ~0.13 s for its neighbour's (candidate: re-render only the clock's rows). Each data change does the same
-    for its screens. Other places' pictures never show the alert pill of
+  - Left: each data change makes its screens' pictures out of date (a new forecast, alerts), and a drag in the next
+    second or two renders the neighbour first (~0.13 s). Other places' pictures never show the alert pill of
     the place shown (`drag_paint` hides it): a switch clears the alerts until the new place's are fetched.
 - **List scrolls** (`slide_scroll()`, from `drag_read` for a vertical drag on a scrollable object other than the
   weather screen's places and the radar's zoom swipes: `slide_scroll_target()`): LVGL redrew all of a scrolling list

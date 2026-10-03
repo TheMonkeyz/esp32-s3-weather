@@ -44,7 +44,10 @@ typedef const void *(*slide_key_cb_t)(lv_obj_t *screen);
 void slide_cache_init(slide_paint_cb_t paint, slide_key_cb_t key);
 void slide_cache_keep(const void *const *keys, int n);
 void slide_cache_dirty(const void *key);
-void slide_cache_dirty_hidden(void);   // every picture but the screen shown's (its changes reach it as LVGL draws them)
+void slide_cache_dirty_rows(const void *key, int y0, int y1);   // only rows y0..y1 changed (a clock): only they re-render
+// Every picture but the screen shown's (its changes reach it as LVGL draws them) and those `except` returns true for
+// (their owner marks the rows that change: the places' clocks, the radar's pill)
+void slide_cache_dirty_hidden(bool (*except)(const void *key));
 bool slide_cache_idle_work(int quiet_ms);
 lv_draw_buf_t *slide_cache_get(const void *key, bool render);   // a clean picture, rendered now if `render`
 bool slide_picture(lv_obj_t *scr, lv_draw_buf_t *dst);          // a whole screen into dst
