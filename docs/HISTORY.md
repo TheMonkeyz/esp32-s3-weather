@@ -84,7 +84,9 @@ one release candidate per group, each installed by the display's own updater and
   the harness waits out an outage on the message screen instead of failing every test.
 - **rc.8**: the OpenStreetMap User-Agent carries the running version. The same day the whole series shipped as
   **v1.12.0**, installed by the display's updater and passing every harness suite; the old test key was purged
-  from git history (all commit IDs changed).
+  from git history (all commit IDs changed). A phone install from the settings page was then checked end to end: a
+  test build labelled v1.12.0-fix.13 was offered v1.12.0, the owner tapped Install, and it downloaded in 24 s,
+  restarted and was confirmed 60 s later.
 
 What it taught: build exactly what you commit (a script splitting work dropped an include and rc.1's build failed);
 an empty translation is not a missing one; a rule with a time window needs a test that crosses it.
@@ -156,7 +158,7 @@ an empty translation is not a missing one; a rule with a time window needs a tes
 
 - Left from the October 3 fix plan: saving a place on the captive
   portal before the Wi-Fi restart (D3); heap poisoning in test builds; the harness's non-English Windows detection
-  and separate render limits for QIO/DIO boards (E3); a real phone install from the settings page. (Old pull-request refs still reach
+  and separate render limits for QIO/DIO boards (E3). (Old pull-request refs still reach
   pre-purge commits; the key was rotated, so no GitHub Support request was made.)
 - The Inuktitut draft needs a fluent speaker (docs/translations/iu-review.md).
 - Radar zoom: ~80 ms before the first frame (the overlays' alpha, mostly the range ring); could be cached between
