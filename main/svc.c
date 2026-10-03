@@ -9,6 +9,7 @@
 #include "http_once.h"
 #include "esp_crt_bundle.h"
 #include "esp_log.h"
+#include "esp_app_desc.h"
 #include "config.h"
 #include "net.h"
 #include "ota.h"
@@ -75,6 +76,18 @@ void svc_get(svc_id_t id, svc_info_t *out)
 
 /* ---------- probe: small requests to the services nothing has used lately ---------- */
 
+const char *svc_user_agent(void)
+{
+    static char ua[128];                       // filled once; two tasks racing write the same bytes
+    if (!ua[0]) {
+        const char *v = esp_app_get_description()->version;
+        snprintf(ua, sizeof(ua), "esp32-s3-weather/%s (open-source weather display; "
+                 "+https://github.com/TheMonkeyz/esp32-s3-weather)", v[0] == 'v' ? v + 1 : v);
+        ESP_LOGI(TAG, "User-Agent: %s", ua);
+    }
+    return ua;
+}
+
 static void probe_url(svc_id_t id, char *url, size_t n)
 {
     location_t loc;
@@ -111,7 +124,7 @@ static void probe_task(void *arg)
         probe_url(i, url, sizeof(url));
         esp_http_client_config_t cfg = {
             .url = url, .crt_bundle_attach = esp_crt_bundle_attach, .timeout_ms = 10000,
-            .user_agent = "esp32-s3-weather/1.12 (open-source weather display; +https://github.com/TheMonkeyz/esp32-s3-weather)",   // OSM tile policy
+            .user_agent = svc_user_agent(),
         };
         int64_t t0 = esp_timer_get_time();
         int status;

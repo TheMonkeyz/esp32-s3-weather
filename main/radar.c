@@ -92,7 +92,7 @@ static bool http_fetch(esp_http_client_handle_t *hp, const char *url, dl_t *d)
         esp_http_client_config_t c = {
             .url = url, .event_handler = on_http,
             .crt_bundle_attach = esp_crt_bundle_attach, .timeout_ms = 10000,
-            .user_agent = "esp32-s3-weather/1.12 (open-source weather display; +https://github.com/TheMonkeyz/esp32-s3-weather)", .buffer_size = 4096,
+            .user_agent = svc_user_agent(), .buffer_size = 4096,
             .keep_alive_enable = true,
         };
         *hp = esp_http_client_init(&c);

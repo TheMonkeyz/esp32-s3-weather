@@ -33,5 +33,8 @@ void svc_http(svc_id_t id, esp_err_t err, int status, int64_t t0);
 void svc_ok(svc_id_t id, int64_t t0);
 void svc_fail(svc_id_t id, const char *why, int64_t t0);
 void svc_get(svc_id_t id, svc_info_t *out);
+// The User-Agent of the firmware's own requests (OSM's tile policy asks apps to identify themselves): the app name,
+// the running version and the repository, e.g. "esp32-s3-weather/1.12.0 (open-source weather display; +https://...)".
+const char *svc_user_agent(void);
 // Status page opened: in a short-lived task, send a small request to each service not contacted for 5 min.
 void svc_probe_stale(void);

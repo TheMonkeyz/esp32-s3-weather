@@ -38,7 +38,8 @@ the flasher page show the required credits.
   Open Government Licence – Canada.
 - Map tiles: © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors, ODbL; tiles served by the
   OpenStreetMap Foundation under its [tile usage policy](https://operations.osmfoundation.org/policies/tiles/). The
-  firmware identifies itself with a User-Agent naming the project and its repository, caches the tiles it uses in
+  firmware identifies itself with a User-Agent naming the project, its running version and its repository
+  (`svc_user_agent()`), caches the tiles it uses in
   flash (each display downloads its maps once per place, about 60 tiles) and credits OpenStreetMap on every screen that
   shows them. The policy asks distributed apps for heavy use to arrange their own tile source: if this project ever
   has many users, switch to a tile provider that allows it.
