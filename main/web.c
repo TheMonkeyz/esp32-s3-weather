@@ -94,6 +94,7 @@ static esp_err_t config_get(httpd_req_t *req)
     if (!ap) cJSON_AddNumberToObject(j, "lat", loc.lat);
     if (!ap) cJSON_AddNumberToObject(j, "lon", loc.lon);
     cJSON_AddStringToObject(j, "ssid", ssid);
+    if (ap) cJSON_AddTrueToObject(j, "setup");      // the page explains why its map and search don't load
     cJSON_AddStringToObject(j, "version", esp_app_get_description()->version);
     cJSON *pl = cJSON_AddArrayToObject(j, "places");
     for (int i = 0; i < config_place_count(); i++) {

@@ -47,6 +47,7 @@ details.coords{margin-top:10px;font-size:14px;color:var(--dim)}details.coords su
   <h2 data-i18n="places">Places</h2>
   <div id="placeList">
     <div class="muted" data-i18n="placesHelp"></div>
+    <div class="muted" id="setupNote" data-i18n="setupPlaces" style="display:none;margin-top:8px"></div>
     <div id="places"></div>
     <button class="sec" id="addPlace" data-i18n="addPlace"></button>
   </div>
@@ -219,6 +220,7 @@ const I18N = {
  en: {
   title: 'Weather display', places: 'Places',
   placesHelp: 'Tap a place to change it. On the display, drag up or down on the weather screen to switch.',
+  setupPlaces: "This setup network has no internet, so the map and the place search won't load here. Save your Wi-Fi first, then choose your places on the secure page (the display shows its code). Or type the coordinates now.",
   addPlace: '＋ Add a place', nameLabel: 'Name shown on the display', namePh: 'e.g. Cottage', findCity: 'Find a city',
   cityPh: 'e.g. Québec', gps: "📍 Use my phone's location",
   gpsNote1: 'Phone location only works on the secure page: ',
@@ -280,6 +282,7 @@ const I18N = {
  fr: {
   title: 'Afficheur météo', places: 'Endroits',
   placesHelp: "Touchez un endroit pour le modifier. Sur l'afficheur, glissez vers le haut ou le bas sur l'écran météo pour changer d'endroit.",
+  setupPlaces: "Ce réseau de configuration n'a pas accès à Internet : la carte et la recherche d'endroits ne s'afficheront pas ici. Enregistrez d'abord votre Wi-Fi, puis choisissez vos endroits sur la page sécurisée (l'afficheur montre son code). Ou entrez les coordonnées dès maintenant.",
   addPlace: '＋ Ajouter un endroit', nameLabel: 'Nom affiché', namePh: 'ex. : Chalet', findCity: 'Trouver une ville',
   cityPh: 'ex. : Québec', gps: '📍 Utiliser la position du téléphone',
   gpsNote1: 'La position du téléphone ne fonctionne que sur la page sécurisée : ',
@@ -348,6 +351,7 @@ const I18N = {
   title: 'ᓯᓚᒧᑦ ᓴᖅᑭᔭᐅᑦ',
   places: 'ᐃᓃᑦ',
   placesHelp: 'ᐃᓂ ᓇᕿᓪᓕ ᐊᓯᔾᔨᕐᓗᒍ. ᓴᖅᑭᔭᐅᒻᒥ, ᓯᓚᐅᑉ ᐃᒐᓚᐅᔮᓂ ᓄᓱᐊᕐᓕ ᖁᓕᒧᑦ ᐅᕝᕙᓘᓐᓃᑦ ᐊᑎᒧᑦ ᐊᓯᐊᓄᑦ ᐃᑳᕐᓗᒍ.',
+  setupPlaces: 'ᐅᓇ ᑲᓱᖃᑎᒌᑦ internet-ᖃᙱᑦᑐᖅ: ᓄᓇᙳᐊᖅ ᓄᓇᓖᓪᓗ ᕿᓂᕐᓂᖓ ᒫᓂ ᑕᑯᒃᓴᐅᙱᑦᑐᑦ. Wi-Fi ᔭᒐᔾᔭᐃᕐᓕ ᓯᕗᓪᓕᖅᐹᒥᒃ, ᑖᕙᓂ ᐃᓂᒋᔭᑎᑦ ᕿᓂᕐᓗᒋᑦ ᒪᑉᐱᒐᕐᒥ ᐱᔾᔭᐃᖅᓯᒪᔪᒥ (ᓴᖅᑭᔭᐅᑦ ᐊᔾᔨᓕᐅᒐᒥᓂᒃ ᑕᑯᑎᑦᓯᔪᖅ). ᐅᕝᕙᓘᓐᓃᑦ ᓈᓴᐅᑎᑦ ᓇᕿᑦᑕᐅᕐᓗᒋᑦ ᒫᓐᓇ.',
   addPlace: '＋ ᐃᓂ ᐃᓚᓕ',
   nameLabel: 'ᐊᑎᖅ ᓴᖅᑭᔭᐅᒻᒥ',
   namePh: 'ᐊᔅᓯᖓ: ᐊᐅᔭᕐᕕᒃ',
@@ -639,6 +643,7 @@ async function load(){
   try{
     const c = await (await fetch('/api/config')).json();
     cfg = c;
+    $('setupNote').style.display = c.setup ? 'block' : 'none';
     if (c.languages) $('uLang').replaceChildren(...c.languages.map(l => new Option(l.name, l.code)));
     if (c.units && c.units.lang && c.units.lang !== LANG) { LANG = c.units.lang; applyLang(); }
     showPlaces();

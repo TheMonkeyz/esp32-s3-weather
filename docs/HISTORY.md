@@ -156,8 +156,7 @@ an empty translation is not a missing one; a rule with a time window needs a tes
 
 ## Open threads
 
-- Left from the October 3 fix plan: saving a place on the captive
-  portal before the Wi-Fi restart (D3); heap poisoning in test builds; the harness's non-English Windows detection
+- Left from the October 3 fix plan: heap poisoning in test builds; the harness's non-English Windows detection
   and separate render limits for QIO/DIO boards (E3). (Old pull-request refs still reach
   pre-purge commits; the key was rotated, so no GitHub Support request was made.)
 - The Inuktitut draft needs a fluent speaker (docs/translations/iu-review.md).

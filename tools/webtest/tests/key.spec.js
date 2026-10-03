@@ -7,6 +7,7 @@ test('the key from the QR code is kept and sent with changes', async ({ page, re
   await request.post('/__key', { data: { key: KEY } });
   await page.goto('/#k=' + KEY);
   await expect(page.locator('#places')).toContainText('Québec');
+  await expect(page.locator('#setupNote')).toBeHidden();             // only on the setup network
   expect(new URL(page.url()).hash).toBe('');                      // not left in the address bar
   await page.locator('#uTemp').selectOption('f');
   await expect(page.locator('#umsg')).toHaveText('Saved');
@@ -49,6 +50,9 @@ test('on the setup network: no key needed, places listed without their coordinat
   await request.post('/__setup');
   await page.goto('/');
   await expect(page.locator('#places')).toContainText('Québec');
+  await expect(page.locator('#setupNote')).toContainText('no internet');     // why the map and search won't load
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.locator('#locCard').screenshot({ path: 'shots/setup_places_note.png' });
   await expect(page.locator('#places .muted')).toHaveText('');
   await page.locator('#places .pl').first().click();
   await expect(page.locator('#lat')).toHaveValue('');              // not moved by a save without a new spot

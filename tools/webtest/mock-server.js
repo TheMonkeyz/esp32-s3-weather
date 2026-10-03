@@ -57,7 +57,7 @@ const routes = {
   'GET /api/config': () => {                       // web.c config_get: no coordinates on the setup network
     const c = config();
     if (!st.setupNet) return [200, c];
-    return [200, { ...c, lat: undefined, lon: undefined, ssid: '', places: c.places.map(p => ({ name: p.name })) }];
+    return [200, { ...c, lat: undefined, lon: undefined, ssid: '', setup: true, places: c.places.map(p => ({ name: p.name })) }];
   },
   'POST /api/location': b => {                     // web.c location_post
     if (!b || typeof b.lat !== 'number' || typeof b.lon !== 'number') return [400, 'bad location'];

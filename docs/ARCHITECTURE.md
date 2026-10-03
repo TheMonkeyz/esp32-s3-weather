@@ -597,6 +597,9 @@ order, and ~11 ms on the bus.
     answers only setup-network clients here (GET → 302 to the HTTPS page, POST → 403; see Settings / web).
 - On the plain-HTTP page the GPS button can't work (browsers only allow geolocation on secure pages). The page shows a
   link to the HTTPS version instead, and puts the Wi-Fi card first when opened on 192.168.4.1.
+- On the setup network the phone has no internet: the map and the place search can't load. `GET /api/config`
+  says `"setup": true` there and the page's Places card explains it (save the Wi-Fi first, then choose places on
+  the secure page; or type coordinates). A place saved there is kept (no key needed on the setup network).
 
 ## Alert sounds (`sound.c`)
 
