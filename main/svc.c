@@ -6,6 +6,7 @@
 #include "freertos/task.h"
 #include "esp_timer.h"
 #include "esp_http_client.h"
+#include "http_once.h"
 #include "esp_crt_bundle.h"
 #include "esp_log.h"
 #include "config.h"
@@ -112,11 +113,9 @@ static void probe_task(void *arg)
             .url = url, .crt_bundle_attach = esp_crt_bundle_attach, .timeout_ms = 10000,
             .user_agent = "QuebecWeatherDisplay/1.0 (ESP32 hobby device; personal use)",   // OSM tile policy
         };
-        esp_http_client_handle_t c = esp_http_client_init(&cfg);
         int64_t t0 = esp_timer_get_time();
-        esp_err_t err = esp_http_client_perform(c);         // body read and dropped
-        int status = esp_http_client_get_status_code(c);
-        esp_http_client_cleanup(c);
+        int status;
+        esp_err_t err = http_once(&cfg, &status);         // body read and dropped
         svc_http(i, err, status, t0);
         ESP_LOGI(TAG, "probe %s: %s, HTTP %d, %d ms", svc[i].name, esp_err_to_name(err), status,
                  (int)((esp_timer_get_time() - t0) / 1000));

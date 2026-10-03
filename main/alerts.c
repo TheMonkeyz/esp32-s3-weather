@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <ctype.h>
 #include "esp_http_client.h"
+#include "http_once.h"
 #include "esp_crt_bundle.h"
 #include "esp_log.h"
 #include "esp_heap_caps.h"
@@ -56,6 +57,85 @@ static int by_severity(const void *a, const void *b)
     return severity(((const alert_t *)b)->colour) - severity(((const alert_t *)a)->colour);
 }
 
+// The alerts in force among the features, at most ALERTS_MAX, most severe first. The cap keeps the most severe ones:
+// capped in the server's order and sorted afterwards, a red warning listed fifth was dropped (no pill, no sound).
+static void parse_features(cJSON *features, time_t now, alerts_t *out)
+{
+    out->n = 0;
+    cJSON *f;
+    cJSON_ArrayForEach(f, features) {
+        cJSON *p = cJSON_GetObjectItem(f, "properties");
+        const char *st = str(p, "status_en");
+        if (!strcmp(st, "ended") || !strcmp(st, "cancelled")) continue;
+        time_t ends = parse_utc(str(p, "event_end_datetime"));
+        time_t expires = parse_utc(str(p, "expiration_datetime"));
+        if (now > 1700000000 && ((ends && ends < now) || (expires && expires < now))) continue;
+        const char *name = str(p, "alert_name_en");
+        bool dup = false;                                       // same alert, neighbouring region
+        for (int i = 0; i < out->n; i++) if (!strcasecmp(out->a[i].name[0], name)) dup = true;
+        if (dup || !name[0]) continue;
+        const char *col = str(p, "risk_colour_en");
+        char colour = !strcmp(col, "red") ? 'r' : !strcmp(col, "orange") ? 'o' : !strcmp(col, "yellow") ? 'y' : 'g';
+        alert_t *a;
+        if (out->n < ALERTS_MAX) a = &out->a[out->n++];
+        else {                                                  // full: replace the least severe, if this one is worse
+            a = &out->a[0];
+            for (int i = 1; i < out->n; i++) if (severity(out->a[i].colour) <= severity(a->colour)) a = &out->a[i];
+            if (severity(colour) <= severity(a->colour)) continue;
+        }
+        strlcpy(a->id, cJSON_GetStringValue(cJSON_GetObjectItem(f, "id")) ?: "", sizeof(a->id));
+        strlcpy(a->code, str(p, "alert_code"), sizeof(a->code));
+        strlcpy(a->feature, str(p, "feature_id"), sizeof(a->feature));
+        static const char *const suffix[ALERT_LANGS] = { "en", "fr" };
+        for (int l = 0; l < ALERT_LANGS; l++) {                 // both languages, so a switch is instant
+            char k[24];
+            snprintf(k, sizeof(k), "alert_name_%s", suffix[l]);
+            strlcpy(a->name[l], l == 0 ? name : str(p, k), sizeof(a->name[l]));
+            if (!a->name[l][0]) strlcpy(a->name[l], name, sizeof(a->name[l]));
+            a->name[l][0] = toupper((unsigned char)a->name[l][0]);   // ASCII only: "avis de gel" -> "Avis de gel"
+            snprintf(k, sizeof(k), "feature_name_%s", suffix[l]);
+            strlcpy(a->area[l], str(p, k), sizeof(a->area[l]));
+            snprintf(k, sizeof(k), "alert_text_%s", suffix[l]);
+            strlcpy(a->text[l], str(p, k), sizeof(a->text[l]));
+            char *boiler = strstr(a->text[l], l == 0 ? "\n\nPlease continue to monitor" : "\n\nVeuillez continuer");
+            if (boiler) *boiler = 0;                                // standard closing paragraph
+        }
+        a->colour = colour;
+        a->ends = ends;
+    }
+    qsort(out->a, out->n, sizeof(alert_t), by_severity);
+}
+
+// The warning an alert belongs to: its code, else (an old reply without one) its name
+static const char *warning_of(const alert_t *a) { return a->code[0] ? a->code : a->name[0]; }
+
+char alerts_to_sound(alerts_seen_t *seen, const alerts_t *al)
+{
+    char best = 0;
+    int best_sev = -1;                                          // (a grey statement sounds too, at "all alerts")
+    for (int i = 0; i < al->n; i++) {
+        const alert_t *a = &al->a[i];
+        int k = 0;
+        while (k < seen->n && strcmp(seen->s[k].code, warning_of(a))) k++;
+        if (k < seen->n && severity(a->colour) <= severity(seen->s[k].colour)) continue;   // known, not worse
+        if (k == seen->n) {                                     // new: drop the oldest if full
+            if (seen->n == ALERTS_SEEN_MAX) { memmove(&seen->s[0], &seen->s[1], sizeof(seen->s[0]) * (ALERTS_SEEN_MAX - 1)); k = --seen->n; }
+            strlcpy(seen->s[k].code, warning_of(a), sizeof(seen->s[k].code));
+            seen->n++;
+        }
+        seen->s[k].colour = a->colour;
+        if (seen->primed && severity(a->colour) > best_sev) { best_sev = severity(a->colour); best = a->colour; }
+    }
+    seen->primed = true;
+    return best;
+}
+
+void alerts_map_key(const alert_t *a, char *out, int size)
+{
+    if (a->code[0] && a->feature[0]) snprintf(out, size, "%s|%s", a->code, a->feature);
+    else strlcpy(out, a->id, size);
+}
+
 bool alerts_fetch(double lat, double lon, alerts_t *out)
 {
     char url[300];
@@ -70,11 +150,9 @@ bool alerts_fetch(double lat, double lon, alerts_t *out)
         .url = url, .event_handler = http_evt, .user_data = &rx,
         .crt_bundle_attach = esp_crt_bundle_attach, .timeout_ms = 15000, .buffer_size = 2048,
     };
-    esp_http_client_handle_t c = esp_http_client_init(&cfg);
     int64_t t0 = esp_timer_get_time();
-    esp_err_t err = esp_http_client_perform(c);
-    int status = esp_http_client_get_status_code(c);
-    esp_http_client_cleanup(c);
+    int status;
+    esp_err_t err = http_once(&cfg, &status);
     svc_http(SVC_ALERTS, err, status, t0);
     if (err != ESP_OK || status != 200) {
         ESP_LOGW(TAG, "request failed: %s, status %d", esp_err_to_name(err), status);
@@ -91,42 +169,8 @@ bool alerts_fetch(double lat, double lon, alerts_t *out)
         return false;
     }
 
-    time_t now = time(NULL);
-    out->n = 0;
-    cJSON *f;
-    cJSON_ArrayForEach(f, features) {
-        cJSON *p = cJSON_GetObjectItem(f, "properties");
-        const char *st = str(p, "status_en");
-        if (!strcmp(st, "ended") || !strcmp(st, "cancelled")) continue;
-        time_t ends = parse_utc(str(p, "event_end_datetime"));
-        time_t expires = parse_utc(str(p, "expiration_datetime"));
-        if (now > 1700000000 && ((ends && ends < now) || (expires && expires < now))) continue;
-        const char *name = str(p, "alert_name_en");
-        bool dup = false;                                       // same alert, neighbouring region
-        for (int i = 0; i < out->n; i++) if (!strcasecmp(out->a[i].name[0], name)) dup = true;
-        if (dup || !name[0] || out->n >= ALERTS_MAX) continue;
-        alert_t *a = &out->a[out->n++];
-        strlcpy(a->id, cJSON_GetStringValue(cJSON_GetObjectItem(f, "id")) ?: "", sizeof(a->id));
-        static const char *const suffix[ALERT_LANGS] = { "en", "fr" };
-        for (int l = 0; l < ALERT_LANGS; l++) {                 // both languages, so a switch is instant
-            char k[24];
-            snprintf(k, sizeof(k), "alert_name_%s", suffix[l]);
-            strlcpy(a->name[l], l == 0 ? name : str(p, k), sizeof(a->name[l]));
-            if (!a->name[l][0]) strlcpy(a->name[l], name, sizeof(a->name[l]));
-            a->name[l][0] = toupper((unsigned char)a->name[l][0]);   // ASCII only: "avis de gel" -> "Avis de gel"
-            snprintf(k, sizeof(k), "feature_name_%s", suffix[l]);
-            strlcpy(a->area[l], str(p, k), sizeof(a->area[l]));
-            snprintf(k, sizeof(k), "alert_text_%s", suffix[l]);
-            strlcpy(a->text[l], str(p, k), sizeof(a->text[l]));
-            char *boiler = strstr(a->text[l], l == 0 ? "\n\nPlease continue to monitor" : "\n\nVeuillez continuer");
-            if (boiler) *boiler = 0;                                // standard closing paragraph
-        }
-        const char *col = str(p, "risk_colour_en");
-        a->colour = !strcmp(col, "red") ? 'r' : !strcmp(col, "orange") ? 'o' : !strcmp(col, "yellow") ? 'y' : 'g';
-        a->ends = ends;
-    }
+    parse_features(features, time(NULL), out);
     cJSON_Delete(root);
-    qsort(out->a, out->n, sizeof(alert_t), by_severity);
     if (out->n) ESP_LOGI(TAG, "%d alert(s): %s (%c)%s", out->n, out->a[0].name[0], out->a[0].colour, out->n > 1 ? " ..." : "");
     else ESP_LOGI(TAG, "no alerts");
     return true;
@@ -167,6 +211,7 @@ static bool parse_shape(const char *js, shape_t *sh, float *lon, float *lat)
         } else if (*p == '-' || (*p >= '0' && *p <= '9')) {
             char *end;
             double d = strtod(p, &end);
+            if (end == p) continue;          // a '-' that starts no number ("-]"): skip it, or this loop never ends
             if (nums < 2) v[nums] = d;
             nums++;
             p = end - 1;
@@ -220,11 +265,9 @@ uint16_t *alerts_map(const alert_t *a, double lat, double lon, int w, int h)
             .url = url, .event_handler = http_evt, .user_data = &rx,
             .crt_bundle_attach = esp_crt_bundle_attach, .timeout_ms = 20000, .buffer_size = 2048,
         };
-        esp_http_client_handle_t c = esp_http_client_init(&cfg);
         int64_t t0 = esp_timer_get_time();
-        esp_err_t err = esp_http_client_perform(c);
-        int status = esp_http_client_get_status_code(c);
-        esp_http_client_cleanup(c);
+        int status;
+        esp_err_t err = http_once(&cfg, &status);
         svc_http(SVC_ALERTS, err, status, t0);
         ok = err == ESP_OK && status == 200 && rx.len < rx.cap - 1 && parse_shape(rx.buf, &sh, plon, plat);
         ESP_LOGI(TAG, "region shape: %d bytes, %d points, %d rings%s", rx.len, sh.n, sh.nrings, ok ? "" : " (failed)");

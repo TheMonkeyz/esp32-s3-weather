@@ -68,9 +68,11 @@ class Log:
                 raise Fail(f'no log line /{pattern}/ within {timeout} s' + (f' ({what})' if what else ''))
             time.sleep(0.2)
 
-    def count(self, pattern):
+    def count(self, pattern, start=None):
+        """Lines matching pattern since the harness's mark, or since line `start` (tests use their own positions:
+        the mark is the harness's, it finds the crashes of the test)."""
         rx = re.compile(pattern)
-        return sum(1 for l in self.since_mark() if rx.search(l))
+        return sum(1 for l in (self.since_mark() if start is None else self.lines()[start:]) if rx.search(l))
 
 
 class Board:

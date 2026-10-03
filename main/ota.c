@@ -14,6 +14,7 @@
 #include "esp_ota_ops.h"
 #include "esp_https_ota.h"
 #include "esp_http_client.h"
+#include "http_once.h"
 #include "esp_crt_bundle.h"
 #include "esp_app_desc.h"
 #include "esp_heap_caps.h"
@@ -112,11 +113,9 @@ static cJSON *get_json(const char *url, int cap)
         .url = url, .event_handler = http_evt, .user_data = &rx,
         .crt_bundle_attach = esp_crt_bundle_attach, .timeout_ms = 15000,
     };
-    esp_http_client_handle_t c = esp_http_client_init(&cfg);
     int64_t t0 = esp_timer_get_time();
-    esp_err_t err = esp_http_client_perform(c);
-    int status = esp_http_client_get_status_code(c);
-    esp_http_client_cleanup(c);
+    int status;
+    esp_err_t err = http_once(&cfg, &status);
     cJSON *j = err == ESP_OK && status == 200 ? cJSON_Parse(rx.buf) : NULL;
     if (err == ESP_OK && status == 200 && !j) svc_fail(SVC_UPDATES, tr(T_ERR_BAD_REPLY), t0);
     else svc_http(SVC_UPDATES, err, status, t0);

@@ -100,7 +100,7 @@ bool png_rows(const uint8_t *png, size_t len, png_row_cb_t cb, void *user, unsig
     for (size_t p = 8; p + 12 <= len && !done && !s->stop;) {
         uint32_t n = be32(png + p);
         const uint8_t *type = png + p + 4, *data = png + p + 8;
-        if (p + 12 + n > len) break;
+        if (n > len - p - 12) break;                     // (p + 12 + n wrapped around for a huge length)
         if (!memcmp(type, "PLTE", 4)) {
             for (uint32_t i = 0; i < n / 3 && i < 256; i++) memcpy(s->pal[i], data + i * 3, 3);
         } else if (!memcmp(type, "tRNS", 4) && s->ct == 3) {

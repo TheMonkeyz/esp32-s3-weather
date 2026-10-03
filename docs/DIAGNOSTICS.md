@@ -54,6 +54,13 @@ Before: internal RAM free was **10 KB steady, 0 KB "min ever"**. Boot marks show
 | after first weather fetch | 10 KB | 71 KB |
 | steady state / min ever | 10 / **0** KB | 69 / 30 KB |
 
+Since then (from the harness, which is now the reference: `internal_free_kb`, `internal_min_kb`,
+`internal_min_kb.reconnect`): by v1.11.1 the 5-picture cache, TLS and the hourly graphs had brought it to ~48 KB
+steady and **8–10 KB min ever** (3 KB once), 4–5 KB on the reconnect path (three TLS clients and the forecast parse at
+once). v1.12.0 moved the radar's 46 frame structs (48 KB of palettes) and cJSON's parse trees to PSRAM: **~96 KB
+steady, 48–50 KB min ever, 76 KB after the reconnect path**. The `heap` lines also count failed allocations and LVGL
+blocks put in internal RAM (both 0 expected).
+
 Causes and fixes:
 
 - `CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=16384` puts every `malloc` under 16 KB in internal RAM first. LVGL
@@ -129,7 +136,7 @@ RAM for the two 8 KB draw stacks. Reverted.
 | Symptom | Candidate | Expected gain |
 |---|---|---|
 | ~~Radar zoom feels choppy (10 fps)~~ (done, v1.11.1) | scaled frames straight to the panel, overlays blended (`slide_zoom`) | 40–43 fps |
-| ~~Swipes/animations feel choppy~~ (done, v1.11.0) | profiled (docs/TESTING.md §7); 80 MHz SPI; moves drawn as pictures (`slide.c`, ARCHITECTURE "Moves") | screens 10–15 → 64–70 fps, places 10 → 46, days 11 → 58 |
+| ~~Swipes/animations feel choppy~~ (done, v1.11.0) | profiled (docs/TESTING.md §8); 80 MHz SPI; moves drawn as pictures (`slide.c`, ARCHITECTURE "Moves") | screens 10–15 → 64–70 fps, places 10 → 46, days 11 → 58 |
 | ~~Lists scroll at 17–22 fps~~ (done, v1.10.1-rc.4) | move the picture of the screen, render only the new rows (ARCHITECTURE "Moves", List scrolls) | hourly ~52 fps, Settings ~70 |
 | UI hiccup while the radar loads | compose radar frames outside `display_lock()` | removes 75 ms stalls |
 | Internal RAM low again | check `diag: mark` lines to find the stage; stacks from the task table | — |

@@ -169,6 +169,7 @@ the window at the end.
 | `navigation` | swipes and taps land on the right screen (weather ↔ extras ↔ status, radar, Settings by long-press, hourly by tapping a day); the ends bounce back, a short slow drag snaps back; places (from the first place: drag up / down, the first one bounces) and hourly days (left / right) change by one (`page`); snapshot of every screen incl. `settings1..3`, `phone`, `setup0/1`, `update` |
 | `web` | the Playwright suite (`tools/webtest`) and the live API on the board; the page must arrive whole |
 | `perf` | boot stage times and internal RAM, heap low points, full-screen render bench (best of 3), radar first frame and lightning, frame rate of each move (`fps`: screen to screen, places, days, the hourly list and Settings scrolling; for drags also `drag_fps` and `drag_start_ms` from slide.c's log line, and a place drag back 2 s after a switch); compared with `tools/harness/baseline.json`. The radar animation plays at 3 fps by design: not measured |
+| `presence` | dim, off and wake with short delays set through the API (the user's put back after, even on a failure): ACTIVE → DIM → OFF → `wake`; three fades up during a swipe (the brightness command from core 0 while LVGL sends bands from core 1), and `where` must show `raw_phase=0` after each |
 | `wifi_runtime` | network lost while running: retries go on; long-press opens setup and **pauses them**; tap closes it; reconnects |
 | `wifi_setup` | start-up with the network unreachable (the October 1 path): setup after 30 s, no retries while open, **the PC joins the setup network like a phone** (DNS answers every name with 192.168.4.1, the Android check gets the 302, the page and `/api/config` load, the PC is not dropped for 15 s), Easy Connect listens on the router's 2.4 GHz channel as the PC sees it, the setup network works again after Easy Connect (DNS socket bug), tap → 30 s retry → setup again, network back → weather screen. `--phone` adds the real Easy Connect scan |
 
@@ -178,7 +179,7 @@ How it works:
   `press X Y [ms]`, `swipe left|right|up|down`, `drag X1 Y1 X2 Y2 [ms]`, `wake`, `presence`, `wifi
   status|offline|offline-boot|online`, `portal windows-quiet`, `fps [reset]` (frames and animation fps since the
   reset), `where` (display breadcrumbs, takes no lock), `memspeed` (PSRAM / internal copy speeds), `heap`, `bench`,
-  `profile` (§7, profiler builds only), `pictest` (slide.c's picture of the screen shown against a fresh rendering:
+  `profile` (§8, profiler builds only), `pictest` (slide.c's picture of the screen shown against a fresh rendering:
   `slide: pictest rows_differ=N first=Y`), `reboot`, `help`. Answers are log lines `test: …`. Simulated touches enter at the
   touch controller read (`touch_inject()`), so wake-up, long-press and gestures run the real code. `wifi offline`
   points the station at a network that doesn't exist (saved credentials untouched); `offline-boot` does it for the
@@ -194,9 +195,22 @@ How it works:
   waits for. `boot_s.first_weather` is the `diag: mark first weather` line, logged after the whole first round (every
   place, alerts, air quality): it follows Open-Meteo's speed (~4 s per request on a slow evening, 17.8 s total
   once), so its limit is a loose 30 s.
-- **Baseline:** `perf` metrics are checked against `baseline.json` (`min`/`max` per metric, `ref` = value when it
-  was set). After an intended change, `--update-baseline` rewrites it (limits ±25–40 %; adjust by hand, as the
-  first one was: network timings get generous limits, render times 25 %).
+- **Baseline:** metrics are checked against `baseline.json` (`min`/`max` per metric, `ref` = value when it was set,
+  `note` = why that limit). Nothing passes silently (since v1.12.0): a baseline metric whose suite ran but which
+  wasn't measured is **MISSING**, a measured metric without a limit is **NEW**, and both fail the run like a
+  **REGRESSION** (in October 2026 a third of the metrics had no limit, and a reused log window dropped every boot
+  metric without a word). A test that doesn't measure something on purpose says so with `ctx.skip(pattern,
+  reason)` (one place: no place drag; no new radar frame; a reused log window: no boot metrics), and the report
+  shows "skipped: reason". `--update-baseline` writes `baseline.proposed.json`: this run's numbers as `ref`, limits
+  and notes kept, and a proposed limit (marked) for new metrics; review it and copy it over `baseline.json`.
+- **Log cursors:** the harness marks the log at the start of each test (`log.mark()`) and checks everything after
+  it for `rst:0x` (an unexpected restart fails the test, with the decoded backtrace) and for fallback warnings
+  (`drag: PSRAM busy`, a touch loop's safety cap, a raw band timeout), which go to the report's notes. Tests keep
+  their own positions (`at = len(ctx.log.lines())`, `wait(..., start=at)`, `count(..., start=at)`): a test that
+  moved the mark hid a crash from the restart check.
+- **Memory floors:** `internal_min_kb` (read in `perf`, floor 8 KB) and `internal_min_kb.reconnect` (read at the end
+  of `wifi_setup`, after the reconnect path with three TLS clients and the forecast parse: 5 KB on October 2).
+- The harness's own logic has unit tests: `python -m unittest discover -s tools/harness -p "test_*.py"`.
 
 Pitfalls met while building it:
 
@@ -249,7 +263,25 @@ Pitfalls met while building it:
   changed across its restart, prints the version it tests, and `--expect vX` fails on any other version. Use
   `--expect` when testing a release.
 
-## 7. Profiling LVGL rendering (`profile`)
+## 7. Host unit tests (`tests/host/`)
+
+Firmware C files built with the PC's gcc (WSL Ubuntu here, plain Linux in CI) against small shims of the ESP-IDF
+headers (`tests/host/shim/`) and a scripted HTTP client (`fake.c`: every request gets one reply, an HTTP status, a
+transport error, or "no memory for a client"), with AddressSanitizer:
+
+```bash
+wsl -d Ubuntu --cd /mnt/c/Users/<you>/ESPDEV/weather_amoled/tests/host -- make     # IDF_PATH defaults to /mnt/c/Espressif/esp-idf (cJSON)
+```
+
+- `test_weather.c`: Open-Meteo replies whole, partial (a daily array missing or shorter: it crashed every fetch),
+  null values, not JSON, HTTP errors, no client.
+- `test_alerts.c` includes `alerts.c` itself (its static parsers): the severity cap (a red warning listed fifth is
+  kept), the beep rule (once per warning, again if worse, re-issues silent), the region map key, the shape scanner on
+  `-]` (it looped forever), failures.
+- A fix that can be reproduced off the board gets a case here; check that the case fails on the old code
+  (`git show HEAD:main/x.c`) before calling it a test.
+
+## 8. Profiling LVGL rendering (`profile`)
 
 Used in the v1.11.0 frame-rate work to see where a frame's time goes, per function and per draw task type. A local
 experiment, never committed in a build:

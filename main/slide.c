@@ -102,6 +102,28 @@ static void touch_resync(bool lifted)
     lv_indev_reset(in, NULL);
 }
 
+/* The finger, read directly, for the loops below (LVGL is paused, the display lock held). The CST9217 often stops
+ * answering (NACK) when nothing touches it instead of reporting a release: 5 failed reads in a row after the finger was
+ * last seen down count as a release, as in touch.c, and further failures stay "up" until a press. A loop that waited
+ * for a clean "up" kept the display lock forever (the PSRAM-busy drag), or took a new swipe for the old one (the zoom).
+ * *errs carries the state between calls: start it at 0 (finger down) or FINGER_UP.
+ * 1 = down at x,y; 0 = up; -1 = a read error while down, not yet a release (keep the last point). */
+#define FINGER_UP 5
+static int finger(int *x, int *y, int *errs)
+{
+    int r = touch_get(x, y);
+    if (r > 0) { *errs = 0; return 1; }
+    if (r == 0) { *errs = FINGER_UP; return 0; }
+    if (*errs < FINGER_UP) ++*errs;
+    return *errs >= FINGER_UP ? 0 : -1;
+}
+
+// Safety caps for the loops that hold the display lock while a finger is down: a pure wait for the lift (3 s), and a
+// loop that follows the finger (20 s: a slow list scroll while reading is legitimate; this only guards against a chip
+// stuck reporting a press). After a cap the move ends as if the finger had lifted and LVGL takes the touch over.
+#define FINGER_WAIT_US   3000000LL
+#define FINGER_FOLLOW_US 20000000LL
+
 /* ---------- pictures ---------- */
 
 // 434 KB each in PSRAM (LVGL's heap), leaving ~1 MB for the rest: radar frames (217 KB each as they arrive), TLS, the
@@ -476,10 +498,16 @@ static void drag_run(void *unused)
     if (!bc) {
         // No picture (PSRAM busy): still a drag, decided on release, the switch is just not animated
         ESP_LOGW(TAG, "drag: PSRAM busy, no animation");
-        int x = drag.x0, y = drag.y0, nx, ny, r;
-        while ((r = touch_get(&nx, &ny)) != 0) { if (r > 0) { x = nx; y = ny; } vTaskDelay(pdMS_TO_TICKS(10)); }
+        int x = drag.x1, y = drag.y1, nx, ny, r, errs = 0;
+        int64_t until = t0 + FINGER_WAIT_US;
+        while ((r = finger(&nx, &ny, &errs)) != 0 && esp_timer_get_time() < until) {
+            if (r > 0) { x = nx; y = ny; }
+            vTaskDelay(pdMS_TO_TICKS(10));
+        }
+        if (r) ESP_LOGW(TAG, "drag: finger still down after %lld ms, giving up", FINGER_WAIT_US / 1000);
         int raw = drag.vertical ? y - drag.y0 : x - drag.x0;
         if (abs(raw) > S / 4 && drag.commit) drag.commit(raw > 0 ? -1 : 1, drag.user);   // commit ignores an end
+        touch_resync(r == 0);                                // as after an animated drag (else the next swipe is lost)
         drag.queued = false;
         slide_phase = 0;
         return;
@@ -499,11 +527,11 @@ static void drag_run(void *unused)
     int pos_prev = 0, pos_last = 0, errs = 0;
     slide_phase = 12;
     for (;;) {
-        int nx, ny, r = touch_get(&nx, &ny);
-        // Finger up. The chip often stops answering when nothing touches it (NACK) instead of reporting a release:
-        // 5 silent reads in a row (~75 ms) are a release too, as in touch.c (else the drag never ended)
-        if (r == 0 || (r < 0 && ++errs >= 5)) break;
-        if (r > 0) { x = nx; y = ny; errs = 0; samples++; }
+        int nx, ny, r = finger(&nx, &ny, &errs);
+        // Finger up: a clean release or 5 silent reads in a row (~75 ms, finger()). Else the drag never ended.
+        if (r == 0) break;
+        if (esp_timer_get_time() - t0 > FINGER_FOLLOW_US) { ESP_LOGW(TAG, "drag: finger down for 20 s, ending it"); break; }
+        if (r > 0) { x = nx; y = ny; samples++; }
         raw = drag.vertical ? y - drag.y0 : x - drag.x0;     // > 0: towards prev (it comes in from the left / top)
         int side = raw > 0 ? -1 : raw < 0 ? 1 : 0, i = side < 0 ? 0 : 1;
         if (side && !tried[i]) {                             // the neighbour on this side, the first time it's needed
@@ -716,27 +744,32 @@ static void scroll_run(void *unused)
     smp[1].p = ref_pos;
     int ns = 2;
     bool down = true;
-    int64_t t = esp_timer_get_time();
+    int64_t t = esp_timer_get_time(), touched_at = t;
     for (;;) {
-        int x, y, r = touch_get(&x, &y);
+        int x, y, r = finger(&x, &y, &errs);
         int64_t now = esp_timer_get_time();
         if (down) {
-            if (r == 0 || (r < 0 && ++errs >= 5)) {      // lifted (5 silent reads: the chip NACKs when idle)
+            bool stuck = now - touched_at > FINGER_FOLLOW_US;
+            if (stuck) ESP_LOGW(TAG, "scroll: finger down for 20 s, ending it");
+            if (r == 0 || stuck) {                       // lifted (or 5 silent reads: the chip NACKs when idle)
                 down = false;
                 v = 0;                                   // speed over the last ~80 ms (0 if the finger stopped)
-                int nk = (ns - 1) % 8;
-                for (int i = ns - 2; i >= 0 && i >= ns - 8; i--) {
-                    int k = i % 8;
-                    int64_t span = smp[nk].t - smp[k].t;
-                    if (span > 80000) break;
-                    if (span >= 10000) v = (float)(smp[nk].p - smp[k].p) / (span / 1000.0f);
+                if (ns) {                                // (none yet: touched again and lifted at once)
+                    int nk = (ns - 1) % 8;
+                    for (int i = ns - 2; i >= 0 && i >= ns - 8; i--) {
+                        int k = i % 8;
+                        int64_t span = smp[nk].t - smp[k].t;
+                        if (span > 80000) break;
+                        if (span >= 10000) v = (float)(smp[nk].p - smp[k].p) / (span / 1000.0f);
+                    }
+                    if (now - smp[nk].t > 80000) v = 0;
                 }
-                if (now - smp[nk].t > 80000) v = 0;
                 fpos = pos;
                 t = now;
+                if (stuck) break;
                 continue;
             }
-            if (r > 0) { fy = y; errs = 0; }            // (a read error: keep the last point)
+            if (r > 0) fy = y;                           // (a read error: keep the last point)
             int raw = ref_pos + (ref_y - fy);            // the content follows the finger
             if (!ns || now - smp[(ns - 1) % 8].t >= 8000) { smp[ns % 8].t = now; smp[ns % 8].p = raw; ns++; }
             int want = raw < lo ? lo - (lo - raw) / 3 : raw > hi ? hi + (raw - hi) / 3 : raw;   // resists past an end
@@ -750,7 +783,7 @@ static void scroll_run(void *unused)
         }
         if (r > 0) {                                     // touched while moving: stop, follow the finger again
             down = true;
-            errs = 0;
+            touched_at = now;
             ref_y = fy = y;
             ref_pos = pos;
             ns = 0;
@@ -976,8 +1009,10 @@ static void zoom_run(void *unused)
     int frames = 0, x, y, x0 = 0, y0 = 0, xl = 0, yl = 0;
     bool down = false, touched = false;
     // The swipe that started this zoom may still be going on (LVGL's gesture fires before the finger lifts): not a
-    // new one, or one swipe zoomed twice
-    bool old_touch = touch_get(&x, &y) != 0;
+    // new one, or one swipe zoomed twice. It ends on a release or on the chip's silence (finger(): 5 failed reads);
+    // a failed read alone kept it "on" and a second swipe during the zoom was taken for the first one (ignored).
+    int errs = 0;
+    bool old_touch = finger(&x, &y, &errs) != 0;
     slide_phase = 32;
     // LVGL doesn't read the touch meanwhile: a swipe made during the zoom (a second zoom right away) is read here
     for (;;) {
@@ -987,7 +1022,7 @@ static void zoom_run(void *unused)
         zoom_maps(&z, from + (int32_t)((to - from) * e));
         display_raw_frame(zoom_fill, &z);
         frames++;
-        int r = touch_get(&x, &y);
+        int r = finger(&x, &y, &errs);
         if (old_touch) old_touch = r != 0;               // until it lifts
         else if (r > 0) { if (!down) { x0 = x; y0 = y; } down = touched = true; xl = x; yl = y; }
         else if (r == 0) down = false;
@@ -995,7 +1030,7 @@ static void zoom_run(void *unused)
     }
     for (int i = 0; down && i < 50; i++) {               // a swipe still going on: let it finish (at most 0.5 s)
         vTaskDelay(pdMS_TO_TICKS(10));
-        int r = touch_get(&x, &y);
+        int r = finger(&x, &y, &errs);
         if (r > 0) { xl = x; yl = y; } else if (r == 0) down = false;
     }
     int64_t t2 = esp_timer_get_time();

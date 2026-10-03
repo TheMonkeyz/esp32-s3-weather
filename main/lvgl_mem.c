@@ -4,8 +4,36 @@
 // there first) and filled it up. Internal RAM is kept for Wi-Fi, DMA and task stacks.
 #include "lvgl.h"
 #include "esp_heap_caps.h"
+#include "esp_log.h"
+#include "esp_system.h"
 
 #define LV_CAPS (MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)
+// PSRAM full: small blocks may fall back to internal RAM (counted, logged once); a big one would take the RAM Wi-Fi
+// and the task stacks need (internal RAM's low point is under 10 KB)
+#define FALLBACK_MAX 4096
+
+static const char *TAG = "lvgl_mem";
+static volatile uint32_t fallbacks;
+
+uint32_t lvgl_mem_fallbacks(void) { return fallbacks; }
+
+// Nothing left: restart. LVGL's LV_ASSERT_MALLOC would otherwise halt its task in while(1) holding the display lock:
+// a frozen screen until someone unplugs it (the owner chose a restart, October 2026).
+static void *out_of_memory(size_t size)
+{
+    ESP_LOGE(TAG, "LVGL out of memory (%u bytes): restarting", (unsigned)size);
+    esp_system_abort("LVGL out of memory");
+    return NULL;
+}
+
+static void *fallback(void *p, size_t size, bool re)
+{
+    if (size > FALLBACK_MAX) return out_of_memory(size);
+    void *q = re ? realloc(p, size) : malloc(size);
+    if (!q) return out_of_memory(size);
+    if (fallbacks++ == 0) ESP_LOGW(TAG, "PSRAM full: LVGL uses internal RAM (%u bytes); counted in 'heap'", (unsigned)size);
+    return q;
+}
 
 void lv_mem_init(void) {}
 void lv_mem_deinit(void) {}
@@ -15,13 +43,13 @@ void lv_mem_remove_pool(lv_mem_pool_t pool) { (void)pool; }
 void *lv_malloc_core(size_t size)
 {
     void *p = heap_caps_malloc(size, LV_CAPS);
-    return p ? p : malloc(size);                 // PSRAM full: fall back to any RAM
+    return p ? p : fallback(NULL, size, false);
 }
 
 void *lv_realloc_core(void *p, size_t new_size)
 {
     void *q = heap_caps_realloc(p, new_size, LV_CAPS);
-    return q ? q : realloc(p, new_size);
+    return q || !new_size ? q : fallback(p, new_size, true);
 }
 
 void lv_free_core(void *p) { free(p); }
