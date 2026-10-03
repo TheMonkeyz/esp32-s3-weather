@@ -10,6 +10,9 @@ their own `## vX.Y.Z-rc.N` section. Those are shown only to Beta users, while th
 list everything again. (Two tags have no section: v1.3.0-rc.1, and v1.12.0-rc.1, whose build failed and was published
 as v1.12.0-rc.2.)
 
+## v1.12.0-rc.8 - 2026-10-03
+- Map requests to OpenStreetMap now name the display's exact version, as OpenStreetMap's rules ask.
+
 ## v1.12.0-rc.7 - 2026-10-03
 - After Wi-Fi comes back, the forecast is fetched again at once (it could wait several minutes when the forecast service had been slow).
 
