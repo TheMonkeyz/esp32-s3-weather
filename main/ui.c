@@ -999,8 +999,13 @@ static bool drag_paint(const void *key, lv_draw_buf_t *dst, int y0, int y1)
 // Every 30 ms: keep the pictures of what's shown and its neighbours ready (slide.c's cache), a 64-row strip at a time
 // (~15-25 ms), once nothing has changed on screen for 0.8 s and no finger is down (or a picture has been out of date
 // for 2 s). LVGL reads the touch between strips, so a quick swipe isn't lost behind a picture being rendered.
+// Untouched for 2 s (new data: a forecast, alerts, the minute), the strips start after 0.15 s and follow each other
+// (the timer runs every 1 ms while there is work): a drag 0.3-1.5 s after a new forecast waited ~0.12 s for the
+// neighbour's picture.
 static void pictures_tick(lv_timer_t *t)
 {
+    static int64_t last_touch;
+    static uint32_t period = 30;
     lv_obj_t *cur = lv_screen_active();
     const void *keys[5];
     int k = 0, n, i = drag_index(cur);
@@ -1024,8 +1029,13 @@ static void pictures_tick(lv_timer_t *t)
     }
     slide_cache_keep(keys, k);
     lv_indev_t *in = lv_indev_get_next(NULL);
-    if (ov_state || (in && lv_indev_get_state(in) == LV_INDEV_STATE_PRESSED) || lv_anim_count_running()) return;
-    slide_cache_idle_work(800);
+    int64_t now = esp_timer_get_time();
+    bool pressed = in && lv_indev_get_state(in) == LV_INDEV_STATE_PRESSED;
+    if (pressed) last_touch = now;
+    bool untouched = now - last_touch > 2000000;
+    bool work = !ov_state && !pressed && !lv_anim_count_running() && slide_cache_idle_work(untouched ? 150 : 800);
+    uint32_t want = work && untouched ? 1 : 30;
+    if (want != period) lv_timer_set_period(t, period = want);
 }
 
 // Drags are recognised in the touch read itself (touch.c's hook, before LVGL handles that read). A 10 ms timer looking

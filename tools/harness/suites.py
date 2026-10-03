@@ -436,6 +436,21 @@ def swipes(ctx):
             ctx.metric(f'page_start_ms.web_place_{sel}', pics)
             time.sleep(2)
         radar_settled(ctx, len(ctx.log.lines()) - 1)
+        # New data (console 'dirty': hidden pictures out of date and the screen redrawn, as a forecast or alerts do),
+        # then a place drag 0.8 s later, nobody having touched the display: its pictures must be ready again. Before
+        # v1.12.1 they were rendered only after 0.8 s of quiet, a strip per 30 ms: such a drag waited ~0.12 s.
+        try:
+            b.cmd('dirty', r'test: ok dirty')
+        except Fail as e:
+            if 'unknown command' not in str(e):
+                raise
+            ctx.skip('*.drag_place_after_data', "this firmware has no 'dirty' command")
+        else:
+            time.sleep(0.8)
+            measure(ctx, 'drag_place_after_data', ['drag 233 380 233 120 400'], settle=1.5)
+            b.cmd('drag 233 120 233 380 400')
+            time.sleep(2)
+            radar_settled(ctx, len(ctx.log.lines()) - 1)
     else:
         ctx.skip('*.drag_place*', 'one place on the display: no place drag')
         ctx.skip('page_*', 'one place on the display: no place change')

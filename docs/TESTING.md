@@ -175,7 +175,7 @@ the window at the end.
 | `smoke` | console answers, firmware version, Wi-Fi up, settings API |
 | `navigation` | swipes and taps land on the right screen (weather ↔ extras ↔ status, radar, Settings by long-press, hourly by tapping a day); the ends bounce back, a short slow drag snaps back; places (from the first place: drag up / down, the first one bounces) and hourly days (left / right) change by one (`page`); snapshot of every screen incl. `settings1..3`, `phone`, `setup0/1`, `update` |
 | `web` | the Playwright suite (`tools/webtest`) and the live API on the board; the page must arrive whole; who may change things (`main/web.c`): 403 for a POST over plain HTTP, 302 to the device itself, 401 without or with a wrong key, 415 for a non-JSON POST, 421 for another Host, 401 for a snapshot without the key, 200 with it |
-| `perf` | boot stage times and internal RAM, heap low points, full-screen render bench (best of 3), radar first frame and lightning, frame rate of each move (`fps`: screen to screen, places, days, the hourly list and Settings scrolling; for drags also `drag_fps` and `drag_start_ms` from slide.c's log line, and a place drag back 2 s after a switch); compared with `tools/harness/baseline.json`. The radar animation plays at 3 fps by design: not measured |
+| `perf` | boot stage times and internal RAM, heap low points, full-screen render bench (best of 3), radar first frame and lightning, frame rate of each move (`fps`: screen to screen, places, days, the hourly list and Settings scrolling; for drags also `drag_fps` and `drag_start_ms` from slide.c's log line, a place drag back 2 s after a switch, and a place drag 0.8 s after new data: console `dirty`); compared with `tools/harness/baseline.json`. The radar animation plays at 3 fps by design: not measured |
 | `presence` | dim, off and wake with short delays set through the API (the user's put back after, even on a failure): ACTIVE → DIM → OFF → `wake`; three fades up during a swipe (the brightness command from core 0 while LVGL sends bands from core 1), and `where` must show `raw_phase=0` after each |
 | `firstrun` | `hint next-boot` + restart: the "Choose your location" settings QR comes up by itself after the first forecast, then the gesture hint; a tap closes each (places and the real once-only flags untouched) |
 | `wifi_runtime` | network lost while running: retries go on; long-press opens setup and **pauses them**; tap closes it; reconnects, and an update check follows at once |
@@ -189,7 +189,8 @@ How it works:
   status|offline|offline-boot|online`, `portal windows-quiet`, `fps [reset]` (frames and animation fps since the
   reset), `where` (display breadcrumbs, takes no lock), `memspeed` (PSRAM / internal copy speeds), `heap`, `bench`,
   `profile` (§8, profiler builds only), `pictest` (slide.c's picture of the screen shown against a fresh rendering:
-  `slide: pictest rows_differ=N first=Y`), `reboot`, `help`. Answers are log lines `test: …`. Simulated touches enter at the
+  `slide: pictest rows_differ=N first=Y`), `dirty` (what new data does to slide.c's pictures: every hidden one out
+  of date and the screen shown redrawn), `reboot`, `help`. Answers are log lines `test: …`. Simulated touches enter at the
   touch controller read (`touch_inject()`), so wake-up, long-press and gestures run the real code. `wifi offline`
   points the station at a network that doesn't exist (saved credentials untouched); `offline-boot` does it for the
   next boot only (flag in RTC memory) so the real start-up path runs.

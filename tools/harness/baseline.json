@@ -63,6 +63,11 @@
   "note": "slide.c's drag alone, from its first frame (57-69 fps in the October 2 runs)",
   "ref": 68.5
  },
+ "drag_fps.drag_place_after_data": {
+  "min": 45,
+  "note": "slide.c's drag alone, from its first frame (57-69 fps in the October 2 runs)",
+  "ref": 68.5
+ },
  "drag_fps.drag_place_back": {
   "min": 45,
   "note": "slide.c's drag alone, from its first frame (57-69 fps in the October 2 runs)",
@@ -91,6 +96,11 @@
  "drag_start_ms.drag_place": {
   "max": 100,
   "note": "finger recognised -> first frame; ~15 ms with the pictures ready, 180-580 ms when a switch had made them out of date (October 2)",
+  "ref": 15
+ },
+ "drag_start_ms.drag_place_after_data": {
+  "max": 60,
+  "note": "a place drag 0.8 s after new data (console 'dirty', as a forecast or alerts): 14 ms with the pictures re-rendered in time; ~120 ms before v1.12.1 (strips only after 0.8 s of quiet, one per 30 ms)",
   "ref": 15
  },
  "drag_start_ms.drag_place_back": {
@@ -257,6 +267,11 @@
   "note": "includes LVGL's redraws of the new place after the switch (30-47 fps); drag_fps.drag_place is the drag alone",
   "ref": 45.6
  },
+ "swipe_fps.drag_place_after_data": {
+  "min": 20,
+  "note": "includes LVGL's redraws of the new place after the switch (30-47 fps); drag_fps.drag_place is the drag alone",
+  "ref": 45.6
+ },
  "swipe_fps.drag_place_back": {
   "min": 20,
   "note": "as swipe_fps.drag_place: includes LVGL's redraws after the switch",
@@ -297,6 +312,11 @@
   "note": "longest gap between two frames of the move (16-87 ms in October 2 runs); over ~0.1 s is a visible stutter",
   "ref": 36
  },
+ "swipe_gap_max_ms.drag_place_after_data": {
+  "max": 120,
+  "note": "longest gap between two frames of the move (16-87 ms in October 2 runs); over ~0.1 s is a visible stutter",
+  "ref": 36
+ },
  "swipe_gap_max_ms.drag_place_back": {
   "max": 120,
   "note": "longest gap between two frames of the move (16-87 ms in October 2 runs); over ~0.1 s is a visible stutter",
@@ -333,6 +353,11 @@
   "ref": 1.6
  },
  "swipe_render_avg_ms.drag_place": {
+  "max": 10,
+  "note": "LVGL render time per frame during the move (pictures: ~0-4 ms); high = LVGL drew the move itself",
+  "ref": 1.8
+ },
+ "swipe_render_avg_ms.drag_place_after_data": {
   "max": 10,
   "note": "LVGL render time per frame during the move (pictures: ~0-4 ms); high = LVGL drew the move itself",
   "ref": 1.8

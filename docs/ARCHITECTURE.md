@@ -183,6 +183,8 @@ order, and ~11 ms on the bus.
   `pictures_tick` (every 30 ms) keeps the shown screen and its neighbours (screens, places, days), and
   `slide_cache_idle_work(800)` renders the first missing or out-of-date one, one 64-row strip per tick (~15–25 ms):
   once nothing has changed on screen for 0.8 s and no finger is down, or when a picture has been out of date for 2 s.
+  When nobody has touched the display for 2 s (new data: a forecast, alerts), the wait is 0.15 s and the strips
+  follow each other (the timer runs every 1 ms while there is work; LVGL still reads the touch between strips).
   A whole picture at once blocked LVGL for 60–180 ms, and a quick flick could start and end unseen.
   - **The picture of the screen shown follows the panel** (since the list scrolls): the flush hook copies every area
     LVGL draws into it (`flushed()`), so a redraw of the screen shown never makes its picture out of date, and a drag
@@ -216,8 +218,10 @@ order, and ~11 ms on the bus.
     date with `__builtin_return_address(0)`, and each redraw of the shown screen with its area and
     `esp_backtrace_print()` (decoded with `addr2line`). Measured with 10 place drags 1.5–20 s apart: before, 4 of 10
     waited 0.2–0.6 s; after, all started within 14–18 ms.
-  - Left: each data change makes its screens' pictures out of date (a new forecast, alerts), and a drag in the next
-    second or two renders the neighbour first (~0.13 s). Other places' pictures never show the alert pill of
+  - **After new data** (a forecast, alerts) the pictures are out of date, and a drag before they are rendered again
+    renders its neighbour first (~0.12 s). Until v1.12.1 that lasted 1.5 s for a place drag and 1 s for a screen
+    drag (0.8 s of quiet, then a strip per 30 ms); untouched, a place drag is now ready after ~0.6 s and a screen
+    drag after ~0.3 s (console `dirty` + drags at fixed delays; harness `drag_place_after_data`). Other places' pictures never show the alert pill of
     the place shown (`drag_paint` hides it): a switch clears the alerts until the new place's are fetched.
 - **List scrolls** (`slide_scroll()`, from `drag_read` for a vertical drag on a scrollable object other than the
   weather screen's places and the radar's zoom swipes: `slide_scroll_target()`): LVGL redrew all of a scrolling list

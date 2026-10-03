@@ -226,6 +226,12 @@ static void run(char *line)
         slide_picture_check_async();
         display_unlock();
         ESP_LOGI(TAG, "ok pictest (result: \"slide: pictest\" line)");
+    } else if (!strcmp(c, "dirty")) {                     // as new data does: hidden pictures out of date, shown redrawn
+        if (!display_lock(2000)) { ESP_LOGW(TAG, "error dirty: display busy for 2 s"); return; }
+        slide_cache_dirty_hidden(NULL);
+        lv_obj_invalidate(lv_screen_active());
+        display_unlock();
+        ESP_LOGI(TAG, "ok dirty");
     } else if (!strcmp(c, "memspeed")) {
         cmd_memspeed();
     } else if (!strcmp(c, "where")) {                       // no lock: answers even when the display is stuck
@@ -254,7 +260,7 @@ static void run(char *line)
     } else if (!strcmp(c, "help")) {
         ESP_LOGI(TAG, "commands: ping, screen, tap X Y, press X Y [ms], swipe left|right|up|down, "
                       "drag X1 Y1 X2 Y2 [ms], wake, presence, key, hint next-boot, wifi status|offline|offline-boot|online, portal windows-quiet, "
-                      "fps [reset], page, pictest, where, memspeed, heap, bench, reboot");
+                      "fps [reset], page, pictest, dirty, where, memspeed, heap, bench, reboot");
     } else {
         ESP_LOGW(TAG, "error unknown command '%s' (help lists them)", c);
         return;
