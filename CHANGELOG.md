@@ -9,6 +9,9 @@ How to write an entry: add a `## vX.Y.Z - YYYY-MM-DD` section at the top **befor
 their own `## vX.Y.Z-rc.N` section. Those are shown only to Beta users, while the final release's section should
 list everything again.
 
+## v1.11.1-rc.1 - 2026-10-02
+- Moves start at once in more cases: right after the clock changes minute, and after the display checks for updates. They could wait about a tenth of a second.
+
 ## v1.11.0 - 2026-10-02
 - Smoother moves: going from screen to screen, from place to place (drag up or down) and from day to day in the hourly view now runs at 45 to 70 frames per second instead of 10 to 15. The screen follows your finger, bounces at the first and last one, and a quick flick is enough to go to the next. Moves start at once, even right after the previous one.
 - Lists scroll smoothly: the hourly view's hours, Settings, the status page, alert details and the update notes now scroll at 50 to 70 frames per second instead of about 20. They follow your finger, keep going after a flick and slow down, stop when you touch them, and spring back at the top and bottom.
