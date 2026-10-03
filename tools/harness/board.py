@@ -225,6 +225,7 @@ class Board:
                 raise Fail(f'{offer}, not {want}, after {wait_min} min (CI failed, or {want} needs the Beta channel?)')
             print(f'  {offer} (running {u.get("current")}): waiting for {want}', flush=True)
             time.sleep(60)
+        print(f'  offered: installing {want}', flush=True)
         at = len(self.log.lines())
         self.api('/api/update', {'action': 'install'})
         self.log.wait(r'ota: Update installed, restarting', 300, 'download and install', start=at)
