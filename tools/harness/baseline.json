@@ -53,6 +53,41 @@
   "max": 10.4,
   "ref": 5.4
  },
+ "drag_fps.drag_hourly_day": {
+  "min": 45,
+  "note": "slide.c's drag alone, from its first frame (57-69 fps in the October 2 runs)",
+  "ref": 67.9
+ },
+ "drag_fps.drag_place": {
+  "min": 45,
+  "note": "slide.c's drag alone, from its first frame (57-69 fps in the October 2 runs)",
+  "ref": 68.5
+ },
+ "drag_fps.drag_place_back": {
+  "min": 45,
+  "note": "slide.c's drag alone, from its first frame (57-69 fps in the October 2 runs)",
+  "ref": 65.0
+ },
+ "drag_fps.screen_extras_to_weather": {
+  "min": 45,
+  "note": "slide.c's drag alone, from its first frame (57-69 fps in the October 2 runs)",
+  "ref": 68.7
+ },
+ "drag_fps.screen_weather_to_extras": {
+  "min": 45,
+  "note": "slide.c's drag alone, from its first frame (57-69 fps in the October 2 runs)",
+  "ref": 66.0
+ },
+ "drag_fps.screen_weather_to_radar": {
+  "min": 45,
+  "note": "slide.c's drag alone, from its first frame (57-69 fps in the October 2 runs)",
+  "ref": 68.2
+ },
+ "drag_start_ms.drag_hourly_day": {
+  "max": 100,
+  "note": "finger recognised -> first frame; 15-18 ms with the pictures ready (70 once); the user noticed 0.1 s",
+  "ref": 15
+ },
  "drag_start_ms.drag_place": {
   "max": 100,
   "note": "finger recognised -> first frame; ~15 ms with the pictures ready, 180-580 ms when a switch had made them out of date (October 2)",
@@ -63,14 +98,50 @@
   "note": "finger recognised -> first frame; ~15 ms with the pictures ready, 180-580 ms when a switch had made them out of date (October 2)",
   "ref": 15
  },
+ "drag_start_ms.screen_extras_to_weather": {
+  "max": 100,
+  "note": "finger recognised -> first frame; 15-18 ms with the pictures ready (70 once); the user noticed 0.1 s",
+  "ref": 15
+ },
+ "drag_start_ms.screen_weather_to_extras": {
+  "max": 100,
+  "note": "finger recognised -> first frame; 15-18 ms with the pictures ready (70 once); the user noticed 0.1 s",
+  "ref": 16
+ },
+ "drag_start_ms.screen_weather_to_radar": {
+  "max": 100,
+  "note": "finger recognised -> first frame; 15-18 ms with the pictures ready (70 once); the user noticed 0.1 s",
+  "ref": 15
+ },
+ "failed_allocs": {
+  "max": 0,
+  "note": "heap allocations that failed since boot (diag.c callback); several callers drop a failure silently",
+  "ref": 0
+ },
  "internal_free_kb": {
-  "min": 35,
-  "note": "one reading; varies 25-55 KB with HTTPS sessions and downloads",
-  "ref": 48
+  "min": 70,
+  "note": "one reading; 25-55 KB until v1.12.0, ~96 KB since (radar palettes, cJSON in PSRAM)",
+  "ref": 96
  },
  "internal_min_kb": {
-  "min": 5,
-  "ref": 10
+  "min": 35,
+  "note": "lowest internal RAM since boot, read in perf. 8-10 KB until v1.12.0 (3 KB once); 48-50 KB since the radar palettes and cJSON moved to PSRAM",
+  "ref": 50
+ },
+ "internal_min_kb.reconnect": {
+  "min": 40,
+  "note": "lowest since boot after wifi_setup's reconnect path (three TLS clients + the forecast parse): 4-5 KB until v1.12.0, 76 KB since",
+  "ref": 76
+ },
+ "lvgl_internal_fallbacks": {
+  "max": 0,
+  "note": "LVGL blocks put in internal RAM because PSRAM was full (lvgl_mem.c)",
+  "ref": 0
+ },
+ "page_kb": {
+  "max": 70,
+  "note": "settings page size (sent in 1 KB TLS records); a big jump is worth a look",
+  "ref": 53
  },
  "psram_min_kb": {
   "min": 300,
@@ -126,6 +197,36 @@
   "note": "list scroll by moving the picture (slide.c)",
   "ref": 14.5
  },
+ "snapshot_ms.extras": {
+  "max": 5000,
+  "note": "GET /api/snapshot over HTTPS (render + ~650 KB): 2.1-3.1 s",
+  "ref": 2440
+ },
+ "snapshot_ms.hourly": {
+  "max": 5000,
+  "note": "GET /api/snapshot over HTTPS (render + ~650 KB): 2.1-3.1 s",
+  "ref": 2249
+ },
+ "snapshot_ms.radar": {
+  "max": 5000,
+  "note": "GET /api/snapshot over HTTPS (render + ~650 KB): 2.1-3.1 s",
+  "ref": 2418
+ },
+ "snapshot_ms.settings": {
+  "max": 5000,
+  "note": "GET /api/snapshot over HTTPS (render + ~650 KB): 2.1-3.1 s",
+  "ref": 2233
+ },
+ "snapshot_ms.status": {
+  "max": 5000,
+  "note": "GET /api/snapshot over HTTPS (render + ~650 KB): 2.1-3.1 s",
+  "ref": 2149
+ },
+ "snapshot_ms.weather": {
+  "max": 5000,
+  "note": "GET /api/snapshot over HTTPS (render + ~650 KB): 2.1-3.1 s",
+  "ref": 2270
+ },
  "swipe_fps.drag_hourly_day": {
   "min": 35,
   "note": "v1.10.1-perf.33, one run; generous limit",
@@ -135,6 +236,11 @@
   "min": 20,
   "note": "includes LVGL's redraws of the new place after the switch (30-47 fps); drag_fps.drag_place is the drag alone",
   "ref": 45.6
+ },
+ "swipe_fps.drag_place_back": {
+  "min": 20,
+  "note": "as swipe_fps.drag_place: includes LVGL's redraws after the switch",
+  "ref": 60.9
  },
  "swipe_fps.screen_extras_to_weather": {
   "min": 40,
@@ -160,5 +266,85 @@
   "min": 35,
   "note": "frames < 250 ms apart, the end of the flick included; LVGL scrolled it at 21.9",
   "ref": 51.9
+ },
+ "swipe_gap_max_ms.drag_hourly_day": {
+  "max": 120,
+  "note": "longest gap between two frames of the move (16-87 ms in October 2 runs); over ~0.1 s is a visible stutter",
+  "ref": 17
+ },
+ "swipe_gap_max_ms.drag_place": {
+  "max": 120,
+  "note": "longest gap between two frames of the move (16-87 ms in October 2 runs); over ~0.1 s is a visible stutter",
+  "ref": 36
+ },
+ "swipe_gap_max_ms.drag_place_back": {
+  "max": 120,
+  "note": "longest gap between two frames of the move (16-87 ms in October 2 runs); over ~0.1 s is a visible stutter",
+  "ref": 37
+ },
+ "swipe_gap_max_ms.screen_extras_to_weather": {
+  "max": 120,
+  "note": "longest gap between two frames of the move (16-87 ms in October 2 runs); over ~0.1 s is a visible stutter",
+  "ref": 16
+ },
+ "swipe_gap_max_ms.screen_weather_to_extras": {
+  "max": 120,
+  "note": "longest gap between two frames of the move (16-87 ms in October 2 runs); over ~0.1 s is a visible stutter",
+  "ref": 17
+ },
+ "swipe_gap_max_ms.screen_weather_to_radar": {
+  "max": 120,
+  "note": "longest gap between two frames of the move (16-87 ms in October 2 runs); over ~0.1 s is a visible stutter",
+  "ref": 16
+ },
+ "swipe_gap_max_ms.scroll_hourly_list": {
+  "max": 120,
+  "note": "longest gap between two frames of the move (16-87 ms in October 2 runs); over ~0.1 s is a visible stutter",
+  "ref": 28
+ },
+ "swipe_gap_max_ms.scroll_settings": {
+  "max": 120,
+  "note": "longest gap between two frames of the move (16-87 ms in October 2 runs); over ~0.1 s is a visible stutter",
+  "ref": 66
+ },
+ "swipe_render_avg_ms.drag_hourly_day": {
+  "max": 10,
+  "note": "LVGL render time per frame during the move (pictures: ~0-4 ms); high = LVGL drew the move itself",
+  "ref": 1.6
+ },
+ "swipe_render_avg_ms.drag_place": {
+  "max": 10,
+  "note": "LVGL render time per frame during the move (pictures: ~0-4 ms); high = LVGL drew the move itself",
+  "ref": 1.8
+ },
+ "swipe_render_avg_ms.drag_place_back": {
+  "max": 10,
+  "note": "LVGL render time per frame during the move (pictures: ~0-4 ms); high = LVGL drew the move itself",
+  "ref": 2.0
+ },
+ "swipe_render_avg_ms.screen_extras_to_weather": {
+  "max": 10,
+  "note": "LVGL render time per frame during the move (pictures: ~0-4 ms); high = LVGL drew the move itself",
+  "ref": 2.9
+ },
+ "swipe_render_avg_ms.screen_weather_to_extras": {
+  "max": 10,
+  "note": "LVGL render time per frame during the move (pictures: ~0-4 ms); high = LVGL drew the move itself",
+  "ref": 2.5
+ },
+ "swipe_render_avg_ms.screen_weather_to_radar": {
+  "max": 10,
+  "note": "LVGL render time per frame during the move (pictures: ~0-4 ms); high = LVGL drew the move itself",
+  "ref": 3.5
+ },
+ "swipe_render_avg_ms.scroll_hourly_list": {
+  "max": 10,
+  "note": "LVGL render time per frame during the move (pictures: ~0-4 ms); high = LVGL drew the move itself",
+  "ref": 0.0
+ },
+ "swipe_render_avg_ms.scroll_settings": {
+  "max": 10,
+  "note": "LVGL render time per frame during the move (pictures: ~0-4 ms); high = LVGL drew the move itself",
+  "ref": 1.0
  }
 }

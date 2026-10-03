@@ -12,6 +12,7 @@
 #include "esp_http_client.h"
 #include "esp_crt_bundle.h"
 #include "esp_heap_caps.h"
+#include "esp_attr.h"
 #include "esp_log.h"
 #include "esp_partition.h"
 #include "display.h"
@@ -95,6 +96,10 @@ static bool http_fetch(esp_http_client_handle_t *hp, const char *url, dl_t *d)
             .keep_alive_enable = true,
         };
         *hp = esp_http_client_init(&c);
+        if (!*hp) {                            // memory short: perform() would dereference NULL
+            ESP_LOGW(TAG, "GET failed (no memory for a client): %.90s", url);
+            return false;
+        }
     } else {
         esp_http_client_set_url(*hp, url);
     }
@@ -377,11 +382,13 @@ typedef struct {
     uint8_t nltg;           // lightning marks: centres of the blocks with flashes, at LTG_X(f) / LTG_Y(f)
 } frame_t;
 // The marks live after the pixels in the same PSRAM buffer (idx is W*H + 2*LTG_MAX), so they move with it in
-// plan_frames(). Not in frame_t: it is copied ~46 times in internal RAM (frames, plan_frames, load_frame).
+// plan_frames(). Not in frame_t: it is copied ~46 times (frames, plan_frames, load_frame).
 #define LTG_X(f) ((f)->idx + W * H)                 // in 2 px units (466 / 2 fits a byte)
 #define LTG_Y(f) ((f)->idx + W * H + LTG_MAX)
 
-static frame_t frames[NFRAMES];     // [NFRAMES-1] is the latest (live) frame
+// The 46 frame_t below (palettes: ~1 KB each) are in PSRAM: in internal RAM they were 48 KB, ~86 % of main/'s static
+// internal RAM, while its low point was 8-10 KB. Read by tasks only (never from an interrupt or while flash is busy).
+static EXT_RAM_BSS_ATTR frame_t frames[NFRAMES];   // [NFRAMES-1] is the latest (live) frame
 static lv_timer_t *play_timer;
 static int play_i;
 static volatile bool play_pending;
@@ -795,7 +802,7 @@ static void plan_frames(time_t latest)
     if (a == latest) a -= STEP_S;
     for (int k = NFRAMES - 2; k >= 0; k--) { want[k] = a; a -= STEP_S; }
 
-    static frame_t old[NFRAMES], nw[NFRAMES];     // ~15 KB each: keep off the task stack
+    static EXT_RAM_BSS_ATTR frame_t old[NFRAMES], nw[NFRAMES];   // ~15 KB each: off the task stack, in PSRAM
     memcpy(old, frames, sizeof(old));
     bool used[NFRAMES] = {0};
     memset(nw, 0, sizeof(nw));
@@ -822,7 +829,7 @@ static void plan_frames(time_t latest)
 // Fill frame i (not visible to playback until ok is set)
 static bool load_frame(int i)
 {
-    static frame_t tmp;                          // ~1 KB, keep off the stack
+    static EXT_RAM_BSS_ATTR frame_t tmp;         // ~1 KB, off the stack, in PSRAM
     tmp = frames[i];
     if (!fetch_frame(tmp.t, &tmp)) return false;
     display_lock(-1);

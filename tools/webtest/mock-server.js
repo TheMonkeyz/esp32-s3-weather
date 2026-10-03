@@ -1,6 +1,7 @@
 // Mock of the display's settings server for browser tests: serves the real main/web/index.html and answers
 // /api/* like the firmware (web.c), with the state in memory. POST /__reset restores the starting state;
-// GET /__state returns it (tests check what the page sent).
+// GET /__state returns it (tests check what the page sent); POST /__update {state, latest, notes, ...} sets the
+// updater's state (ota.c) for the firmware card.
 //   node mock-server.js [port]     (default 8099)
 const http = require('http');
 const fs = require('fs');
@@ -17,7 +18,8 @@ function fresh() {
     units: { temp: 'c', wind: 'kmh', clock: 24, lang: 'en' },
     ssid: 'HomeNet',
     version: 'v1.5.0-test',
-    update: { current: 'v1.5.0-test', latest: '', channel: 'stable', state: 'up_to_date', progress: 0, error: '' },
+    update: { current: 'v1.5.0-test', latest: '', channel: 'stable', state: 'up_to_date', progress: 0, error: '',
+              notes: '', pending_verify: false, uptime_s: 300 },
     presence: { enabled: true, state: 'active', mic_ok: true, calibrating: false, calib_left_s: 0, brightness: 100,
                 level_db: -48, threshold_db: -55, baseline_db: -60, margin_db: 5, wake_progress: 0, wake_s: 3,
                 quiet_s: 12, dim_s: 600, off_s: 3000, bright_pct: 100, dim_pct: 20,
@@ -72,8 +74,21 @@ const routes = {
     return [200, { ok: true }];
   },
   'POST /api/units': b => { if (!b) return [400, 'bad json']; Object.assign(st.units, b); return [200, { ok: true }]; },
-  'GET /api/update': () => [200, st.update],
-  'POST /api/update': b => { if (b && b.channel) st.update.channel = b.channel; return [200, st.update]; },
+  'GET /api/update': () => {                       // web.c update_get: notes only while an update is offered
+    const u = st.update;
+    if (u.state === 'downloading') {                 // an install moves on at each poll: 50 %, 100 %, done
+      u.progress = Math.min(100, u.progress + 50);
+      if (u.progress === 100) u.state = 'done';
+    }
+    const out = { ...u };
+    if (u.state !== 'available') delete out.notes;
+    return [200, out];
+  },
+  'POST /api/update': b => {                       // web.c update_post: channel and/or action
+    if (b && b.channel) st.update.channel = b.channel;
+    if (b && b.action === 'install' && st.update.state === 'available') { st.update.state = 'downloading'; st.update.progress = 0; }
+    return routes['GET /api/update']();
+  },
   'GET /api/presence': () => [200, st.presence],
   'POST /api/presence': b => { Object.assign(st.presence, b || {}); return [200, { ok: true }]; },
   'POST /api/calibrate': () => [200, { ok: true }],
@@ -92,6 +107,7 @@ http.createServer(async (req, res) => {
   const url = req.url.split('?')[0];
   if (req.method === 'POST' && url === '/__reset') { st = fresh(); return json(res, 200, { ok: true }); }
   if (req.method === 'GET' && url === '/__state') return json(res, 200, st);
+  if (req.method === 'POST' && url === '/__update') { Object.assign(st.update, await body(req) || {}); return json(res, 200, st.update); }
   if (req.method === 'GET' && url === '/') {
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
     return res.end(fs.readFileSync(PAGE));

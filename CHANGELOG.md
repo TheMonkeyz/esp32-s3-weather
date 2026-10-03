@@ -9,6 +9,13 @@ How to write an entry: add a `## vX.Y.Z - YYYY-MM-DD` section at the top **befor
 their own `## vX.Y.Z-rc.N` section. Those are shown only to Beta users, while the final release's section should
 list everything again.
 
+## v1.12.0-rc.1 - 2026-10-03
+- The Install button on the settings page shows again when an update is offered.
+- A red warning is never hidden behind lesser alerts when more than four are in force.
+- An alert beeps once. Environment Canada updates a warning every few hours; the display now beeps again only if the warning gets worse.
+- Swipes made during a radar zoom are no longer lost, and a rare freeze after a drag is gone.
+- The display keeps running when a weather service sends an incomplete answer or memory is short, instead of restarting.
+
 ## v1.11.1 - 2026-10-02
 - Smooth radar zoom: zooming in and out runs at about 45 frames per second instead of 10, and a second swipe made during a zoom now zooms again instead of being lost.
 - Tapping the forecast opens today's hourly view at once.

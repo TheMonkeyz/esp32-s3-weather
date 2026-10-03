@@ -21,7 +21,6 @@
 #include "net.h"
 #include "presence.h"
 #include "diag.h"
-#include "web.h"
 
 static const char *TAG = "test";
 
@@ -132,13 +131,13 @@ out:
 
 static void cmd_heap(void)
 {
-    ESP_LOGI(TAG, "heap internal=%u min=%u largest=%u psram=%u psram_min=%u uptime_s=%lld",
+    ESP_LOGI(TAG, "heap internal=%u min=%u largest=%u psram=%u psram_min=%u uptime_s=%lld failed_allocs=%lu lvgl_fallbacks=%lu",
              (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024,
              (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL) / 1024,
              (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL) / 1024,
              (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024,
              (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_SPIRAM) / 1024,
-             esp_timer_get_time() / 1000000);
+             esp_timer_get_time() / 1000000, (unsigned long)diag_failed_allocs(), (unsigned long)lvgl_mem_fallbacks());
 }
 
 static void run(char *line)

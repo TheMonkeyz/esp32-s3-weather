@@ -171,9 +171,13 @@ def ms_of(line):
 @test('perf')
 def boot_and_memory(ctx):
     lines = ctx.log.lines()
+    # The last boot in the window only: a reused window can hold several (a test restarted the board), and the first
+    # one's numbers were taken. "start" and "display" are logged before the helper's log always catches up: not used.
+    boots = [i for i, l in enumerate(lines) if 'diag: mark start' in l or 'rst:0x' in l]
+    lines = lines[boots[-1]:] if boots else lines       # (none: the window began with this boot, after its first lines)
     for l in lines:
         m = re.search(r'diag: mark (.+?)\s+internal (\d+) KB', l)
-        if m:
+        if m and m.group(1).strip() not in ('start', 'display'):
             ctx.metric(f'boot_s.{m.group(1).strip().replace(" ", "_")}', round(ms_of(l) / 1000, 1))
             ctx.metric(f'boot_internal_kb.{m.group(1).strip().replace(" ", "_")}', int(m.group(2)))
     # "first weather" (above) is logged after the whole first round: every place's forecast, alerts and air quality,
@@ -182,10 +186,14 @@ def boot_and_memory(ctx):
         if re.search(r'weather: .+: now ', l):
             ctx.metric('boot_s.forecast_shown', round(ms_of(l) / 1000, 1))
             break
+    if not any(k.startswith('boot_s.') for k in ctx.metrics):
+        ctx.skip('boot_*', 'no start-up in this log window (it was reused): restart the board to measure it')
     h = ctx.board.heap()
     ctx.metric('internal_free_kb', h['internal'])
     ctx.metric('internal_min_kb', h['min'])
     ctx.metric('psram_min_kb', h['psram_min'])
+    ctx.metric('failed_allocs', h['failed_allocs'])       # any allocation that failed since boot
+    ctx.metric('lvgl_internal_fallbacks', h['lvgl_fallbacks'])   # LVGL blocks in internal RAM (PSRAM full)
 
 
 @test('perf')
@@ -219,22 +227,22 @@ def radar_timing(ctx):
     """Swipe to the radar: time to the first new frame; play the animation and read the frame rate."""
     b = ctx.board
     go_weather(ctx)
-    ctx.log.mark()
+    at = len(ctx.log.lines())
     t0 = time.time()
     b.cmd('swipe left')
     b.wait_screen('radar', 6)
     try:
-        ctx.log.wait(r'radar: Frame ', 30, 'a radar frame after opening the radar')
+        m = ctx.log.wait(r'radar: Frame ', 30, 'a radar frame after opening the radar', start=at)
         ctx.metric('radar_first_frame_s', round(time.time() - t0, 1))
-        ctx.log.wait(r'radar: Lightning ', 30, 'lightning fetched with the frames')
+        ctx.log.wait(r'radar: Lightning ', 30, 'lightning fetched with the frames', start=at)
     except Fail:
-        ctx.note('no new radar frame within 30 s (all frames already loaded on an earlier visit)')
+        ctx.skip('radar_first_frame_s', 'no new radar frame within 30 s (all frames loaded on an earlier visit)')
     time.sleep(8)                                    # history frames load while the radar is visible
     b.cmd('tap 233 233')                             # play the last 3 h (3 fps by design: no fps metric)
-    ctx.log.mark()
+    at = len(ctx.log.lines())
     time.sleep(10)
-    frames = ctx.log.count(r'radar: Frame ')
-    lt = [int(x) for x in re.findall(r'radar: Lightning \S+: \d+ px, (\d+) marks', '\n'.join(ctx.log.since_mark()))]
+    frames = ctx.log.count(r'radar: Frame ', start=at)
+    lt = [int(x) for x in re.findall(r'radar: Lightning \S+: \d+ px, (\d+) marks', '\n'.join(ctx.log.lines()[at:]))]
     ctx.note(f'{frames} radar frames loaded during playback; lightning marks per frame: {lt[:15]}')
     b.cmd('tap 233 233')                             # stop
     # Zoom in, then back out: drawn by slide.c (LVGL's own zoom transformed the whole image: ~10 fps)
@@ -353,6 +361,8 @@ def swipes(ctx):
         # Back on the first place, the radar fetches its maps and saves them to flash (both cores pause in bursts):
         # a tap then can go unseen and a move crawls. Wait for it, and tap twice if needed.
         radar_settled(ctx, since)
+    else:
+        ctx.skip('*.drag_place*', 'one place on the display: no place drag')
     for attempt in range(2):
         b.cmd('tap 125 350')                         # a day: the hourly view
         try:
@@ -432,11 +442,11 @@ def phone_check(ctx, ap_seen_by_pc=True):
         check(st == 200 and b'</html>' in body[-300:], f'setup page: HTTP {st}, {len(body)} bytes')
         st, _, body = http_get(SETUP_IP, '/api/config', SETUP_IP)
         check(st == 200 and b'"units"' in body, f'GET /api/config on the setup network: HTTP {st}')
-        ctx.log.mark()
+        at = len(ctx.log.lines())
         time.sleep(15)                               # a reconnect attempt used to knock phones off here
         state, ssid = w.state()
         check(state == 'connected' and ssid == 'Weather-Setup', f'PC dropped off the setup network ({state} {ssid})')
-        check(ctx.log.count(r'wifi:station: .* leave') == 0, 'the board saw the PC leave')
+        check(ctx.log.count(r'wifi:station: .* leave', start=at) == 0, 'the board saw the PC leave')
     finally:
         w.leave()
 
@@ -482,6 +492,7 @@ def unreachable_at_startup(ctx):
         ctx.log.wait(r'Easy Connect: received "', 180, 'credentials from the phone')
         ctx.log.wait(r'net: Connected, IP', 90, 'the restart joins the network')
         ctx.note('Easy Connect: phone sent the network, board restarted and connected')
+        ctx.skip('internal_min_kb.reconnect', 'Easy Connect restarted the board (--phone)')
         return                                       # the restart cleared the fake network: done
 
     # 4. back to the setup network: its DNS must work again (stop_dns_server leaked the socket: errno 112)
@@ -512,4 +523,50 @@ def unreachable_at_startup(ctx):
         time.sleep(1)
     if any('Update failed' in l for l in ctx.log.lines()[back:]):
         ctx.note('the first forecast after reconnecting failed (service slow): back on the weather screen at the retry')
+    # The lowest internal RAM of the boot, now that the reconnect path ran (5 KB once: the perf suite's reading,
+    # taken before these tests, never saw it)
+    ctx.log.wait(r'diag: mark first weather', 60, 'the first round of fetches after reconnecting', start=back)
+    ctx.metric('internal_min_kb.reconnect', b.heap()['min'])
     ctx.note('start-up offline path: setup, captive portal x2, Easy Connect channel, retry, recovery')
+
+
+# ---------------------------------------------------------------- presence: dim, off, wake
+
+@test('presence')
+def dim_off_wake(ctx):
+    """Short delays through the API (the user's put back after): ACTIVE -> DIM -> OFF -> wake. Swipes while it fades
+    up: the brightness command (presence task, core 0) and the panel transfers (LVGL, core 1) at the same time, the
+    cross-core case that hung raw frames (display_brightness() waits for LVGL's last band). 'where' must stay clear."""
+    b = ctx.board
+    saved = b.api('/api/presence')
+    keys = ('enabled', 'margin_db', 'wake_s', 'dim_s', 'off_s', 'bright_pct', 'dim_pct', 'motion_wake')
+    orig = {k: saved[k] for k in keys}
+    state = lambda: re.search(r'state=(\d) brightness=(\d+)', b.cmd('presence', r'test: presence (.*)').group(1))
+    try:
+        go_weather(ctx)
+        # loud never (60 dB over the background), no pick-up: only time decides
+        b.api('/api/presence', {'enabled': True, 'margin_db': 60, 'dim_s': 3, 'off_s': 4, 'motion_wake': False})
+        for i in range(3):
+            at = len(ctx.log.lines())
+            ctx.log.wait(r'presence: ACTIVE -> DIM', 15, 'dims after 3 s of quiet', start=at)
+            time.sleep(1.2)                          # faded down
+            b.cmd(['swipe right', 'swipe left'][i % 2])   # the touch wakes it: fades up while the screen moves
+            time.sleep(0.3)
+            b.cmd('fps', r'test: fps ')             # a console command between: answers while both run
+            time.sleep(1.5)
+            w = b.cmd('where', r'test: where (.*)').group(1)
+            check('raw_phase=0' in w, f'display busy after a fade during a move: {w}')
+        go_weather(ctx)
+        at = len(ctx.log.lines())
+        ctx.log.wait(r'presence: DIM -> OFF', 20, 'off after 3 + 4 s of quiet', start=at)
+        time.sleep(1.5)
+        m = state()
+        check(m.group(1) == '2' and m.group(2) == '0', f'not off: state {m.group(1)}, brightness {m.group(2)}')
+        b.cmd('wake')
+        time.sleep(1.5)
+        m = state()
+        check(m.group(1) == '0' and int(m.group(2)) > 0, f'not awake: state {m.group(1)}, brightness {m.group(2)}')
+        ctx.note('dim -> off -> wake; three fades during moves, display never stuck')
+    finally:
+        b.api('/api/presence', orig)
+        b.cmd('wake')

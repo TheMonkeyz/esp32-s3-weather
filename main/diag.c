@@ -18,6 +18,13 @@
 #include "ui.h"
 
 static const char *TAG = "diag";
+
+// Every failed heap allocation is counted (shown in the heap lines and the test console's "heap"): several
+// callers drop a failed allocation silently (a sound not played, a map not drawn), and the harness wants it at 0.
+static volatile uint32_t failed_allocs;
+static void alloc_failed(size_t size, uint32_t caps, const char *fn) { failed_allocs++; }
+uint32_t diag_failed_allocs(void) { return failed_allocs; }
+
 bool diag_bench(void);
 static volatile bool bench_done;
 #define MAX_TASKS 32
@@ -137,12 +144,14 @@ static void diag_task(void *arg)
         if (tick % period) continue;
 
         ESP_LOGI(TAG, "heap: internal %u KB free (min ever %u, largest block now %u / worst %u) | "
-                 "DMA %u KB (largest now %u / worst %u) | PSRAM %u KB free (min ever %u, largest %u)",
+                 "DMA %u KB (largest now %u / worst %u) | PSRAM %u KB free (min ever %u, largest %u) | "
+                 "failed allocs %lu, LVGL in internal RAM %lu",
                  KB(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)),
                  KB(heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)), KB(a), KB(int_lg_min),
                  KB(heap_caps_get_free_size(MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL)), KB(b), KB(dma_lg_min),
                  KB(heap_caps_get_free_size(MALLOC_CAP_SPIRAM)), KB(heap_caps_get_minimum_free_size(MALLOC_CAP_SPIRAM)),
-                 KB(heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM)));
+                 KB(heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM)), (unsigned long)failed_allocs,
+                 (unsigned long)lvgl_mem_fallbacks());
         int_lg_min = dma_lg_min = SIZE_MAX;
 
         display_stats_t d;
@@ -211,5 +220,6 @@ bool diag_bench(void)
 
 void diag_start(int period_s)
 {
+    heap_caps_register_failed_alloc_callback(alloc_failed);
     xTaskCreatePinnedToCore(diag_task, "diag", 4096, (void *)(intptr_t)period_s, 1, NULL, 0);
 }

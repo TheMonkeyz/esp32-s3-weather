@@ -830,16 +830,17 @@ function fwShow(u){
   if (busy && !fwPoll) fwPoll = setInterval(fwLoad, 1500);
   if (!busy && fwPoll) { clearInterval(fwPoll); fwPoll = null; }
 }
-// "vX|Month D, YYYY" header lines, one line per change, blank line between releases
-function fwNotes(t){
+// "vX|Month D, YYYY" header lines, one line per change, blank line between releases.
+// (The parameter must not be called t: that hid the translation function and the Install button never showed.)
+function fwNotes(text){
   const box = $('fwNotes');
-  box.style.display = t ? 'block' : 'none';
-  if (!t || box.dataset.t === t) return;
-  box.dataset.t = t;
+  box.style.display = text ? 'block' : 'none';
+  if (!text || box.dataset.t === text) return;
+  box.dataset.t = text;
   box.replaceChildren();
   const h = document.createElement('div'); h.textContent = t('whatsNew'); h.style.fontWeight = '600'; box.append(h);
   let ul = null;
-  for (const line of t.split('\n')) {
+  for (const line of text.split('\n')) {
     if (!line) { ul = null; continue; }
     const m = line.match(/^(v\S+)\|(.*)$/);
     if (m) {

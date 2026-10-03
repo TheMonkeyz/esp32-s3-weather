@@ -24,6 +24,8 @@
 #include "i18n.h"
 #include "testcon.h"
 #include "sound.h"
+#include "cJSON.h"
+#include "esp_heap_caps.h"
 
 static const char *TAG = "app";
 #define BOOT_BTN        GPIO_NUM_0
@@ -44,6 +46,14 @@ static bool boot_button_held(void)
 
 static TaskHandle_t main_task;
 
+// cJSON's trees (a forecast is thousands of small nodes) in PSRAM: they went to internal RAM, whose low point was
+// under 10 KB, and peaked when three replies were parsed at once on a reconnect
+static void *json_alloc(size_t n)
+{
+    void *p = heap_caps_malloc(n, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    return p ? p : malloc(n);
+}
+
 /* ---------- places ----------
  * Every place's forecast is refreshed every REFRESH_MIN and kept here; each place has its own page on the weather
  * screen (a vertical pager), so scrolling to a place shows its weather at once. Alerts, air quality and the radar are only for the place shown; they load after a switch. A cached forecast
@@ -53,31 +63,17 @@ static EXT_RAM_BSS_ATTR weather_t wx[MAX_PLACES];
 static location_t wx_at[MAX_PLACES];
 static bool have[MAX_PLACES];
 static location_t shown;                  // the place alerts, air quality and radar are for
-static char map_id[80];                   // alert whose region map is shown
+static char map_key[80];                  // region map shown (alerts_map_key: alert code + region)
+static char map_failed[80];               // its download failed: not retried every 10 min until the alert changes
 
-// Alerts already seen for the place shown: only a new one chimes (not the ones there at start-up or after a
-// switch, which the first fetch for a place just records).
-#define SEEN_MAX 16
-static char seen[SEEN_MAX][80];
-static int nseen;
-static bool seen_primed;
-
-static int severity(char c) { return c == 'r' ? 3 : c == 'o' ? 2 : c == 'y' ? 1 : 0; }
+// Alerts already heard for the place shown (alerts_to_sound: once per warning, again if it gets worse; the ones there
+// at start-up or after a switch are only recorded)
+static alerts_seen_t seen;
 
 static void chime_new_alerts(const alerts_t *al)
 {
-    int best = -1;                                 // most severe new alert
-    char best_c = 0;
-    for (int i = 0; i < al->n; i++) {
-        bool known = false;
-        for (int k = 0; k < nseen && !known; k++) known = !strcmp(seen[k], al->a[i].id);
-        if (known) continue;
-        if (nseen == SEEN_MAX) { memmove(seen[0], seen[1], sizeof(seen[0]) * (SEEN_MAX - 1)); nseen--; }   // drop the oldest
-        strlcpy(seen[nseen++], al->a[i].id, sizeof(seen[0]));
-        if (seen_primed && severity(al->a[i].colour) > best) { best = severity(al->a[i].colour); best_c = al->a[i].colour; }
-    }
-    seen_primed = true;
-    if (best_c) sound_alert(best_c);
+    char c = alerts_to_sound(&seen, al);
+    if (c) sound_alert(c);
 }
 
 static bool cached(int i, const location_t *loc)     // display lock held
@@ -113,9 +109,8 @@ static void follow_active(bool all)
         static const air_t no_air = { .us_aqi = -1, .pollen = { -1, -1, -1, -1 } };
         ui_alerts(&none);
         ui_alert_map(NULL, 0, 0);
-        map_id[0] = 0;
-        nseen = 0;                               // the new place's current alerts don't chime
-        seen_primed = false;
+        map_key[0] = map_failed[0] = 0;
+        memset(&seen, 0, sizeof(seen));          // the new place's current alerts don't chime
         ui_air(&no_air);
         radar_relocate();
     }
@@ -193,6 +188,7 @@ static void portal(void)
 void app_main(void)
 {
     ESP_LOGI(TAG, "Weather display starting");
+    cJSON_InitHooks(&(cJSON_Hooks){ .malloc_fn = json_alloc, .free_fn = free });
     main_task = xTaskGetCurrentTaskHandle();
     setenv("TZ", "EST5EDT,M3.2.0,M11.1.0", 1);   // until the weather service reports the local offset
     tzset();
@@ -267,10 +263,13 @@ void app_main(void)
             if (alerts_fetch(loc.lat, loc.lon, &al) && a == config_active_place()) {   // failed: keep the last ones
                 ui_alerts(&al);
                 chime_new_alerts(&al);
-                if (!al.n) { if (map_id[0]) { ui_alert_map(NULL, 0, 0); map_id[0] = 0; } }
-                else if (strcmp(map_id, al.a[0].id)) {                   // map of the top alert's region
+                char key[80];
+                if (al.n) alerts_map_key(&al.a[0], key, sizeof(key));
+                if (!al.n) { if (map_key[0]) { ui_alert_map(NULL, 0, 0); map_key[0] = 0; } }
+                else if (strcmp(map_key, key) && strcmp(map_failed, key)) {   // map of the top alert's region
                     uint16_t *m = alerts_map(&al.a[0], loc.lat, loc.lon, ALERT_MAP_W, ALERT_MAP_H);
-                    if (m) { ui_alert_map(m, ALERT_MAP_W, ALERT_MAP_H); strlcpy(map_id, al.a[0].id, sizeof(map_id)); }
+                    if (m) { ui_alert_map(m, ALERT_MAP_W, ALERT_MAP_H); strlcpy(map_key, key, sizeof(map_key)); }
+                    else strlcpy(map_failed, key, sizeof(map_failed));   // (a 404 was retried every cycle)
                 }
             }
             static air_t air;

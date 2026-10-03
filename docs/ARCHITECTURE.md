@@ -54,6 +54,10 @@ LVGL timer and event callbacks already run inside the lock.
   in flight; every wait gives up after 200 ms. If it ever sticks, the test console's `where` prints the breadcrumbs
   (`slide_phase`, `raw_phase`, `raw_band`, `lvgl_inflight`). After a raw frame, LVGL must redraw before it flushes
   again (the slide invalidates the screen).
+- **Any esp_lcd call from outside LVGL** follows the same rule: `display_brightness()` (the presence task, core 0,
+  display lock held) first waits (bounded, 100 ticks) until LVGL's last band is out, as raw frames do. Before
+  v1.12.0 it wrote the brightness command while LVGL's last band could still be on the bus, from the other core
+  (`raw_phase` 7 = waiting, 8 = sending).
 - `display_raw_area()`: the same for a rectangle only (a list's), several rows per band when it is narrow, bands top
   down or bottom up (a fill that moves rows down in place needs the bottom ones first).
 - **Flush hook** (`display_set_flush_hook()`): every area LVGL sends is also handed, before the byte swap, to
@@ -108,7 +112,7 @@ LVGL timer and event callbacks already run inside the lock.
 ## Moves: slides and drags (`slide.c`)
 
 Why: LVGL 9.2 redraws every widget for every frame of a move. A full screen costs 65–85 ms (each of the 15 bands
-walks the object tree, and TinyTTF draws the glyphs), so swipes ran at 10–15 fps. The profiler (docs/TESTING.md §7)
+walks the object tree, and TinyTTF draws the glyphs), so swipes ran at 10–15 fps. The profiler (docs/TESTING.md §8)
 found no single hot spot to fix. Copying finished pictures is cheap: ~8 ms per screen from PSRAM into panel byte
 order, and ~11 ms on the bus.
 
@@ -129,7 +133,13 @@ order, and ~11 ms on the bus.
   back. On release it goes on to the neighbour past a third of the screen, or after a flick (more than 24 px and
   0.35 px/ms that way), else back. `commit(side)` loads the screen or `pager_switch`es the page.
   - Five touch read errors in a row count as a release: the CST9217 often stops answering (NACK) when nothing
-    touches it instead of reporting "up", and the drag never ended.
+    touches it instead of reporting "up", and the drag never ended. Every loop in `slide.c` that reads the finger
+    goes through `finger()`, which keeps that rule (and "up stays up until a press"): since v1.12.0 also the
+    PSRAM-busy drag (it waited for a clean "up" forever, holding the display lock) and the zoom (a failed read kept
+    the swipe that started it "on", so a second swipe during the zoom was ignored).
+  - Safety caps: a pure wait for the lift gives up after 3 s, a loop following the finger (drag, list scroll) after
+    20 s (a slow scroll while reading is legitimate); then the move ends as if the finger had lifted and LVGL takes
+    the touch over. Both log a warning, which the harness reports.
   - The neighbour in the detected direction is rendered before the first frame, and a finger lifted before that
     frame counts as a flick that way: a quick flick could be over before anything was drawn.
 - **After a drag** (`touch_resync()`): `touch_forget()`, LVGL's `wait_until_release` cleared and `lv_indev_reset()`.
@@ -330,6 +340,12 @@ order, and ~11 ms on the bus.
 - Two swipes right of the weather screen. Header: firmware version, channel and running slot
   (`esp_ota_get_running_partition()`); Wi-Fi RSSI, IP, uptime. Then one row per external service, in a list box at
   y 120–400 (clear of the round edge and the page dots) that scrolls.
+- **One request, one connection:** `http_once()` (`http_once.h`) creates the client, performs and cleans up.
+  `esp_http_client_init()` returns NULL when memory is short and `perform()` dereferences it: that is now a failed
+  fetch (`ESP_ERR_NO_MEM`), not a reboot. `radar.c` keeps its own keep-alive client and checks it the same way.
+  The parsers check every array they index: a forecast missing `daily.time` (or with a shorter array) crashed every
+  fetch, and the region-shape scanner looped forever on a `-` that starts no number. `tests/host` replays such
+  replies against the real code.
 - `svc.c` keeps the last outcome per service (`svc_id_t`): time of the last try and last success (`esp_timer`),
   duration, failures in a row, reason (`HTTP 503`, `Can't connect`, `Timed out`, `No reply`, `Bad response`…). Each
   fetch reports right after `esp_http_client_perform`: `weather.c` (forecast, air), `alerts.c` (list, region
@@ -353,7 +369,10 @@ order, and ~11 ms on the bus.
   the location>`. The server intersects the box with the real region shapes, so a tiny box is a point query.
   Properties used: `alert_name_en`, `risk_colour_en` (yellow/orange/red), `event_end_datetime`,
   `expiration_datetime`, `status_en` (skip `ended`/`cancelled`), `feature_name_en`, `alert_text_en` (the standard
-  "Please continue to monitor…" closing paragraph is cut). Same alert in two regions = one entry. Sorted red first.
+  "Please continue to monitor…" closing paragraph is cut). Same alert in two regions = one entry. At most four
+  (`ALERTS_MAX`), the most severe kept: once four are held, a later feature replaces the least severe one if it is
+  worse (`parse_features()`); then sorted red first. Until v1.12.0 the cap ran in the server's order before the sort,
+  and a red warning listed fifth (the request asks for 20) was dropped: no pill, no sound.
   Fetched with the weather (every 10 min); a failed request keeps the previous alerts.
 - UI: a pill in the alert colour replaces the city name; a tap in the top half opens `scr_alert` (title fixed; map,
   when/where and text in one scrolling column).
@@ -529,9 +548,13 @@ order, and ~11 ms on the bus.
   0.32 (headroom); the codec volume (0–100) scales it. The whole sound is **rendered into PSRAM first, then
   streamed** in 4 KB writes: computing it while playing crackled (the I2S DMA starved). Deliberately unlike
   Canada's Alert Ready attention signal.
-- **When:** `main.c` `chime_new_alerts()` after each successful alert fetch for the place shown. An alert sounds once
-  (ids remembered, 16 max); the first fetch for a place (start-up, place switch) only records what is already
-  there. The most severe new alert decides the sound. `sound_alert()` applies the level setting (0 off, 1 red, 2
+- **When:** `main.c` `chime_new_alerts()` after each successful alert fetch for the place shown. A warning sounds once,
+  then again only if it gets worse (`alerts_to_sound()`): "the same warning" is the same `alert_code` for the place
+  shown (16 remembered, with the worst colour heard). Environment Canada re-issues a warning every few hours under a
+  new feature id (the CAP publication id with its timestamp): keyed on that id, every re-issue sounded again (red
+  ignores quiet hours) and re-downloaded the region map, which is now keyed on code + region (`alerts_map_key()`),
+  and a map that failed (a 404) isn't retried until the alert changes. The first fetch for a place (start-up,
+  place switch) only records what is already there. The most severe new alert decides the sound. `sound_alert()` applies the level setting (0 off, 1 red, 2
   orange and red, 3 all) and quiet hours (local time of the place shown; red always sounds). Tested with fake
   alerts (see CLAUDE.md): silent in quiet hours, a known alert doesn't sound again, a new one does.
 - **Settings:** NVS `sound` (`level`, `vol`, `qfrom`, `qto`); defaults orange and red, 60 %, 22:00–07:00. Display

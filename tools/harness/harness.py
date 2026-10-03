@@ -15,6 +15,7 @@ Exit code 0 = all passed. Report: tools/harness/reports/<date-time>/report.md (+
 import argparse
 import json
 import os
+import re
 import sys
 import time
 import traceback
@@ -23,20 +24,26 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from board import Board, Fail, Log, PCWifi, ROOT  # noqa: E402
 from suites import SUITES  # noqa: E402
 
-ORDER = ['smoke', 'navigation', 'web', 'perf', 'wifi_runtime', 'wifi_setup']
+ORDER = ['smoke', 'navigation', 'web', 'perf', 'presence', 'wifi_runtime', 'wifi_setup']
 BASELINE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'baseline.json')
 
 
 class Ctx:
     def __init__(self, board, log, wifi, outdir, opts):
         self.board, self.log, self.wifi, self.dir, self.opts = board, log, wifi, outdir, opts
-        self.metrics, self.notes, self.snapped = {}, [], set()
+        self.metrics, self.notes, self.snapped, self.skips = {}, [], set(), {}
 
     def out(self, name):
         return os.path.join(self.dir, name)
 
     def metric(self, name, value):
         self.metrics[name] = value
+
+    def skip(self, pattern, reason):
+        """Metrics matching `pattern` (fnmatch, e.g. '*.drag_place*') were not measured on purpose: the report says
+        why instead of failing them as MISSING. Tests must use this, never leave a metric out silently."""
+        self.skips[pattern] = reason
+        print(f'    (not measured: {pattern}: {reason})', flush=True)
 
     def note(self, text):
         self.notes.append(text)
@@ -63,25 +70,51 @@ def crash_summary(lines):
     return (why[:90] + ' | ' if why else '') + ' < '.join(frames[:5])
 
 
-def compare(metrics, update):
-    """[(metric, value, limit, ok)] against baseline.json {"metric": {"max"|"min": n, "ref": n}}."""
-    base = json.load(open(BASELINE)) if os.path.exists(BASELINE) else {}
+# The suite that produces a metric (the rest come from perf): a baseline metric is only expected when its suite ran
+SUITE_OF = [('snapshot_ms.', 'navigation'), ('page_kb', 'web'), ('internal_min_kb.reconnect', 'wifi_setup')]
+BAD = ('REGRESSION', 'MISSING', 'NEW')
+
+
+def suite_of(metric):
+    return next((s for p, s in SUITE_OF if metric.startswith(p)), 'perf')
+
+
+def compare(metrics, base, ran, skips=None):
+    """[(metric, value, limit, verdict)] against the baseline {"metric": {"max"|"min": n, "ref": n, "note": ...}}.
+    Verdicts: ok, REGRESSION (outside the limit), MISSING (in the baseline, its suite ran, not measured), NEW
+    (measured, no limit yet), or "skipped: why" (ctx.skip). Nothing passes silently: in October 2026 a third of the
+    metrics had no limit and a reused log window dropped all the boot ones without a word."""
+    import fnmatch
+    skips = skips or {}
+    why = lambda k: next((r for p, r in skips.items() if fnmatch.fnmatchcase(k, p)), None)
     rows = []
-    for k, v in sorted(metrics.items()):
-        b = base.get(k)
-        if update and isinstance(v, (int, float)):
-            lo_is_bad = any(s in k for s in ('_kb', 'fps'))
-            base[k] = {'ref': v, ('min' if lo_is_bad else 'max'): round(v * (0.75 if lo_is_bad else 1.4), 1)}
-            b = base[k]
-        if not b:
-            rows.append((k, v, '', None))
+    for k in sorted(set(metrics) | {k for k in base if suite_of(k) in ran}):
+        b, v = base.get(k), metrics.get(k)
+        if v is None:
+            rows.append((k, '', '', f'skipped: {why(k)}' if why(k) else 'MISSING'))
+        elif not b or not ('max' in b or 'min' in b):
+            rows.append((k, v, '', 'NEW'))
         elif 'max' in b:
-            rows.append((k, v, f'≤ {b["max"]}', v <= b['max']))
+            rows.append((k, v, f'≤ {b["max"]}', 'ok' if v <= b['max'] else 'REGRESSION'))
         else:
-            rows.append((k, v, f'≥ {b["min"]}', v >= b['min']))
-    if update:
-        json.dump(base, open(BASELINE, 'w'), indent=1, sort_keys=True)
+            rows.append((k, v, f'≥ {b["min"]}', 'ok' if v >= b['min'] else 'REGRESSION'))
     return rows
+
+
+def propose(metrics, base):
+    """--update-baseline: the baseline with this run's numbers as "ref", limits and notes kept; metrics without an
+    entry get a proposed limit to check by hand (direction guessed from the name, marked "proposed")."""
+    out = json.loads(json.dumps(base))
+    for k, v in metrics.items():
+        if not isinstance(v, (int, float)):
+            continue
+        if k in out:
+            out[k]['ref'] = v
+        else:
+            lo_is_bad = any(s in k for s in ('_kb', 'fps')) and k != 'page_kb'
+            out[k] = {'ref': v, ('min' if lo_is_bad else 'max'): round(v * (0.75 if lo_is_bad else 1.4), 1),
+                      'note': 'proposed by --update-baseline: check the limit and the direction'}
+    return out
 
 
 def main():
@@ -136,24 +169,33 @@ def main():
         print('Cannot start:', e)
         return 2
 
+    # Log lines that aren't failures but must not go unseen (fallback paths and safety caps in slide.c)
+    watch = [(r'slide: drag: PSRAM busy', 'a drag fell back to no animation (PSRAM busy)'),
+             (r'slide: (drag|scroll): finger (still )?down', 'a touch loop hit its safety cap'),
+             (r'display: raw frame: a band transfer did not finish', 'a raw frame band timed out')]
     for s in [x for x in ORDER if x in suites]:
         for fn in SUITES[s]:
             name = f'{s}.{fn.__name__}'
             print(f'- {name}', flush=True)
-            log.mark()
+            log.mark()                                  # the harness's own cursor: tests keep their own positions
             ctx.reset_ok = False                        # tests that restart the board on purpose set it
             t0 = time.time()
             try:
                 fn(ctx)
                 status, detail = 'pass', ''
-                resets = [l for l in log.since_mark() if 'rst:0x' in l]
-                if resets and not ctx.reset_ok:          # a crash: the panic text and backtrace are in the log
-                    status, detail = 'FAIL', f'unexpected restart: {resets[0][:60]}; {crash_summary(log.since_mark())}'
             except Fail as e:
                 status, detail = 'FAIL', str(e)
             except Exception as e:                      # a bug in the harness itself, or the board vanished
                 status, detail = 'ERROR', f'{type(e).__name__}: {e}'
                 traceback.print_exc()
+            resets = [l for l in log.since_mark() if 'rst:0x' in l]
+            if resets and not ctx.reset_ok:             # a crash (also when a check failed after it): panic + backtrace
+                status, detail = 'FAIL', (f'unexpected restart: {resets[0][:60]}; {crash_summary(log.since_mark())}'
+                                          + (f' (then: {detail})' if detail else ''))
+            for rx, what in watch:
+                n = sum(1 for l in log.since_mark() if re.search(rx, l))
+                if n:
+                    ctx.note(f'{name}: {what} ({n}x)')
             dt = time.time() - t0
             if status != 'pass':
                 with open(os.path.join(outdir, f'{name}.log.txt'), 'w', encoding='utf-8') as f:
@@ -162,28 +204,37 @@ def main():
             results.append({'test': name, 'status': status, 'seconds': round(dt), 'detail': detail})
 
     board.stop_log()
-    rows = compare(ctx.metrics, opts.update_baseline)
-    perf_bad = [r for r in rows if r[3] is False]
+    base = json.load(open(BASELINE, encoding='utf-8')) if os.path.exists(BASELINE) else {}
+    rows = compare(ctx.metrics, base, [x for x in ORDER if x in suites], ctx.skips)
+    if opts.update_baseline:
+        prop = os.path.join(os.path.dirname(BASELINE), 'baseline.proposed.json')
+        json.dump(propose(ctx.metrics, base), open(prop, 'w', encoding='utf-8'), indent=1, sort_keys=True,
+                  ensure_ascii=False)
+        print(f'Proposed baseline: {os.path.relpath(prop, ROOT)} (review it, then copy it over baseline.json)')
+    perf_bad = [r for r in rows if r[3] in BAD]
     failed = [r for r in results if r['status'] != 'pass']
 
     # report
     lines = [f'# Harness report {time.strftime("%Y-%m-%d %H:%M")}: {version}', '',
-             f'{len(results) - len(failed)}/{len(results)} tests passed, {len(perf_bad)} performance regressions, '
+             f'{len(results) - len(failed)}/{len(results)} tests passed, {len(perf_bad)} performance problems '
+             '(regression, missing or no limit), '
              f'{time.time() - started:.0f} s.', '', '| test | result | time | detail |', '|---|---|---|---|']
     lines += [f'| {r["test"]} | {r["status"]} | {r["seconds"]} s | {r["detail"]} |' for r in results]
     if ctx.notes:
         lines += ['', '## Notes', ''] + [f'- {n}' for n in ctx.notes]
     if rows:
         lines += ['', '## Performance', '', '| metric | value | limit | |', '|---|---|---|---|']
-        lines += [f'| {k} | {v} | {lim} | {"" if ok is None else "ok" if ok else "**REGRESSION**"} |'
-                  for k, v, lim, ok in rows]
+        lines += [f'| {k} | {v} | {lim} | {"**" + vd + "**" if vd in BAD else vd} |' for k, v, lim, vd in rows]
     shots = sorted(f for f in os.listdir(outdir) if f.endswith('.png'))
     if shots:
         lines += ['', '## Screens', ''] + [f'![{s}]({s})' for s in shots]
     open(os.path.join(outdir, 'report.md'), 'w', encoding='utf-8').write('\n'.join(lines) + '\n')
-    json.dump({'results': results, 'metrics': ctx.metrics, 'notes': ctx.notes},
+    json.dump({'results': results, 'metrics': ctx.metrics, 'notes': ctx.notes, 'skips': ctx.skips},
               open(os.path.join(outdir, 'results.json'), 'w'), indent=1)
-    print(f'\n{len(results) - len(failed)}/{len(results)} passed, {len(perf_bad)} performance regressions')
+    print(f'\n{len(results) - len(failed)}/{len(results)} passed, {len(perf_bad)} performance problems')
+    for k, v, lim, vd in rows:
+        if vd in BAD:
+            print(f'  {vd}: {k} {v} {lim}')
     print('Report:', os.path.relpath(os.path.join(outdir, 'report.md'), ROOT))
     return 1 if failed or perf_bad else 0
 

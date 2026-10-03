@@ -3,6 +3,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include "esp_http_client.h"
+#include "http_once.h"
 #include "esp_crt_bundle.h"
 #include "cJSON.h"
 #include "esp_log.h"
@@ -85,11 +86,9 @@ bool weather_fetch(const location_t *loc, weather_t *w)
         .url = url, .event_handler = http_evt, .user_data = &rx,
         .crt_bundle_attach = esp_crt_bundle_attach, .timeout_ms = 15000, .buffer_size_tx = 1024,   // long URL
     };
-    esp_http_client_handle_t c = esp_http_client_init(&cfg);
     int64_t t0 = esp_timer_get_time();
-    esp_err_t err = esp_http_client_perform(c);
-    int status = esp_http_client_get_status_code(c);
-    esp_http_client_cleanup(c);
+    int status;
+    esp_err_t err = http_once(&cfg, &status);
     svc_http(SVC_FORECAST, err, status, t0);
 
     bool ok = false;
@@ -113,12 +112,20 @@ bool weather_fetch(const location_t *loc, weather_t *w)
             cJSON *tmin = cJSON_GetObjectItem(daily, "temperature_2m_min");
             cJSON *codes = cJSON_GetObjectItem(daily, "weather_code");
             cJSON *days = cJSON_GetObjectItem(daily, "time");
+            // Every array the loop reads must have the day: a partial reply (an array missing or shorter) crashed every
+            // fetch, a reboot loop until the service recovered
+            int nd = cJSON_GetArraySize(tmax);
+            if (cJSON_GetArraySize(tmin) < nd) nd = cJSON_GetArraySize(tmin);
+            if (cJSON_GetArraySize(codes) < nd) nd = cJSON_GetArraySize(codes);
+            if (cJSON_GetArraySize(days) < nd) nd = cJSON_GetArraySize(days);
             w->ndays = 0;
-            for (int i = 0; i < WX_DAYS && i < cJSON_GetArraySize(tmax); i++) {
-                w->day[i].tmax = cJSON_GetArrayItem(tmax, i)->valuedouble;
-                w->day[i].tmin = cJSON_GetArrayItem(tmin, i)->valuedouble;
-                w->day[i].code = cJSON_GetArrayItem(codes, i)->valueint;
-                strlcpy(w->day[i].date, cJSON_GetArrayItem(days, i)->valuestring, sizeof(w->day[i].date));
+            for (int i = 0; i < WX_DAYS && i < nd; i++) {
+                const char *date = cJSON_GetStringValue(cJSON_GetArrayItem(days, i));
+                if (!date) break;
+                w->day[i].tmax = num_at(tmax, i);
+                w->day[i].tmin = num_at(tmin, i);
+                w->day[i].code = (int)num_at(codes, i);
+                strlcpy(w->day[i].date, date, sizeof(w->day[i].date));
                 w->ndays++;
             }
             cJSON *pop = cJSON_GetObjectItem(daily, "precipitation_probability_max");
@@ -153,7 +160,7 @@ bool weather_fetch(const location_t *loc, weather_t *w)
                 h->is_day = (unsigned char)num_at(hd, i);
                 w->nhours++;
             }
-            ok = true;
+            ok = w->ndays > 0;                                   // no day at all: keep the last forecast
             ESP_LOGI(TAG, "%s: now %.1f°C (feels %.1f), %s, RH %d%%, wind %.0f km/h, today %.0f/%.0f", loc->name,
                      w->temp, w->feels, weather_text(w->code), w->humidity, w->wind,
                      w->day[0].tmax, w->day[0].tmin);
@@ -196,11 +203,9 @@ bool air_fetch(air_t *a)
         .url = url, .event_handler = http_evt, .user_data = &rx,
         .crt_bundle_attach = esp_crt_bundle_attach, .timeout_ms = 15000, .buffer_size_tx = 1024,   // long URL
     };
-    esp_http_client_handle_t c = esp_http_client_init(&cfg);
     int64_t t0 = esp_timer_get_time();
-    esp_err_t err = esp_http_client_perform(c);
-    int status = esp_http_client_get_status_code(c);
-    esp_http_client_cleanup(c);
+    int status;
+    esp_err_t err = http_once(&cfg, &status);
     svc_http(SVC_AIR, err, status, t0);
     bool ok = false;
     cJSON *root = err == ESP_OK && status == 200 ? cJSON_Parse(rx.buf) : NULL;

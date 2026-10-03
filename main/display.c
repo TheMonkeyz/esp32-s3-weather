@@ -129,6 +129,7 @@ void display_raw_area(int x0, int y0, int x1, int y1, bool bottom_up, display_ar
         // No esp_lcd call while a transfer is in flight: its tx_param/tx_color take the bus and then wait for the
         // queued transfer, and called during a transfer (a band fills in ~0.5 ms, sends in ~0.75 ms) they hung for
         // good, a few frames in (breadcrumbs: raw_phase 3). LVGL's path rarely lands there (bands render in ~4 ms).
+        // The same rule holds for any esp_lcd call from outside LVGL (display_brightness() waits too).
         if (inflight) { if (!raw_wait()) break; inflight--; }
         int cx1 = x0 + X_GAP, cx2 = x1 + X_GAP, y2 = y + n - 1;
         uint8_t col[4] = {cx1 >> 8, cx1 & 0xFF, cx2 >> 8, cx2 & 0xFF};
@@ -325,5 +326,11 @@ void display_init(void)
 
 void display_brightness(uint8_t level)
 {
+    // Called with the display lock held, from any task (presence.c's runs on core 0). LVGL lets go of the lock with its
+    // last band still on the bus: as for raw frames, no esp_lcd call until that transfer is done (display_raw_area).
+    raw_phase = 7;
+    for (int i = 0; i < 100 && __atomic_load_n(&lvgl_inflight, __ATOMIC_ACQUIRE) > 0; i++) vTaskDelay(1);
+    raw_phase = 8;
     lcd_cmd(0x51, &level, 1);
+    raw_phase = 0;
 }

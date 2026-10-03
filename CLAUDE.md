@@ -141,7 +141,7 @@ Windows build gets both from `main/idf_component.yml`. `components/dns_server` *
     so the display scans for the saved network by name first. A flaky check needs several runs before calling it
     fixed (4/4 after the fix).
 21. **Frame rate (v1.11.0, October 2):** LVGL 9.2 can't redraw a full screen in less than ~65–85 ms, and profiling
-    found no single hot spot (docs/TESTING.md §7). Moves between screens, places and days are now pictures sent
+    found no single hot spot (docs/TESTING.md §8). Moves between screens, places and days are now pictures sent
     straight to the panel by `slide.c` (ARCHITECTURE "Moves"). What it took, in order of cost:
     (a) **Hangs:** esp_lcd isn't thread-safe. Its transfer-done interrupt ran on the other core and raced with the
     raw frames: the interrupt now runs on core 1, and no esp_lcd call is made while a band is in flight. Found
@@ -184,6 +184,21 @@ Windows build gets both from `main/idf_component.yml`. `components/dns_server` *
     (l) **QIO flash** made all LVGL rendering ~30 % faster (the code runs from flash through a 16 KB cache). ESP-IDF
     writes a QIO bootloader's header as "dio" and the bootloader switches itself: what matters is the bootloader
     binary, which only a USB / web-flasher install writes.
+22. **Fixes from the October 2-3 evaluation (v1.12.0, docs/FIX-PLAN-2026-10-02.md):**
+    (a) A JavaScript parameter named `t` hid the page's translation function `t()`: the Install button never showed
+    (shipped in two releases; nothing tested the "update offered" state). The mock display now scripts every update
+    state (`POST /__update`); give the mock every state the page can be in.
+    (b) Every loop that reads the touch chip directly goes through `slide.c`'s `finger()` (5 failed reads = up) and
+    has a cap; one loop that waited for a clean "up" could hold the display lock forever.
+    (c) **Any** esp_lcd call from outside LVGL waits for LVGL's last band (`lvgl_inflight`), not only raw frames:
+    `display_brightness()` from the presence task (core 0) didn't.
+    (d) `esp_http_client_init()` can return NULL: use `http_once()`. Every array a parser indexes must be checked
+    (a missing `daily.time` meant a reboot loop the rollback couldn't catch: the image was already confirmed).
+    (e) Cap after sorting, never before (a red warning listed fifth was dropped); "the same alert" is its
+    `alert_code`, not the feature id, which changes at every Environment Canada re-issue.
+    (f) A release gate must fail on what it didn't measure: MISSING and NEW metrics fail like regressions unless the
+    test says `ctx.skip()`; tests keep their own log positions (`log.mark()` is the harness's crash check).
+    (g) Host tests (`tests/host`, gcc in WSL) reproduce parser bugs off the board; check the test fails on the old code.
 
 - Internal RAM ran out silently (10 KB free, 0 KB min ever) because LVGL's small allocations went to internal RAM
   first. Fixed with `lvgl_mem.c` (LVGL heap in PSRAM). Font kerning cost 71% of render time; fonts now use
