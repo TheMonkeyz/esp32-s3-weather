@@ -124,7 +124,8 @@ def main():
         if before and version != before:
             raise Fail(f'the board ran {before} before the restart and {version} after: the bootloader rolled back')
         if opts.ota and version != opts.ota:
-            print(f'Installing {opts.ota} with the display\'s updater (running {version}) ...', flush=True)
+            print(f'Waiting for the display\'s channel to offer {opts.ota}, then installing it (running {version})',
+                  flush=True)
             board.install(opts.ota, opts.ota_wait)
             time.sleep(5)
             version = board.cmd('ping', r'test: pong (\S+)', timeout=10).group(1)
