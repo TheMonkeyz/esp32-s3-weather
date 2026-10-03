@@ -10,6 +10,21 @@ their own `## vX.Y.Z-rc.N` section. Those are shown only to Beta users, while th
 list everything again. (Two tags have no section: v1.3.0-rc.1, and v1.12.0-rc.1, whose build failed and was published
 as v1.12.0-rc.2.)
 
+## v1.12.0 - 2026-10-03
+- Changing settings from your phone now needs the code shown on the display: press and hold the weather screen, tap More on your phone, and scan it. Your phone remembers it. Anyone on your Wi-Fi can still look at the settings page.
+- The display's setup network has its own password, shown on the display next to its code (it was the same for every display). When your Wi-Fi is down for a long time, the setup network opens by itself for 15 minutes, then the display just keeps trying; press and hold to open it again.
+- An alert beeps once, and again only if the warning gets worse (Environment Canada updates a warning every few hours). A red warning is never hidden behind lesser alerts.
+- When the forecast can't be updated, the weather screen says so ("No connection", "Updated 45 min ago", "Can't reach the forecast service") instead of "Loading..." forever, and it fetches again as soon as Wi-Fi is back.
+- The hourly view and the "Today" column are right just after midnight. Hours without data show "--" instead of 0° and 0 %.
+- A new display shows the settings code by itself the first time, to choose your location, then a one-time screen shows how to get around.
+- Choosing another place on the settings page slides to it smoothly on the display. The settings page and its screenshots load faster.
+- The settings page shows the Install button again when an update is offered, no longer says "No speaker found" on displays that have one, and says so when a setting could not be saved.
+- Updates are safer: the display keeps an update only once it has worked with your Wi-Fi, waits for that before restarting on its own, says so if an update was undone, and keeps the Install button after an interrupted download.
+- In French, the 12-hour clock reads "2 h 45 p.m.". On the radar, the zoom distance follows your units (miles).
+- Swipes made during a radar zoom are no longer lost, a rare freeze after a drag is gone, and the display keeps running when a weather service sends an incomplete answer.
+- If the display ever crashes, the details are kept and reported at the next start (after a USB or web-flasher install).
+- Clearer wording throughout ("sound" instead of "chime", plain words on the status page), Inuktitut marked as a draft, and map credits for OpenStreetMap everywhere a map is shown.
+
 ## v1.12.0-rc.8 - 2026-10-03
 - Map requests to OpenStreetMap now name the display's exact version, as OpenStreetMap's rules ask.
 
