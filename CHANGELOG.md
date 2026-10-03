@@ -9,6 +9,14 @@ How to write an entry: add a `## vX.Y.Z - YYYY-MM-DD` section at the top **befor
 their own `## vX.Y.Z-rc.N` section. Those are shown only to Beta users, while the final release's section should
 list everything again.
 
+## v1.10.1 - 2026-10-02
+- Smoother moves: going from screen to screen, from place to place (drag up or down) and from day to day in the hourly view now runs at 45 to 70 frames per second instead of 10 to 15. The screen follows your finger, bounces at the first and last one, and a quick flick is enough to go to the next. Moves start at once, even right after the previous one.
+- Lists scroll smoothly: the hourly view's hours, Settings, the status page, alert details and the update notes now scroll at 50 to 70 frames per second instead of about 20. They follow your finger, keep going after a flick and slow down, stop when you touch them, and spring back at the top and bottom.
+- Android Easy Connect: the setup screen and the settings page now say to scan the code with the phone's camera or any QR app while the phone is on your Wi-Fi. Not every phone has a QR icon in its Wi-Fi settings.
+- Fixed: Android Easy Connect could still fail when the display couldn't reach its Wi-Fi, if your router was on a busy channel. The display now looks for your network by name to find its channel.
+- Fixed: going back to your first place made the radar save its map twice, and the screen stuttered for a few seconds. It saves once now, and waits while you're touching the screen.
+- Behind the scenes: the screen is fed twice as fast, radar images and map tiles are decoded with much less memory, and the display no longer runs a speed test by itself a minute after starting (it froze the screen for about 1.5 seconds).
+
 ## v1.10.1-rc.4 - 2026-10-02
 - Lists scroll smoothly: the hourly view's hours, Settings, the status page, alert details and the update notes now scroll at 50 to 70 frames per second instead of about 20. They follow your finger, keep going after a flick and slow down, stop when you touch them, and spring back at the top and bottom.
 - Android Easy Connect: the setup screen and the settings page now say to scan the code with the phone's camera or any QR app while the phone is on your Wi-Fi. Not every phone has a QR icon in its Wi-Fi settings.
