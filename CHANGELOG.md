@@ -9,6 +9,12 @@ How to write an entry: add a `## vX.Y.Z - YYYY-MM-DD` section at the top **befor
 their own `## vX.Y.Z-rc.N` section. Those are shown only to Beta users, while the final release's section should
 list everything again.
 
+## v1.11.1-rc.2 - 2026-10-02
+- Smooth radar zoom: zooming in and out runs at about 45 frames per second instead of 10, and a second swipe made during a zoom now zooms again instead of being lost.
+- Tapping the forecast opens today's hourly view at once.
+- The hourly list scrolls more smoothly (about 60 frames per second).
+- Everything on screen is drawn about 30% faster after an install from the web flasher. An update over Wi-Fi brings the other improvements but keeps the previous drawing speed.
+
 ## v1.11.1-rc.1 - 2026-10-02
 - Moves start at once in more cases: right after the clock changes minute, and after the display checks for updates. They could wait about a tenth of a second.
 
