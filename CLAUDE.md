@@ -191,7 +191,10 @@ Windows build gets both from `main/idf_component.yml`. `components/dns_server` *
   on *Connecting…* → AP + captive portal; auto setup QR after ~30 s; reconnect → AP stops.
 
 - DPP (Easy Connect): `esp_supp_dpp_bootstrap_gen()` only queues work; start listening from the URI_READY callback.
-  Verified with an Android phone: scan from Wi-Fi settings → credentials saved → restart → connected.
+  Verified with an Android phone: scan from Wi-Fi settings → credentials saved → restart → connected. Again on
+  v1.10.1-rc.4 with the harness (`wifi_setup --phone`) and the new wording (scan with the camera or any QR app):
+  QR code ready on the router's channel, the phone's network received 23 s later (the scan included), restart,
+  connected. The harness prints `>>> ASK THE USER` when it's time to scan: relay it to the user at once.
 
 - OTA layout since v1.3.0 (two app slots + otadata at 0x610000). USB flashes must include `ota_data_initial.bin`
   (the helper does when `firmware/ota_data_initial.bin` exists), otherwise a board that last updated over Wi-Fi keeps
