@@ -502,9 +502,14 @@ def unreachable_at_startup(ctx):
     b.cmd('wifi online', r'test: wifi (.*)')
     b.cmd('tap 233 233')
     ctx.log.wait(r'Saved network is back', 45, 'reconnect after closing setup')
-    end = time.time() + 30
+    # The weather screen comes with the first forecast. A failed fetch is retried 30 s later: on October 2 Open-Meteo
+    # timed out once and a 30 s wait ended a second before the retry (v1.11.1's only failure). Wait for two tries.
+    back = len(ctx.log.lines())
+    end = time.time() + 75
     while b.screen() not in ('weather',):
         if time.time() > end:
-            raise Fail(f'not back on the weather screen ({b.screen()})')
+            raise Fail(f'not back on the weather screen ({b.screen()}) 75 s after the network came back')
         time.sleep(1)
+    if any('Update failed' in l for l in ctx.log.lines()[back:]):
+        ctx.note('the first forecast after reconnecting failed (service slow): back on the weather screen at the retry')
     ctx.note('start-up offline path: setup, captive portal x2, Easy Connect channel, retry, recovery')
