@@ -34,7 +34,7 @@ jobs:
     outputs:
       version: ${{ steps.ver.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0            # tags, for git describe
 
@@ -54,7 +54,7 @@ jobs:
           path: "."
           command: idf.py build
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
@@ -68,7 +68,7 @@ jobs:
           (cd build && python3 -m esptool --chip esp32s3 merge_bin -o "../dist/weather_amoled-$v-full.bin" @flash_args)
           ls -l dist
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: firmware-${{ steps.ver.outputs.version }}
           path: dist/
@@ -80,11 +80,11 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: firmware-${{ needs.build.outputs.version }}
           path: dist
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           files: dist/*
           prerelease: ${{ contains(github.ref_name, '-') }}
@@ -114,7 +114,7 @@ jobs:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Download the latest stable release and any newer pre-release
         env:
@@ -141,9 +141,9 @@ jobs:
           fi
           python3 tools/make_flasher_site.py site $args --out _site
 
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: _site
 
       - id: deploy
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
