@@ -10,6 +10,11 @@ their own `## vX.Y.Z-rc.N` section. Those are shown only to Beta users, while th
 list everything again. (Two tags have no section: v1.3.0-rc.1, and v1.12.0-rc.1, whose build failed and was published
 as v1.12.0-rc.2.)
 
+## v1.12.1-rc.1 - 2026-10-03
+- Swiping to another place or screen right after the forecast updates no longer pauses for a moment first.
+- The radar zoom starts sooner.
+- On the display's setup network, the settings page explains why the map and the place search don't load there, and what to do instead.
+
 ## v1.12.0 - 2026-10-03
 - Changing settings from your phone now needs the code shown on the display: press and hold the weather screen, tap More on your phone, and scan it. Your phone remembers it. Anyone on your Wi-Fi can still look at the settings page.
 - The display's setup network has its own password, shown on the display next to its code (it was the same for every display). When your Wi-Fi is down for a long time, the setup network opens by itself for 15 minutes, then the display just keeps trying; press and hold to open it again.
