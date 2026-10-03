@@ -666,7 +666,12 @@ static void radar_clock(lv_timer_t *t)
     if (play_timer) return;                      // the pill shows frame times while playing
     char now[12];
     fmt_local(time(NULL), now, sizeof(now));
-    if (now[0] && strcmp(now, lv_label_get_text(lbl_title))) lv_label_set_text(lbl_title, now);
+    if (now[0] && strcmp(now, lv_label_get_text(lbl_title))) {
+        lv_label_set_text(lbl_title, now);
+        lv_area_t a;                                 // the radar's picture (drags, slide.c): only the pill's rows
+        lv_obj_get_coords(lbl_title, &a);
+        slide_cache_dirty_rows(scr, a.y1 - 2, a.y2 + 2);
+    }
 }
 
 /* ---------------- playback (runs in the LVGL task) ---------------- */

@@ -282,14 +282,7 @@ def measure(ctx, name, action, settle=1.0):
     if m:
         first, pics, frames, ms = (int(x) for x in m.groups())
         ctx.metric(f'drag_fps.{name}', round(frames * 1000 / ms, 1) if ms else 0)
-        # The clock's minute makes every picture but the shown one out of date: a drag in the next seconds renders
-        # its neighbour first (~0.13 s). Known (ARCHITECTURE "Moves"); not what drag_start_ms watches.
-        tick = [l for l in lines[max(0, start - 60):start] if 'ui: clock ' in l]
-        if tick and ms_of(hit) - ms_of(tick[-1]) < 6000:
-            ctx.note(f'{name}: the minute changed {(ms_of(hit) - ms_of(tick[-1])) / 1000:.1f} s before: start '
-                     f'{first} ms not checked')
-        else:
-            ctx.metric(f'drag_start_ms.{name}', first)
+        ctx.metric(f'drag_start_ms.{name}', first)   # (right after the minute too: only clock rows re-render)
         drag = (f'; the drag alone {frames * 1000 / ms if ms else 0:.0f} fps, first frame after {first} ms '
                 f'({pics} pictures rendered)')
     m = next((SCROLL_LINE.search(l) for l in ctx.log.lines()[start:] if SCROLL_LINE.search(l)), None)

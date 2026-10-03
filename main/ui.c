@@ -258,6 +258,14 @@ static lv_obj_t *icon_box_create(lv_obj_t *parent, int pct)
 
 static char clock_shown[12];
 
+static const void *key_of(lv_obj_t *scr);
+
+// Pictures whose minute changes are marked row by row by their owner: the places' clocks (below), the radar's pill
+static bool minute_marks_own(const void *key)
+{
+    return key == scr_radar || pager_index(place_pager, key) >= 0;
+}
+
 static void clock_tick(lv_timer_t *t)
 {
     struct tm tm;
@@ -277,15 +285,22 @@ static void clock_tick(lv_timer_t *t)
             if (i == cur_place || !pp[i].has_wx) strcpy(b, buf);
             else { gmtime_r(&lt_t, &lt); config_fmt_time(lt.tm_hour, lt.tm_min, b, sizeof(b)); }
             // Unchanged labels are left alone: setting them redraws the screen, which makes its cached picture
-            // (slide.c) out of date, and the next place drag waited ~0.2 s for new pictures after every switch
+            // (slide.c) out of date, and the next place drag waited ~0.2 s for new pictures after every switch.
+            // A changed one makes only its rows out of date: a drag to the next place right after the minute
+            // re-renders ~40 rows, not the whole page (~0.13 s)
             if (strcmp(lv_label_get_text(pp[i].time), b)) {
                 lv_label_set_text(pp[i].time, b);
-                if (!new_minute) slide_cache_dirty(pager_page(place_pager, i));
+                lv_obj_t *page = pager_page(place_pager, i);
+                if (page == key_of(lv_screen_active())) continue;   // shown: its picture gets it as LVGL draws it
+                lv_area_t a, pa;
+                lv_obj_get_coords(pp[i].time, &a);
+                lv_obj_get_coords(page, &pa);               // (rows within the page = on screen when it's shown)
+                slide_cache_dirty_rows(page, a.y1 - pa.y1 - 2, a.y2 - pa.y1 + 2);
             }
         }
         if (!new_minute) return;
         ESP_LOGI("ui", "clock %s", buf);
-        slide_cache_dirty_hidden();                         // clocks, ages, the sun: every picture is a minute old
+        slide_cache_dirty_hidden(minute_marks_own);         // ages, the sun...: the other pictures are a minute old
                                                             // (the one shown gets its changes as they're drawn)
         if (lv_screen_active() == scr_hour && tm.tm_min == 0) hour_fill(0);   // new hour
         if (lv_screen_active() == scr_extras) extras_refresh();
@@ -834,12 +849,24 @@ static bool drag_paint(const void *key, lv_draw_buf_t *dst, int y0, int y1)
         // Another place: drawn as it will look once shown, without the pill of this place's alerts (a switch
         // clears them until the new place's are fetched)
         bool pill = places && i != cur && !lv_obj_has_flag(al_pill, LV_OBJ_FLAG_HIDDEN);
-        if (i != cur) { pager_peek(pager, i); if (places) place_dots(i); else set_dots(i); }
+        // The dots only if these rows show them: moving them there and back lays out the whole screen twice (~50 ms
+        // for a clock's rows after the minute tick, instead of ~10)
+        lv_obj_t **dot = places ? pl_dot : hr_dot;
+        int n = places ? MAX_PLACES : WX_DAYS, dy0 = DISP_H, dy1 = -1;
+        for (int k = 0; k < n; k++) {
+            lv_area_t a;
+            if (lv_obj_has_flag(dot[k], LV_OBJ_FLAG_HIDDEN)) continue;
+            lv_obj_get_coords(dot[k], &a);
+            if (a.y1 < dy0) dy0 = a.y1;
+            if (a.y2 > dy1) dy1 = a.y2;
+        }
+        bool dots = i != cur && y1 >= dy0 - 16 && y0 <= dy1 + 16;    // (16: the active dot is longer)
+        if (i != cur) { pager_peek(pager, i); if (dots) { if (places) place_dots(i); else set_dots(i); } }
         if (pill) lv_obj_add_flag(al_pill, LV_OBJ_FLAG_HIDDEN);      // (its city name is only hidden on the place shown)
         bool ok = slide_picture_rows(places ? scr_main : scr_hour, dst, y0, y1);
         if (pill) lv_obj_remove_flag(al_pill, LV_OBJ_FLAG_HIDDEN);
-        if (i != cur) {
-            pager_peek(pager, cur);
+        if (i != cur) pager_peek(pager, cur);
+        if (dots) {
             if (places) place_dots(cur); else set_dots(cur);
             // Apply the dots' move back now, while slide.c ignores the redraws: left to LVGL's next refresh, it
             // redrew them for real and made the picture of the screen shown out of date after every neighbour's
@@ -1689,12 +1716,29 @@ static void update_render(void)       // display lock held
     update_notes();
 }
 
+// A picture out of date, unless its screen is shown (that one gets its changes as LVGL draws them, slide.c)
+static void dirty_hidden_one(const void *key)
+{
+    if (key != key_of(lv_screen_active())) slide_cache_dirty(key);
+}
+
 void ui_ota(const ota_status_t *o)      // OTA task
 {
     display_lock(-1);
-    slide_cache_dirty(NULL);                        // new content: the cached pictures are out of date
+    // Only the pictures that show the update state are out of date: the update screen, the status page, Settings,
+    // and the places (the weather screen's update pill) only if the pill changed. Every update check (checking, then
+    // up to date) marked them all, and the next place drag waited ~0.2 s to render a whole page again.
+    char pill[48];
+    bool pill_was = !lv_obj_has_flag(up_pill, LV_OBJ_FLAG_HIDDEN);
+    strlcpy(pill, lv_label_get_text(up_pill_lbl), sizeof(pill));
     up_st = *o;
     update_render();
+    if (pill_was != !lv_obj_has_flag(up_pill, LV_OBJ_FLAG_HIDDEN) || strcmp(pill, lv_label_get_text(up_pill_lbl))) {
+        for (int i = 0; i < MAX_PLACES; i++) dirty_hidden_one(pager_page(place_pager, i));
+    }
+    dirty_hidden_one(scr_update);
+    dirty_hidden_one(scr_status);
+    dirty_hidden_one(scr_cfg);
     if (o->state == OTA_UP_TO_DATE && lv_screen_active() == scr_update) lv_screen_load(scr_main);
     display_unlock();
 }

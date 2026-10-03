@@ -167,6 +167,10 @@ Windows build gets both from `main/idf_component.yml`. `components/dns_server` *
     it. `lv_obj_scroll_to_y()` silently stops at the ends: past them the list didn't move while the picture did (the
     user saw the hourly graph smeared). Use `lv_obj_scroll_by()`. Recognise drags in the touch read, before LVGL
     handles it, or LVGL's own scroll starts first on a flick.
+    (j) **Mark only what changed, where it changed:** a clock marks its rows (`slide_cache_dirty_rows`), an update
+    check only the screens that show the update. "Everything" each minute and at each update check made the next
+    drag render a whole page (~0.13–0.2 s). Probe drags right after the event (`ui: clock`, a forced check through
+    `POST /api/update {"action":"check"}`) and read `pictures rendered` in the drag line.
 
 - Internal RAM ran out silently (10 KB free, 0 KB min ever) because LVGL's small allocations went to internal RAM
   first. Fixed with `lvgl_mem.c` (LVGL heap in PSRAM). Font kerning cost 71% of render time; fonts now use

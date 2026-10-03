@@ -156,9 +156,10 @@ bool slide_picture_rows(lv_obj_t *scr, lv_draw_buf_t *dst, int y0, int y1) { ret
 static struct {
     const void *key;
     lv_draw_buf_t *buf;
-    bool dirty;                          // out of date, or not finished
+    bool dirty;                          // out of date, or not finished...
+    int d0, d1;                          // ...in rows d0..d1 (the minute tick: only a clock's rows)
     int64_t dirty_since;
-    int rows;                            // background rendering: rows done so far (0 = not started)
+    int rows;                            // background rendering: the next row to render (d0 = not started)
 } cache[CACHE_N];
 static const void *keep[CACHE_N];
 static int keep_n;
@@ -222,9 +223,10 @@ static lv_draw_buf_t *get(const void *key, bool render, bool force, const void *
         cache[e].buf = lv_draw_buf_create(DISP_W, DISP_H, LV_COLOR_FORMAT_RGB565, 0);
         if (!cache[e].buf) return NULL;
     }
+    bool whole = cache[e].key != key || !cache[e].dirty; // a new picture; else only its out-of-date rows
+    int y0 = whole ? 0 : cache[e].d0, y1 = whole ? DISP_H - 1 : cache[e].d1;
     cache[e].key = key;
-    cache[e].rows = 0;
-    if (!paint_rows(e, 0, DISP_H - 1)) { cache[e].key = NULL; return NULL; }
+    if (!paint_rows(e, y0, y1)) { cache[e].key = NULL; return NULL; }
     cache[e].dirty = false;
     return cache[e].buf;
 }
@@ -232,23 +234,42 @@ static lv_draw_buf_t *get(const void *key, bool render, bool force, const void *
 lv_draw_buf_t *slide_cache_get(const void *key, bool render) { return get(key, render, false, NULL); }
 
 
-static void mark(int i)
+// Rows y0..y1 of picture i are out of date (added to any rows already out of date; a render in progress restarts)
+static void mark_rows(int i, int y0, int y1)
 {
-    if (!cache[i].dirty) { cache[i].dirty = true; cache[i].dirty_since = esp_timer_get_time(); }
-    cache[i].rows = 0;                                   // restart one in progress
+    if (y0 < 0) y0 = 0;
+    if (y1 > DISP_H - 1) y1 = DISP_H - 1;
+    if (!cache[i].dirty) {
+        cache[i].dirty = true;
+        cache[i].dirty_since = esp_timer_get_time();
+        cache[i].d0 = y0;
+        cache[i].d1 = y1;
+    } else {
+        if (y0 < cache[i].d0) cache[i].d0 = y0;
+        if (y1 > cache[i].d1) cache[i].d1 = y1;
+    }
+    cache[i].rows = cache[i].d0;
 }
+
+static void mark(int i) { mark_rows(i, 0, DISP_H - 1); }
 
 void slide_cache_dirty(const void *key)
 {
     for (int i = 0; i < CACHE_N; i++) if (!key || cache[i].key == key) mark(i);
 }
 
+void slide_cache_dirty_rows(const void *key, int y0, int y1)
+{
+    for (int i = 0; i < CACHE_N; i++) if (key && cache[i].key == key) mark_rows(i, y0, y1);
+}
+
 static const void *key_of(lv_obj_t *scr);
 
-void slide_cache_dirty_hidden(void)
+void slide_cache_dirty_hidden(bool (*except)(const void *key))
 {
     const void *shown = key_of(lv_screen_active());
-    for (int i = 0; i < CACHE_N; i++) if (cache[i].key && cache[i].key != shown) mark(i);
+    for (int i = 0; i < CACHE_N; i++)
+        if (cache[i].key && cache[i].key != shown && !(except && except(cache[i].key))) mark(i);
 }
 
 
@@ -266,8 +287,10 @@ bool slide_cache_idle_work(int quiet_ms)
     for (int i = 0; i < keep_n; i++) {                   // the current screen first, then its neighbours
         int e = find(keep[i]);
         // Missing or dirty, once the screen is quiet; or dirty for 2 s even if it never is (the status page redraws
-        // its ages every second: a picture a second old is fine for a slide, the real screen comes back after it)
-        if (e < 0 ? quiet : cache[e].dirty && (quiet || now - cache[e].dirty_since > 2000000)) {
+        // its ages every second: a picture a second old is fine for a slide, the real screen comes back after it);
+        // or only a strip's worth of rows (a clock after the minute tick): at once, a drag right after finds it ready
+        if (e < 0 ? quiet : cache[e].dirty && (quiet || now - cache[e].dirty_since > 2000000 ||
+                                                cache[e].d1 - cache[e].d0 < STRIP)) {
             if (e < 0) {                                 // a slot for it: free, or holding a picture not needed now
                 if ((e = slot_for(false, NULL, NULL)) < 0) return false;
                 if (!cache[e].buf) {
@@ -276,15 +299,16 @@ bool slide_cache_idle_work(int quiet_ms)
                     if (!cache[e].buf) return false;
                 }
                 cache[e].key = keep[i];
-                cache[e].dirty = true;
+                cache[e].dirty = false;
+                mark(e);                                 // all of it
                 cache[e].dirty_since = now;
-                cache[e].rows = 0;
             }
-            // One strip at a time, so LVGL reads the touch in between (dirtied meanwhile: starts again)
-            int y0 = cache[e].rows, y1 = y0 + STRIP - 1 > DISP_H - 1 ? DISP_H - 1 : y0 + STRIP - 1;
+            // One strip at a time, so LVGL reads the touch in between (dirtied meanwhile: starts again), only over the
+            // rows out of date (after the minute tick: a clock's ~40 rows instead of 466)
+            int y0 = cache[e].rows, y1 = y0 + STRIP - 1 > cache[e].d1 ? cache[e].d1 : y0 + STRIP - 1;
             if (!paint_rows(e, y0, y1)) { cache[e].key = NULL; return false; }
             cache[e].rows = y1 + 1;
-            if (cache[e].rows >= DISP_H) { cache[e].dirty = false; cache[e].rows = 0; }
+            if (cache[e].rows > cache[e].d1) cache[e].dirty = false;
             return true;
         }
     }

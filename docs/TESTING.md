@@ -229,8 +229,8 @@ Pitfalls met while building it:
   place "drag up" bounced and the check still passed (October 2). `navigation` first goes back to the first place.
 - `swipe_fps` counts every frame less than 250 ms apart, LVGL's redraws after a move included (a new place's
   data: 30 fps for a 57 fps drag). `drag_fps` (from the first frame) and `drag_start_ms` are the drag alone.
-  `drag_start_ms` isn't checked when the clock's minute changed in the 6 s before (every hidden picture is out of
-  date then: a known ~0.13 s, noted in the report).
+  `drag_start_ms` is checked right after the minute too: the minute tick only marks the places' clock rows,
+  rendered at once (in v1.11.0 the harness skipped the check for 6 s after the minute).
 - List scrolls: `scroll_frame_ms` (from slide.c's `scroll:` line: render + move + send per frame) is the number to
   watch; their `swipe_fps` includes the slow end of the flick (less than a pixel per frame). After the drags and
   each list scroll the harness runs `pictest`: the picture of the screen must equal the screen.
