@@ -145,7 +145,18 @@ python tools/harness/harness.py                       # all suites, on the firmw
 python tools/harness/harness.py --flash build/v55/weather_amoled.bin   # flash a build first
 python tools/harness/harness.py smoke wifi_runtime    # some suites
 python tools/harness/harness.py wifi_setup --phone    # + Easy Connect with a real phone (asks the user)
+python tools/harness/harness.py --ota v1.11.1-rc.1    # install a published release with the display's updater, test it
 ```
+
+**Testing a release from GitHub** (`--ota vX`): the display's own updater installs it, as a person would from
+Settings (*Check for updates*). The harness asks the display to check its channel every minute until it offers vX (CI
+and the Pages site take ~5 min after a tag; `--ota-wait` minutes, default 20), installs, waits for `ota: Running vX`
+and for `marked valid` (60 s: a restart before that rolls the update back), then runs the suites with `--expect vX`.
+An rc needs the display on the Beta channel; the harness doesn't change the channel. The board must be running a
+version below vX (a test build labelled above it, e.g. `v1.10.2-scroll.6` against `v1.10.1-rc.4`, is never offered
+the release: the firmware compares the numbers first, then rc numbers, and test labels count as rc −1).
+CI from the PC: `gh run list --repo TheMonkeyz/esp32-s3-weather --limit 5`, `gh run watch <id>` (GitHub CLI, signed
+in as TheMonkeyz; Git Bash doesn't have it on its PATH: `"/c/Program Files/GitHub CLI/gh.exe"`, or PowerShell).
 
 Exit code 0 = all passed and no performance regression. The report is `tools/harness/reports/<date>/report.md`
 (git-ignored) with screenshots, `results.json`, and the log of each failed test. If the flash helper is already

@@ -17,6 +17,11 @@ session (Sept 2026): what worked, what cost time, and how to avoid repeating it.
 - **Claude Code on this PC (September 30):** ESP-IDF **v5.5.4** is installed at `C:\Espressif\esp-idf` (CI uses
   v5.5.4 too since v1.10.0; before that CI used v5.4.2 and the mismatch went unnoticed, see docs/TESTING.md). Test
   builds go to `build\v55` with their own sdkconfig; see docs/TESTING.md.
+- **Releases (since October 2):** Claude tags and pushes **rc** releases itself, then watches CI (`gh`, GitHub CLI,
+  signed in as TheMonkeyz; in Git Bash call `"/c/Program Files/GitHub CLI/gh.exe"`) and tests the published build on
+  the display with `harness.py --ota vX.Y.Z-rc.N` (the display's own updater installs it). **Stable** releases: ask
+  the user before pushing the tag. Pick the number by content: new features → minor bump (the v1.10.1-rc series
+  shipped as v1.11.0).
 - **Talk to the user:** post a one-line progress note before anything that takes more than a minute (build, flash,
   log window). Long silences read as "stuck". Don't take control of the user's screen; ask first, and prefer the flash
   helper. Ask the user to interact with the board (swipe, tap, open the page) *during* the log window, and say when.
