@@ -6,6 +6,7 @@
     python tools/harness/harness.py --flash build/v55/weather_amoled.bin   # flash first
     python tools/harness/harness.py wifi_setup --phone   # also the Easy Connect phone step (asks you)
     python tools/harness/harness.py perf --update-baseline   # accept the measured numbers as the new reference
+    python tools/harness/harness.py --ota v1.11.1-rc.1   # install a published release with the display's updater, test it
 
 Needs the flash helper (start_flash_helper.bat) and firmware with the test console (main/testcon.c). The
 wifi_setup suite joins the PC's Wi-Fi card to the display's setup network (Ethernet keeps the PC online).
@@ -92,7 +93,12 @@ def main():
     ap.add_argument('--update-baseline', action='store_true', help='store the measured numbers as the reference')
     ap.add_argument('--minutes', type=int, default=40, help='log window to request from the flash helper')
     ap.add_argument('--expect', help='fail unless the board runs this version (e.g. v1.10.0-rc.2)')
+    ap.add_argument('--ota', metavar='VERSION', help="install this published release with the display's own updater "
+                    'first (waits until its channel offers it), then test it (implies --expect)')
+    ap.add_argument('--ota-wait', type=int, default=20, help='--ota: minutes to wait for the channel to offer it')
     opts = ap.parse_args()
+    if opts.ota and not opts.expect:
+        opts.expect = opts.ota
     suites = opts.suites or ORDER
     for s in suites:
         if s not in SUITES:
@@ -117,6 +123,11 @@ def main():
         before = getattr(board, 'before', None)
         if before and version != before:
             raise Fail(f'the board ran {before} before the restart and {version} after: the bootloader rolled back')
+        if opts.ota and version != opts.ota:
+            print(f'Installing {opts.ota} with the display\'s updater (running {version}) ...', flush=True)
+            board.install(opts.ota, opts.ota_wait)
+            time.sleep(5)
+            version = board.cmd('ping', r'test: pong (\S+)', timeout=10).group(1)
         if opts.expect and version != opts.expect:
             raise Fail(f'the board runs {version}, not {opts.expect}')
         print(f'Testing {version}', flush=True)

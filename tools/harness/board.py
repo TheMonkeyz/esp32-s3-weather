@@ -203,6 +203,34 @@ class Board:
         with urllib.request.urlopen(req, context=self.ctx, timeout=timeout) as r:
             return json.loads(r.read().decode())
 
+    def install(self, want, wait_min=20):
+        """Install `want` with the display's own updater, as a person would (Settings, Check for updates): ask it to
+        check its channel until it offers `want` (after a tag, CI and the Pages site take ~5 min), install, then wait
+        until the new firmware runs and is confirmed (a restart in its first 60 s would roll it back). Needs a log
+        window. The display's channel (Beta / Stable) is left as it is: an rc needs Beta."""
+        end = time.time() + wait_min * 60
+        while True:
+            u = self.api('/api/update', {'action': 'check'})
+            for _ in range(40):                        # the check runs in the OTA task: a few seconds
+                if u.get('state') != 'checking':
+                    break
+                time.sleep(1)
+                u = self.api('/api/update')
+            if u.get('current') == want:
+                return
+            if u.get('latest') == want and u.get('state') == 'available':
+                break
+            offer = f'the {u.get("channel")} channel offers {u.get("latest") or "nothing newer"}'
+            if time.time() > end:
+                raise Fail(f'{offer}, not {want}, after {wait_min} min (CI failed, or {want} needs the Beta channel?)')
+            print(f'  {offer} (running {u.get("current")}): waiting for {want}', flush=True)
+            time.sleep(60)
+        at = len(self.log.lines())
+        self.api('/api/update', {'action': 'install'})
+        self.log.wait(r'ota: Update installed, restarting', 300, 'download and install', start=at)
+        self.log.wait(r'ota: Running ' + re.escape(want) + ' from', 90, f'{want} starting', start=at)
+        self.log.wait(r'ota: New firmware ran \d+ s: marked valid', 120, 'the update confirmed (no rollback)', start=at)
+
     def snap(self, screen, out):
         t0 = time.time()
         with urllib.request.urlopen(f'https://{self.ip}/api/snapshot?screen={screen}', context=self.ctx,
