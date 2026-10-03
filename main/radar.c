@@ -607,9 +607,21 @@ static void wait_zoom_anim(void)
     if (anim_until > now && anim_until - now < 2000) vTaskDelay(pdMS_TO_TICKS(anim_until - now));
 }
 
+// A swipe made while slide.c drew a zoom (LVGL didn't see it): down = zoom in, up = zoom out, as the gestures
+static void zoom_swipe(int dx, int dy)
+{
+    if (abs(dy) >= 40 && abs(dy) > abs(dx)) radar_zoom(dy > 0 ? 1 : -1);
+}
+
 static void start_scale_anim(int32_t from, int32_t to)     // caller holds the display lock
 {
     lv_anim_delete(img, scale_cb);
+    // Drawn by slide.c: scaled frames straight to the panel, ~60 fps (LVGL transforms the whole image for each
+    // frame: ~10 fps). LVGL's animation when that can't run (another move going on, or the radar not shown).
+    if (slide_zoom(img, out565, from, to, ZOOM_ANIM_MS, zoom_swipe)) {
+        anim_until = lv_tick_get() + ZOOM_ANIM_MS + 100;
+        return;
+    }
     lv_image_set_scale(img, from);
     lv_anim_t a;
     lv_anim_init(&a);

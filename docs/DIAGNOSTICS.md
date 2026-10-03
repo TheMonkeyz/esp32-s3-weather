@@ -111,6 +111,9 @@ RAM for the two 8 KB draw stacks. Reverted.
 
   Radar zoom is the heaviest case: the scale animation transforms a full-screen image every frame.
 
+  v1.11.1 with QIO flash, full-screen renders (bench): weather 45 ms, hourly 35, radar 44, weather with the panel
+  69 (DIO: 67 / 51 / 56 / 94). Radar zoom 40–43 fps (LVGL: ~10); hourly list 13.7 ms a frame.
+
   v1.11.0, harness `perf` (`fps`, frames less than 250 ms apart): screen to screen 64–70 fps,
   places 46 fps, hourly days 58 fps (moves drawn as pictures, `slide.c`); the hourly list 17.5 fps and Settings
   21.9 fps still scroll with LVGL. PSRAM low point 452–517 KB with the 5-picture cache (2.2 MB; 1042 KB in v1.10.0).
@@ -125,7 +128,7 @@ RAM for the two 8 KB draw stacks. Reverted.
 
 | Symptom | Candidate | Expected gain |
 |---|---|---|
-| Radar zoom feels choppy (10 fps) | render the zoom animation from a half-resolution copy, or fewer steps | fewer pixels transformed per frame |
+| ~~Radar zoom feels choppy (10 fps)~~ (done, v1.11.1) | scaled frames straight to the panel, overlays blended (`slide_zoom`) | 40–43 fps |
 | ~~Swipes/animations feel choppy~~ (done, v1.11.0) | profiled (docs/TESTING.md §7); 80 MHz SPI; moves drawn as pictures (`slide.c`, ARCHITECTURE "Moves") | screens 10–15 → 64–70 fps, places 10 → 46, days 11 → 58 |
 | ~~Lists scroll at 17–22 fps~~ (done, v1.10.1-rc.4) | move the picture of the screen, render only the new rows (ARCHITECTURE "Moves", List scrolls) | hourly ~52 fps, Settings ~70 |
 | UI hiccup while the radar loads | compose radar frames outside `display_lock()` | removes 75 ms stalls |

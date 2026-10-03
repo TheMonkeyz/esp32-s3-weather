@@ -7,6 +7,7 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_heap_caps.h"
+#include "esp_attr.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "lvgl_private.h"                   // layers, the redraw list (inv_p), wait_until_release
@@ -432,8 +433,10 @@ static struct {
 } drag;
 
 static struct { lv_obj_t *list; int y0, y1; int64_t t0, t1; bool queued; } scroll;   // a list scroll (below)
+static struct { lv_obj_t *img; const uint16_t *src; int32_t from, to; uint32_t ms; slide_swipe_cb_t swipe;
+                bool queued; } zoomq;                                  // a zoom (below)
 
-static bool req_pending(void) { return req.queued || drag.queued || scroll.queued; }
+static bool req_pending(void) { return req.queued || drag.queued || scroll.queued || zoomq.queued; }
 
 bool slide_screen_busy(void) { return req_pending() || touch_idle_ms() < 500; }
 
@@ -569,7 +572,7 @@ static void drag_run(void *unused)
  * LVGL redraws all of a scrolling list for every frame (35-50 ms: 17-22 fps). Here each frame moves the rows already
  * on screen within the picture of the screen shown (which matches the panel, see flushed()), has LVGL render only the
  * rows that come into view, and sends just the list's rectangle to the panel. LVGL's own scroll position is kept up to
- * date (lv_obj_scroll_by) so it renders those rows right and carries on from there afterwards; its redraw requests
+ * date (lv_obj_scroll_by_raw) so it renders those rows right and carries on from there afterwards; its redraw requests
  * are dropped at the end (the panel and the picture already show the result). Like LVGL: the list follows the finger,
  * goes on after a flick and slows down, resists past the ends and springs back; a touch stops it. */
 
@@ -643,9 +646,11 @@ static void scroll_step(scroller_t *s, int want)
 {
     int d = want - s->shown, h = lv_area_get_height(&s->r);
     if (!d) return;
-    // lv_obj_scroll_by: lv_obj_scroll_to_y() stops at the ends, and past them (pulled, springing back) the picture
-    // moved while the list didn't: the rows rendered for it repeated the edge (smeared graph labels, a doubled row)
-    lv_obj_scroll_by(s->list, 0, lv_obj_get_scroll_y(s->list) - want, LV_ANIM_OFF);
+    // Raw: lv_obj_scroll_to_y() stops at the ends, and past them (pulled, springing back) the picture moved while
+    // the list didn't: the rows rendered for it repeated the edge (smeared graph labels, a doubled row). And not
+    // lv_obj_scroll_by(): its SCROLL_BEGIN / END events bubble up the hourly view (pager, screen) and made LVGL lay
+    // out the whole screen again on every frame (4.4 ms of the hourly list's 7.7)
+    lv_obj_scroll_by_raw(s->list, 0, lv_obj_get_scroll_y(s->list) - want);
     const lv_area_t *r = &s->r;
     int64_t t0 = esp_timer_get_time(), t1 = t0, t2;
     if (abs(d) < h && s->strip && abs(d) <= (int)s->strip->header.h) {
@@ -837,4 +842,188 @@ lv_draw_buf_t *slide_picture_copy(void)
 {
     int e = find(key_of(lv_screen_active()));
     return e < 0 || !cache[e].buf ? NULL : lv_draw_buf_dup(cache[e].buf);
+}
+
+/* ---------- image zoom (the radar) ----------
+ * LVGL transforms the whole image for every frame of a zoom (lv_image_set_scale: ~100 ms a frame, ~10 fps). Here
+ * each frame is scaled straight into the panel bands (nearest neighbour through row and column maps, as LVGL with
+ * antialias off) and the screen's other objects are blended on top: rendered once at the start with their
+ * transparency (the radar's pill, labels, ring and dot are 30-70 % opaque over the map) into a list of the pixels
+ * they cover. At the end LVGL's own scale is set and it redraws the same picture (its flush updates slide.c's). */
+
+// The pixels the overlays cover: position (y * DISP_W + x, 18 bits) and alpha (top 8 bits) in one word, colour apart:
+// 6 bytes each, ~16k for the radar (pill, labels, ring, dot)
+#define OVL_CAP 24000
+static uint32_t *ovl;                    // pos | alpha << 24
+static uint16_t *ovl_c;                  // RGB565
+static int ovl_n;
+static EXT_RAM_BSS_ATTR int ovl_row[DISP_H + 1];   // (PSRAM: internal RAM is short, its low point fell to 3 KB)
+
+static inline uint16_t rgb565_of(uint8_t r, uint8_t g, uint8_t b) { return ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3); }
+
+// The visible children of scr but img, with their alpha: ARGB8888 strips on a transparent background (~90 ms for
+// the radar, mostly its full-screen range ring; taller strips didn't make it faster)
+#define OVL_ROWS 32
+static bool overlay_build(lv_obj_t *scr, lv_obj_t *img)
+{
+    ovl = heap_caps_malloc(OVL_CAP * sizeof(*ovl), MALLOC_CAP_SPIRAM);
+    ovl_c = heap_caps_malloc(OVL_CAP * sizeof(*ovl_c), MALLOC_CAP_SPIRAM);
+    lv_draw_buf_t *strip = lv_draw_buf_create(DISP_W, OVL_ROWS, LV_COLOR_FORMAT_ARGB8888, 0);
+    if (!ovl || !ovl_c || !strip) {
+        free(ovl);
+        free(ovl_c);
+        ovl = NULL;
+        ovl_c = NULL;
+        if (strip) lv_draw_buf_destroy(strip);
+        return false;
+    }
+    ovl_n = 0;
+    lv_obj_update_layout(scr);
+    lv_display_t *d = lv_obj_get_display(scr), *old = lv_refr_get_disp_refreshing();
+    lv_layer_t *old_head = d->layer_head;
+    for (int y0 = 0; y0 < DISP_H; y0 += OVL_ROWS) {
+        int y1 = y0 + OVL_ROWS - 1 > DISP_H - 1 ? DISP_H - 1 : y0 + OVL_ROWS - 1;
+        lv_area_t rows = {0, y0, DISP_W - 1, y1}, in_buf = {0, 0, DISP_W - 1, y1 - y0};
+        lv_draw_buf_clear(strip, &in_buf);
+        lv_layer_t layer;
+        lv_memzero(&layer, sizeof(layer));
+        layer.draw_buf = strip;
+        layer.buf_area = (lv_area_t){0, y0, DISP_W - 1, y0 + OVL_ROWS - 1};
+        layer.color_format = LV_COLOR_FORMAT_ARGB8888;
+        layer._clip_area = rows;
+        layer.phy_clip_area = rows;
+        d->layer_head = &layer;
+        lv_refr_set_disp_refreshing(d);
+        for (uint32_t i = 0; i < lv_obj_get_child_count(scr); i++) {
+            lv_obj_t *c = lv_obj_get_child(scr, i);
+            if (c != img && !lv_obj_has_flag(c, LV_OBJ_FLAG_HIDDEN)) lv_obj_redraw(&layer, c);
+        }
+        while (layer.draw_task_head) {
+            lv_draw_dispatch_wait_for_request();
+            lv_draw_dispatch();
+        }
+        d->layer_head = old_head;
+        lv_refr_set_disp_refreshing(old);
+        for (int y = y0; y <= y1; y++) {
+            ovl_row[y] = ovl_n;
+            const uint8_t *p = strip->data + (y - y0) * strip->header.stride;   // B, G, R, A
+            for (int x = 0; x < DISP_W; x++, p += 4) {
+                if (!p[3] || ovl_n == OVL_CAP) continue;
+                ovl_c[ovl_n] = rgb565_of(p[2], p[1], p[0]);
+                ovl[ovl_n++] = (uint32_t)(y * DISP_W + x) | (uint32_t)p[3] << 24;
+            }
+        }
+    }
+    ovl_row[DISP_H] = ovl_n;
+    lv_draw_buf_destroy(strip);
+    return true;
+}
+
+static inline uint16_t blend565(uint16_t c, uint16_t m, int a)
+{
+    int r = (((c >> 11) & 31) * a + ((m >> 11) & 31) * (256 - a)) >> 8;
+    int g = (((c >> 5) & 63) * a + ((m >> 5) & 63) * (256 - a)) >> 8;
+    int b = ((c & 31) * a + (m & 31) * (256 - a)) >> 8;
+    return (r << 11) | (g << 5) | b;
+}
+
+typedef struct { const uint16_t *src; int16_t col[DISP_W], row[DISP_H]; } zframe_t;
+
+static void zoom_fill(int y0, int n, void *dst, void *user)
+{
+    const zframe_t *z = user;
+    uint16_t *d = dst;
+    for (int y = y0; y < y0 + n; y++, d += DISP_W) {
+        const uint16_t *s = z->src + z->row[y] * DISP_W;
+        for (int x = 0; x < DISP_W; x++) d[x] = s[z->col[x]];
+        for (int k = ovl_row[y]; k < ovl_row[y + 1]; k++) {
+            int x = (int)(ovl[k] & 0xFFFFFF) - y * DISP_W, a = ovl[k] >> 24;
+            d[x] = blend565(ovl_c[k], d[x], a + (a >> 7));                // alpha 0..255 -> 0..256
+        }
+        copy_swap(d, d, DISP_W);                         // panel byte order, in place
+    }
+}
+
+// Source pixel of each screen column / row at scale s (256 = 1x), pivot = the image's centre, as LVGL draws it
+static void zoom_maps(zframe_t *z, int32_t s)
+{
+    const int px = DISP_W / 2, py = DISP_H / 2;
+    for (int x = 0; x < DISP_W; x++) {
+        int v = px + (int)(((int64_t)(x - px) * 256) / s);
+        z->col[x] = v < 0 ? 0 : v > DISP_W - 1 ? DISP_W - 1 : v;
+    }
+    for (int y = 0; y < DISP_H; y++) {
+        int v = py + (int)(((int64_t)(y - py) * 256) / s);
+        z->row[y] = v < 0 ? 0 : v > DISP_H - 1 ? DISP_H - 1 : v;
+    }
+}
+
+static void zoom_run(void *unused)
+{
+    lv_obj_t *img = zoomq.img, *scr = lv_obj_get_screen(img);
+    const int32_t from = zoomq.from, to = zoomq.to;
+    slide_phase = 31;
+    int64_t t0 = esp_timer_get_time();
+    if (scr != lv_screen_active() || !overlay_build(scr, img)) {     // left meanwhile, or no memory: no animation
+        lv_image_set_scale(img, to);
+        zoomq.queued = false;
+        slide_phase = 0;
+        return;
+    }
+    int64_t t1 = esp_timer_get_time();
+    static EXT_RAM_BSS_ATTR zframe_t z;                  // (PSRAM, as ovl_row)
+    z.src = zoomq.src;
+    int frames = 0, x, y, x0 = 0, y0 = 0, xl = 0, yl = 0;
+    bool down = false, touched = false;
+    // The swipe that started this zoom may still be going on (LVGL's gesture fires before the finger lifts): not a
+    // new one, or one swipe zoomed twice
+    bool old_touch = touch_get(&x, &y) != 0;
+    slide_phase = 32;
+    // LVGL doesn't read the touch meanwhile: a swipe made during the zoom (a second zoom right away) is read here
+    for (;;) {
+        int64_t el = esp_timer_get_time() - t1;
+        float t = el >= zoomq.ms * 1000LL ? 1.0f : (float)el / (zoomq.ms * 1000.0f);
+        float e = 1.0f - (1.0f - t) * (1.0f - t) * (1.0f - t);      // ease out
+        zoom_maps(&z, from + (int32_t)((to - from) * e));
+        display_raw_frame(zoom_fill, &z);
+        frames++;
+        int r = touch_get(&x, &y);
+        if (old_touch) old_touch = r != 0;               // until it lifts
+        else if (r > 0) { if (!down) { x0 = x; y0 = y; } down = touched = true; xl = x; yl = y; }
+        else if (r == 0) down = false;
+        if (t >= 1.0f) break;
+    }
+    for (int i = 0; down && i < 50; i++) {               // a swipe still going on: let it finish (at most 0.5 s)
+        vTaskDelay(pdMS_TO_TICKS(10));
+        int r = touch_get(&x, &y);
+        if (r > 0) { xl = x; yl = y; } else if (r == 0) down = false;
+    }
+    int64_t t2 = esp_timer_get_time();
+    free(ovl);
+    free(ovl_c);
+    ovl = NULL;
+    ovl_c = NULL;
+    lv_image_set_scale(img, to);                         // LVGL's state: it redraws the same last frame
+    lv_obj_invalidate(scr);
+    if (touched) touch_resync(!down);                    // LVGL starts afresh (no stray tap from that touch)
+    ESP_LOGI(TAG, "zoom %ld -> %ld: overlays %d px in %lld ms, %d frames in %lld ms (%.0f fps)", (long)from, (long)to,
+             ovl_n, (t1 - t0) / 1000, frames, (t2 - t1) / 1000, frames * 1e6f / (t2 - t1));
+    zoomq.queued = false;
+    slide_phase = 0;
+    if (touched && !down && zoomq.swipe) zoomq.swipe(xl - x0, yl - y0);   // e.g. the next zoom
+}
+
+bool slide_zoom(lv_obj_t *img, const uint16_t *src, int32_t from, int32_t to, uint32_t ms, slide_swipe_cb_t swipe)
+{
+    if (req_pending() || lv_obj_get_screen(img) != lv_screen_active() || from < 256 || to < 256) return false;
+    if (from == to) { lv_image_set_scale(img, to); return true; }   // nothing to animate (already at the closest)
+    zoomq.img = img;
+    zoomq.src = src;
+    zoomq.from = from;
+    zoomq.to = to;
+    zoomq.ms = ms;
+    zoomq.swipe = swipe;
+    zoomq.queued = true;
+    lv_async_call(zoom_run, NULL);
+    return true;
 }
