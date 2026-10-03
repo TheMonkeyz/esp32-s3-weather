@@ -224,6 +224,9 @@ Pitfalls met while building it:
 - After a **place change**, the radar saves the new location's map to flash (both cores pause in bursts for ~3 s): a
   tap then can go unseen, and a drag measured then crawled (3 fps, first frame after 2 s). `perf` waits until the
   radar has been quiet for 5 s with no map preload running (`radar_settled`), and taps the forecast twice if needed.
+- **A wait must outlast the firmware's own retry:** after the network comes back the weather screen needs the first
+  forecast, and a failed fetch is retried after 30 s. A 30 s wait failed v1.11.1's run when Open-Meteo timed out
+  once; it now waits 75 s and notes the retry. Check the firmware's interval before choosing a timeout.
 - Drag tests check the result with `page`, not by the screen name: a place or day change stays on the same screen.
   They must start where the move is possible: the board keeps the place shown across restarts, and from the last
   place "drag up" bounced and the check still passed (October 2). `navigation` first goes back to the first place.

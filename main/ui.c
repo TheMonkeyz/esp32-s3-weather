@@ -2496,6 +2496,9 @@ static void place_current(const weather_t *w, bool force)
         if (lv_screen_active() == scr_hour || lv_screen_active() == scr_extras) lv_screen_load(scr_main);
         return;
     }
+    // A message screen ("Connected", "Fetching the weather") gives way to the forecast, even the same one again (it
+    // did before ui_place skipped unchanged forecasts, v1.10.1-rc.3)
+    if (lv_screen_active() == scr_msg) lv_screen_load(scr_main);
     if (!force && have_wx && !memcmp(&wx, w, sizeof(wx))) return;
     wx = *w;
     have_wx = true;
@@ -2504,7 +2507,6 @@ static void place_current(const weather_t *w, bool force)
     for (int d = 0; d < pager_count(hr_pager); d++) slide_cache_dirty(pager_page(hr_pager, d));
     if (lv_screen_active() == scr_extras) extras_refresh();
     if (lv_screen_active() == scr_hour) for (int d = 0; d < WX_DAYS; d++) hour_fill(d);
-    if (lv_screen_active() == scr_msg) lv_screen_load(scr_main);
 }
 
 void ui_place(int i, const char *name, const weather_t *w)
