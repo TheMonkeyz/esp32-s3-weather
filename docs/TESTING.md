@@ -39,7 +39,13 @@ idf.py -B build\v55 -D SDKCONFIG=build\v55\sdkconfig build
   the QIO bootloader from `build\v55\bootloader\bootloader.bin` (copy it there after a build that changes it); the
   render-time baselines assume QIO (~30 % faster than DIO). `firmware\bootloader-idf542-dio.bin` is the old DIO one:
   flash it to reproduce a board updated over the air (they keep the bootloader they had). The harness prints the
-  mode it finds in the boot log next to "Testing vX".
+  mode it finds in the boot log next to "Testing vX", and on a DIO board holds the render times to the baseline's
+  `"dio"` limits (`render_ms.*`; `--update-baseline` then updates the DIO references).
+- **Debug build** (memory checks, test builds only): `sdkconfig.debug` adds heap poisoning (canaries checked on
+  free), a watchpoint at the end of each task's stack and GCC's stack protector. Build it in its own folder:
+  `idf.py -B build\debug -D SDKCONFIG=build\debug\sdkconfig -D "SDKCONFIG_DEFAULTS=sdkconfig.defaults;sdkconfig.debug" build`.
+  It is slower and uses more internal RAM, so its harness performance numbers don't count; run it after changes
+  to memory handling and read the log for `CORRUPT HEAP`, `Stack canary`, `Stack protection fault` and panics.
 
 ## 2. Flash and log (flash helper)
 
@@ -201,6 +207,8 @@ How it works:
   afterwards. The PC stays online through Ethernet. Before joining, the harness sends `portal windows-quiet` so
   the display answers Windows' own connectivity check: otherwise Windows opens a browser tab (msftconnecttest →
   msn.com, because the PC is online). Until restart, and only that one URL; phones still get the portal.
+  `netsh` answers in the Windows display language and `PCWifi` reads its English words: on another language the
+  Wi-Fi tests stop with a clear message (`english_netsh()`) instead of misreading it.
 - **Boot metrics:** `boot_s.forecast_shown` (the active place's forecast on screen, limit 20 s) is what the user
   waits for. `boot_s.first_weather` is the `diag: mark first weather` line, logged after the whole first round (every
   place, alerts, air quality): it follows Open-Meteo's speed (~4 s per request on a slow evening, 17.8 s total

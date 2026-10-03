@@ -156,9 +156,8 @@ an empty translation is not a missing one; a rule with a time window needs a tes
 
 ## Open threads
 
-- Left from the October 3 fix plan: heap poisoning in test builds; the harness's non-English Windows detection
-  and separate render limits for QIO/DIO boards (E3). (Old pull-request refs still reach
-  pre-purge commits; the key was rotated, so no GitHub Support request was made.)
+- The October 3 fix plan is done (v1.12.1 finished D3 and E3, and added a debug build with memory checks). Old
+  pull-request refs still reach pre-purge commits; the key was rotated, so no GitHub Support request was made.
 - The Inuktitut draft needs a fluent speaker (docs/translations/iu-review.md).
 - Radar zoom: 52–79 ms before the first frame (v1.12.1); drawing the overlays is ~36 ms of it, the range ring 19.
 - After new data (a forecast, alerts) a place drag in the first ~0.5 s still waits ~0.12 s for its neighbour's

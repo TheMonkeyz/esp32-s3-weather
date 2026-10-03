@@ -312,7 +312,10 @@ class PCWifi:
         return r.stdout + r.stderr
 
     def available(self):
-        return 'Name' in self.netsh('show', 'interfaces')
+        """True when the PC has a Wi-Fi card. netsh answers in the Windows display language and this class reads its
+        English words (Name, State, SSID, Channel, connected): in another language it stops with a clear message
+        rather than misread it (French Windows: "Nom", "État", "Canal", "connecté")."""
+        return english_netsh(self.netsh('show', 'interfaces'))
 
     def scan(self):
         """{ssid: 2.4 GHz channel} of the networks the PC sees. The display is 2.4 GHz only, and a dual-band router
@@ -357,6 +360,17 @@ class PCWifi:
     def leave(self):
         self.netsh('disconnect', f'interface={self.iface}')
         self.netsh('delete', 'profile', f'name={SETUP_SSID}', f'interface={self.iface}')
+
+
+def english_netsh(out):
+    """`netsh wlan show interfaces` output: True if it lists an interface in English, False if there is no Wi-Fi
+    card; raises Fail if it lists one in another language (lines "key : value" but no "Name")."""
+    if re.search(r'^\s*Name\s*:', out, re.M):
+        return True
+    if len(re.findall(r'^\s*\S[^:\n]*?\s+:\s', out, re.M)) >= 3:
+        raise Fail("netsh answers in another language than English (the Windows display language): the Wi-Fi tests "
+                   "read its English words. Run them on an English Windows, or teach PCWifi the words")
+    return False
 
 
 def dns_query(server, name, timeout=3):

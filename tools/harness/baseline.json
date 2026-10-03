@@ -202,23 +202,39 @@
   "ref": 5.5
  },
  "render_ms.hourly": {
+  "dio": {
+   "max": 64,
+   "ref": 51
+  },
   "max": 44.2,
-  "note": "v1.11.1 with QIO flash (DIO: weather 67, hourly 51, radar 56, with panel 94); a board updated over the air keeps a DIO bootloader and renders at the DIO speed",
+  "note": "v1.11.1 with QIO flash; \"dio\": the limits on a DIO board (one updated over the air keeps its DIO bootloader), measured v1.11.1",
   "ref": 35.4
  },
  "render_ms.radar": {
+  "dio": {
+   "max": 70,
+   "ref": 56
+  },
   "max": 54.6,
-  "note": "v1.11.1 with QIO flash (DIO: weather 67, hourly 51, radar 56, with panel 94); a board updated over the air keeps a DIO bootloader and renders at the DIO speed",
+  "note": "v1.11.1 with QIO flash; \"dio\": the limits on a DIO board (one updated over the air keeps its DIO bootloader), measured v1.11.1",
   "ref": 43.7
  },
  "render_ms.weather": {
+  "dio": {
+   "max": 100,
+   "ref": 67
+  },
   "max": 70,
-  "note": "v1.11.1+ with QIO flash. Depends on the weather shown: the big moon icon ~45 ms (night), the sun ~57 ms (day, measured October 3 at noon on fix.8/fix.9; the daytime cost was there before, the QIO references were all taken at night). DIO: weather 67, hourly 51, radar 56, with panel 94",
+  "note": "v1.11.1+ with QIO flash. Depends on the weather shown: the big moon icon ~45 ms (night), the sun ~57 ms (day, measured October 3 at noon on fix.8/fix.9; the daytime cost was there before, the QIO references were all taken at night). \"dio\": the limits on a DIO board, measured v1.11.1 (moon icon; the sun costs ~12 ms more)",
   "ref": 45.3
  },
  "render_ms.weather_with_panel": {
+  "dio": {
+   "max": 118,
+   "ref": 94
+  },
   "max": 85.9,
-  "note": "v1.11.1 with QIO flash (DIO: weather 67, hourly 51, radar 56, with panel 94); a board updated over the air keeps a DIO bootloader and renders at the DIO speed",
+  "note": "v1.11.1 with QIO flash; \"dio\": the limits on a DIO board (one updated over the air keeps its DIO bootloader), measured v1.11.1",
   "ref": 68.7
  },
  "scroll_frame_ms.scroll_hourly_list": {

@@ -82,8 +82,10 @@ def suite_of(metric):
     return next((s for p, s in SUITE_OF if metric.startswith(p)), 'perf')
 
 
-def compare(metrics, base, ran, skips=None):
+def compare(metrics, base, ran, skips=None, mode='QIO'):
     """[(metric, value, limit, verdict)] against the baseline {"metric": {"max"|"min": n, "ref": n, "note": ...}}.
+    An entry may hold a "dio" set ({"max": n, "ref": n}) used instead on a board whose flash runs in DIO mode (a board
+    updated over the air keeps its DIO bootloader: rendering ~30 % slower, v1.11.1).
     Verdicts: ok, REGRESSION (outside the limit), MISSING (in the baseline, its suite ran, not measured), NEW
     (measured, no limit yet), or "skipped: why" (ctx.skip). Nothing passes silently: in October 2026 a third of the
     metrics had no limit and a reused log window dropped all the boot ones without a word."""
@@ -93,6 +95,8 @@ def compare(metrics, base, ran, skips=None):
     rows = []
     for k in sorted(set(metrics) | {k for k in base if suite_of(k) in ran}):
         b, v = base.get(k), metrics.get(k)
+        if b and mode == 'DIO' and 'dio' in b:
+            b = {**b, **b['dio']}
         if v is None:
             rows.append((k, '', '', f'skipped: {why(k)}' if why(k) else 'MISSING'))
         elif not b or not ('max' in b or 'min' in b):
@@ -104,14 +108,16 @@ def compare(metrics, base, ran, skips=None):
     return rows
 
 
-def propose(metrics, base):
+def propose(metrics, base, mode='QIO'):
     """--update-baseline: the baseline with this run's numbers as "ref", limits and notes kept; metrics without an
     entry get a proposed limit to check by hand (direction guessed from the name, marked "proposed")."""
     out = json.loads(json.dumps(base))
     for k, v in metrics.items():
         if not isinstance(v, (int, float)):
             continue
-        if k in out:
+        if k in out and mode == 'DIO' and 'dio' in out[k]:
+            out[k]['dio']['ref'] = v                   # a DIO board's numbers go to the DIO set
+        elif k in out:
             out[k]['ref'] = v
         else:
             lo_is_bad = any(s in k for s in ('_kb', 'fps')) and k != 'page_kb'
@@ -194,8 +200,10 @@ def main():
         mode = next((m.group(1).upper() for m in map(re.compile(r'(?:boot\.esp32s3: SPI Mode\s*:|spi_flash: flash io:)\s*(\w+)').search,
                                                         reversed(log.lines())) if m), '?')
         print(f'Testing {version} at {board.ip} (flash {mode})', flush=True)
-        if mode not in ('QIO', '?'):
-            ctx.note(f'flash mode {mode}: render times run ~30 % slower than the QIO baseline')
+        if mode == 'DIO':
+            ctx.note('flash mode DIO: render times are held to the baseline\'s "dio" limits (~30 % slower than QIO)')
+        elif mode != 'QIO':
+            ctx.note(f'flash mode {mode}: render times are held to the QIO limits')
     except Fail as e:
         print('Cannot start:', e)
         return 2
@@ -242,10 +250,10 @@ def main():
 
     board.stop_log()
     base = json.load(open(BASELINE, encoding='utf-8')) if os.path.exists(BASELINE) else {}
-    rows = compare(ctx.metrics, base, [x for x in ORDER if x in suites], ctx.skips)
+    rows = compare(ctx.metrics, base, [x for x in ORDER if x in suites], ctx.skips, mode)
     if opts.update_baseline:
         prop = os.path.join(os.path.dirname(BASELINE), 'baseline.proposed.json')
-        json.dump(propose(ctx.metrics, base), open(prop, 'w', encoding='utf-8'), indent=1, sort_keys=True,
+        json.dump(propose(ctx.metrics, base, mode), open(prop, 'w', encoding='utf-8'), indent=1, sort_keys=True,
                   ensure_ascii=False)
         print(f'Proposed baseline: {os.path.relpath(prop, ROOT)} (review it, then copy it over baseline.json)')
     perf_bad = [r for r in rows if r[3] in BAD]
