@@ -19,7 +19,7 @@ behaviour, so they stay on in normal builds.
    5. idle until the end.
 
 Change `diag_start(60)` in `main.c` for another report period. The render bench runs only on request (test console
-`bench`, or the harness's `perf` suite): since v1.10.1 `BENCH_AT_S` in `diag.c` is 0, because the automatic run 45 s
+`bench`, or the harness's `perf` suite): since v1.11.0 `BENCH_AT_S` in `diag.c` is 0, because the automatic run 45 s
 after boot blocked the screen for 1.5 s and swallowed swipes.
 
 ## What the lines mean
@@ -83,7 +83,7 @@ Full-screen render time on the device (ms, render only / with panel):
 | radar | 68 / 78 | 55 / 65 | 54–55 / 64 |
 
 Panel transfer of a full frame ≈ 22 ms (QSPI 40 MHz, 434 KB) and mostly overlaps with rendering (two 32-line
-buffers). Since v1.10.1 the bus runs at 80 MHz: ≈ 11 ms.
+buffers). Since v1.11.0 the bus runs at 80 MHz: ≈ 11 ms.
 
 ### 3. Tried and reverted: two LVGL draw threads
 
@@ -111,7 +111,7 @@ RAM for the two 8 KB draw stacks. Reverted.
 
   Radar zoom is the heaviest case: the scale animation transforms a full-screen image every frame.
 
-  v1.10.1, harness `perf` (`fps`, frames less than 250 ms apart): screen to screen 64–70 fps,
+  v1.11.0, harness `perf` (`fps`, frames less than 250 ms apart): screen to screen 64–70 fps,
   places 46 fps, hourly days 58 fps (moves drawn as pictures, `slide.c`); the hourly list 17.5 fps and Settings
   21.9 fps still scroll with LVGL. PSRAM low point 452–517 KB with the 5-picture cache (2.2 MB; 1042 KB in v1.10.0).
 - The radar task holds `display_lock()` for up to ~75 ms while it swaps in a composed frame, so the UI can miss
@@ -126,7 +126,7 @@ RAM for the two 8 KB draw stacks. Reverted.
 | Symptom | Candidate | Expected gain |
 |---|---|---|
 | Radar zoom feels choppy (10 fps) | render the zoom animation from a half-resolution copy, or fewer steps | fewer pixels transformed per frame |
-| ~~Swipes/animations feel choppy~~ (done, v1.10.1) | profiled (docs/TESTING.md §7); 80 MHz SPI; moves drawn as pictures (`slide.c`, ARCHITECTURE "Moves") | screens 10–15 → 64–70 fps, places 10 → 46, days 11 → 58 |
+| ~~Swipes/animations feel choppy~~ (done, v1.11.0) | profiled (docs/TESTING.md §7); 80 MHz SPI; moves drawn as pictures (`slide.c`, ARCHITECTURE "Moves") | screens 10–15 → 64–70 fps, places 10 → 46, days 11 → 58 |
 | ~~Lists scroll at 17–22 fps~~ (done, v1.10.1-rc.4) | move the picture of the screen, render only the new rows (ARCHITECTURE "Moves", List scrolls) | hourly ~52 fps, Settings ~70 |
 | UI hiccup while the radar loads | compose radar frames outside `display_lock()` | removes 75 ms stalls |
 | Internal RAM low again | check `diag: mark` lines to find the stage; stacks from the task table | — |

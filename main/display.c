@@ -288,7 +288,7 @@ void display_init(void)
 
     esp_lcd_panel_io_spi_config_t io_cfg = {
         .cs_gpio_num = PIN_CS, .dc_gpio_num = -1, .spi_mode = 0,
-        .pclk_hz = 80 * 1000 * 1000, .trans_queue_depth = 10,   // 40 MHz until v1.10.1: 22 ms a frame, 11 now
+        .pclk_hz = 80 * 1000 * 1000, .trans_queue_depth = 10,   // 40 MHz until v1.11.0: 22 ms a frame, 11 now
         .on_color_trans_done = on_trans_done, .user_ctx = disp,
         .lcd_cmd_bits = 32, .lcd_param_bits = 8,
         .flags = { .quad_mode = true },

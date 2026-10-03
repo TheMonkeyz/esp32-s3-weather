@@ -4,7 +4,7 @@
 
 // Full-screen pager: pages side by side (horizontal) or stacked (vertical) in a scroller that snaps one page at a
 // time, so a page follows the finger, snaps into place, and bounces at the first and last page (LVGL elastic
-// scrolling). Used by the hourly view (days) and the weather screen (places); both are frozen since v1.10.1, their
+// scrolling). Used by the hourly view (days) and the weather screen (places); both are frozen since v1.11.0, their
 // drags drawn as pictures by slide.c (below).
 //
 // Pages are plain containers: not clickable, presses and gestures bubble up through the pager (which stays
