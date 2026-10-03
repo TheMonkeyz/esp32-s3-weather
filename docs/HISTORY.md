@@ -61,6 +61,24 @@ The same day the release loop was handed over: Claude tags and pushes release ca
 CLI, and installs them on the display through its own updater (`harness.py --ota`). Stable releases still need the
 user's word.
 
+### October 3: the evaluation and its fix plan (v1.12.0-rc.2 to rc.5)
+
+A read-only review of v1.11.1 (`docs/EVALUATION-2026-10-02.md`) became a fix plan worked through in one session,
+one release candidate per group, each installed by the display's own updater and tested by the harness:
+
+- **rc.2** (bugs): the settings page's Install button, touch loops that could hold the display lock, parsers that
+  crashed on partial replies, alerts capped before sorting, a harness gate that passed what it didn't measure.
+  Moving 48 KB of radar palettes to PSRAM raised the internal RAM low point from 9 to 50 KB.
+- **rc.3** (security and robustness, with the owner's answers): a settings key in the on-screen QR, a per-display
+  setup-network password that opens by itself for 15 minutes only, update confirmation tied to Wi-Fi, task stacks
+  sized from measurements, places in typed NVS keys.
+- **rc.4** (data and first run): forecasts right after midnight, failures visible on the weather screen, a
+  first-run "Choose your location" hint.
+- **rc.5** (tests and hygiene): the portal's DNS server limited to the setup network, host unit tests in CI, docs.
+
+What it taught: build exactly what you commit (a script splitting work dropped an include and rc.1's build failed);
+an empty translation is not a missing one; a rule with a time window needs a test that crosses it.
+
 ## How the work is done now
 
 1. **Change, then a test build** labelled above the current release (`vX.Y.Z-name.N` in `version.txt`; the
@@ -126,7 +144,10 @@ user's word.
 
 ## Open threads
 
-- Easy Connect's first setup should open the settings page on the phone (docs/IDEAS.md).
+- Easy Connect's first setup should open the settings page on the phone (docs/IDEAS.md); the first-run hint (rc.4)
+  covers part of it.
+- Left from the October 3 fix plan: see the end of this list and the plan itself (questions 5 and 6 for the owner,
+  a gesture hint, hardware AES re-measured, a core-dump partition, a png_rows host test).
 - The Inuktitut draft needs a fluent speaker (docs/translations/iu-review.md).
 - Radar zoom: ~80 ms before the first frame (the overlays' alpha, mostly the range ring); could be cached between
   zooms.
