@@ -129,7 +129,7 @@ Windows build gets both from `main/idf_component.yml`. `components/dns_server` *
     (d) v1.10.0's harness run caught the channel pick guessing: the broadcast scan missed the router (busy channel),
     so the display scans for the saved network by name first. A flaky check needs several runs before calling it
     fixed (4/4 after the fix).
-21. **Frame rate (v1.10.1, October 2):** LVGL 9.2 can't redraw a full screen in less than ~65–85 ms, and profiling
+21. **Frame rate (v1.11.0, October 2):** LVGL 9.2 can't redraw a full screen in less than ~65–85 ms, and profiling
     found no single hot spot (docs/TESTING.md §7). Moves between screens, places and days are now pictures sent
     straight to the panel by `slide.c` (ARCHITECTURE "Moves"). What it took, in order of cost:
     (a) **Hangs:** esp_lcd isn't thread-safe. Its transfer-done interrupt ran on the other core and raced with the
@@ -211,7 +211,7 @@ Windows build gets both from `main/idf_component.yml`. `components/dns_server` *
 - Wants short progress notes, no screen takeover, and changes verified on the device (log + snapshot) before
   being called done.
 - Screen-to-screen moves should feel like the hourly view: follow the finger, snap, bounce at the ends, no
-  wrap-around. Since v1.10.1 screens, places and days all go through `slide.c` (~60 fps). The user asked for 60 fps,
+  wrap-around. Since v1.11.0 screens, places and days all go through `slide.c` (~60 fps). The user asked for 60 fps,
   noticed at once when a faster animation lost the finger-following and the bounce, and noticed a 0.1 s delay
   before a drag started. Frame rate alone isn't the goal: it has to follow the finger.
 - **French = Canadian French (Québec), standard written:** "endroit(s)" for places (not "lieux"), "tamiser" for dim

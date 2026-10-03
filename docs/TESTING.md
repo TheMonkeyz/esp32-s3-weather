@@ -203,11 +203,11 @@ Pitfalls met while building it:
   `addr2line` against `build/v55/weather_amoled.elf` (wrong for any other build).
 - **A command that gets no answer, or answers `display busy`, makes the harness send `where`**, which takes no lock:
   the failure then says where the display stuck (`slide_phase`, `raw_phase`, `raw_band`, `lvgl_inflight`, the LVGL
-  task's state). That is how the raw-frame hangs of the v1.10.1 work were found (see ARCHITECTURE, "Display
+  task's state). That is how the raw-frame hangs of the v1.11.0 work were found (see ARCHITECTURE, "Display
   pipeline").
 - A simulated **tap lasts 120 ms**: a 60 ms tap could fall entirely inside a 100 ms redraw and never be seen.
 - The board's **automatic render bench** (45 s after boot) blocked the screen for 1.5 s and swallowed the swipes the
-  harness made meanwhile; it is off since v1.10.1 (`BENCH_AT_S` 0) and `perf` runs it on request, keeping the best of
+  harness made meanwhile; it is off since v1.11.0 (`BENCH_AT_S` 0) and `perf` runs it on request, keeping the best of
   3 runs (a run is "postponed" while a redraw is going on).
 - `fps` has its own counters: `diag`'s 60 s report used to reset them in the middle of a measurement.
 - After a **place change**, the radar saves the new location's map to flash (both cores pause in bursts for ~3 s): a
@@ -237,7 +237,7 @@ Pitfalls met while building it:
 
 ## 7. Profiling LVGL rendering (`profile`)
 
-Used in the v1.10.1 frame-rate work to see where a frame's time goes, per function and per draw task type. A local
+Used in the v1.11.0 frame-rate work to see where a frame's time goes, per function and per draw task type. A local
 experiment, never committed in a build:
 
 1. `python tools/harness/lvgl_profile_patch.py apply`: tags each draw task type (`t_fill`, `t_label`, `t_image`…) in

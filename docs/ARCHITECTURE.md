@@ -26,7 +26,7 @@ The panel's init sequence and pin map come from Waveshare's BSP
 | `radar` | 0 / 3, 10 KB stack | Basemap, latest radar frame, history frames; sleeps unless the radar screen is visible |
 | `presence` | 0 / 2 | Reads 100 ms of audio, computes the level, runs the dim/off state machine, fades brightness |
 | `diag` | 0 / 1 | Every 60 s logs heap, frame timing, CPU and stack per task |
-| `bench` | 1 / 4, one-shot, 10 KB stack (6 KB overflowed) | Times full-screen renders of each screen without showing them (UI blocked ~1.5 s); only on request (test console `bench`, the harness's `perf`). Until v1.10.1 it also ran by itself 45 s after boot and swallowed the swipes made meanwhile (`BENCH_AT_S` in `diag.c`, now 0) |
+| `bench` | 1 / 4, one-shot, 10 KB stack (6 KB overflowed) | Times full-screen renders of each screen without showing them (UI blocked ~1.5 s); only on request (test console `bench`, the harness's `perf`). Until v1.11.0 it also ran by itself 45 s after boot and swallowed the swipes made meanwhile (`BENCH_AT_S` in `diag.c`, now 0) |
 | `svc_probe` | any / 2, one-shot, 8 KB stack | Status page opened: one small request to each service idle for 5 min, then exits |
 | httpd (HTTPS :443, HTTP :80) | – | Settings page + JSON API. Stacks 7 KB (TLS handshake peaks ~3.3 KB) / 4 KB |
 
@@ -44,7 +44,7 @@ LVGL timer and event callbacks already run inside the lock.
 - `flush_cb` byte-swaps RGB565, sets the window (`0x2A` with +6 column offset, then `0x2B`) and sends pixels with
   QSPI command `0x32 / 0x2C`.
 - A rounder callback makes every area start on an even pixel and end on an odd one (a CO5300 requirement).
-- QSPI at **80 MHz** since v1.10.1 (40 MHz before): a full frame takes ~11 ms on the bus instead of 22.
+- QSPI at **80 MHz** since v1.11.0 (40 MHz before): a full frame takes ~11 ms on the bus instead of 22.
 - The transfer-done interrupt runs on **core 1** (`isr_cpu_id`), the LVGL task's core. esp_lcd isn't thread-safe:
   with the interrupt on core 0, a raw frame (below) hung for good every few slides.
 - **Raw frames** (`display_raw_frame(fill, user)`, for `slide.c`): with LVGL paused (display lock held), `fill`
@@ -99,7 +99,7 @@ LVGL timer and event callbacks already run inside the lock.
   (places, vertical).
 - Its scroll handler must ignore bubbled events (`target != current_target`): the hourly lists scroll vertically
   inside the pages and their `LV_EVENT_SCROLL` bubbles up; reading pager state from the list crashed the board.
-- **Both pagers are frozen since v1.10.1** (`pager_freeze`: scroll direction `LV_DIR_NONE`). LVGL's elastic scroll
+- **Both pagers are frozen since v1.11.0** (`pager_freeze`: scroll direction `LV_DIR_NONE`). LVGL's elastic scroll
   redrew every widget for every frame (10–15 fps). The drag is drawn by `slide.c` from pictures instead:
   `pager_peek(i)` moves the pager to page i and back within one LVGL cycle to take its picture (no callbacks, the
   `quiet` flag), and `pager_switch(i)` ends the drag (calls `on_change` and `on_settle`, like a scroll that settled
@@ -194,7 +194,7 @@ order, and ~11 ms on the bus.
     returns the picture itself, to compare with the `current` snapshot pixel by pixel (how the smear was found).
 - **Memory:** `room_for(n)`: free PSRAM above 1 MB + 440 KB per picture, and a 900 KB block. 5 pictures = 2.2 MB.
   A slide may reuse cache slots (`force`) rather than fall back to the slow animation.
-- **Measured (v1.10.1, harness `perf`):** screen to screen 64–70 fps (was 10–15; one run measured 32 fps to the
+- **Measured (v1.11.0, harness `perf`):** screen to screen 64–70 fps (was 10–15; one run measured 32 fps to the
   radar, the next 67), places 46 fps (66 with the pictures ready; was 10), days 58 fps (was 11), drag start ~15 ms.
   Lists (rc.4): hourly ~52 fps while moving (was 17.5), Settings ~70 (was 22), status page ~64.
 - Long-press opens the Settings screen (below). Its *More on your phone* row shows the overlay with a QR code
@@ -396,7 +396,7 @@ order, and ~11 ms on the bus.
   Afterwards the current level is loaded from flash and the latest frame is fetched.
 - **Radar frames:** GeoMet WMS `GetMap` in EPSG:3857 with the exact view bbox at 466×466, `transparent=true`,
   `time=<ISO>`. The latest time comes from `GetCapabilities` (`<Dimension name="time">start/end/PT6M`).
-- **PNG decoding** (`png_rows.c`, since v1.10.1): one row at a time with the ESP32-S3 ROM's inflate (`tinfl`,
+- **PNG decoding** (`png_rows.c`, since v1.11.0): one row at a time with the ESP32-S3 ROM's inflate (`tinfl`,
   `#include "miniz.h"`, 32 KB window), ~50 KB of working memory whatever the image size. Tiles, radar frames and
   lightning images each pass a row callback (`tile_row`, `frame_row`, `lightning_row`). LVGL's lodepng decoded whole
   images (~2–3 MB for a radar frame, in two big blocks), and those allocations failed once the drag pictures had

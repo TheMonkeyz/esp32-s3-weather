@@ -74,7 +74,7 @@
  },
  "psram_min_kb": {
   "min": 300,
-  "note": "v1.10.1: 452-517 KB with the 5-picture cache of slide.c (1042 in v1.10.0); the radar needs ~50 KB to decode plus 217 KB per new frame",
+  "note": "v1.11.0: 452-517 KB with the 5-picture cache of slide.c (1042 in v1.10.0); the radar needs ~50 KB to decode plus 217 KB per new frame",
   "ref": 452
  },
  "radar_first_frame_s": {
