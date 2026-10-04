@@ -10,6 +10,9 @@ their own `## vX.Y.Z-rc.N` section. Those are shown only to Beta users, while th
 list everything again. (Two tags have no section: v1.3.0-rc.1, and v1.12.0-rc.1, whose build failed and was published
 as v1.12.0-rc.2.)
 
+## v1.12.1-rc.2 - 2026-10-04
+- The hourly view follows your finger: quick short flicks scroll the hours, swiping up and down without lifting your finger no longer stops the list, and a swipe to the next day works even while the list is still moving.
+
 ## v1.12.1-rc.1 - 2026-10-03
 - Swiping to another place or screen right after the forecast updates no longer pauses for a moment first.
 - The radar zoom starts sooner.
