@@ -106,6 +106,11 @@ LVGL timer and event callbacks already run inside the lock.
   an Open-Meteo bad patch the weather screen came back minutes after Wi-Fi did). Alerts, air
   quality and the radar are for the place shown: every 10 min, and at once after a switch, an edit or a language
   change (`extras_now`).
+- **Open-Meteo sometimes stalls:** it accepts the connection and the request, then answers nothing for 15 s and more
+  (`ESP_ERR_HTTP_EAGAIN`), for a minute or so. Seen from the display (rc.6's update test, a debug run) and, on
+  October 3, from the PC too: 4 of 448 requests over two hours (connected in 0.06 s, no first byte in 20 s), the rest
+  in 0.07-0.5 s. It is the server, not the display; the retries above cover it. A failed forecast or air-quality
+  fetch logs how far it got (`connected N ms, request sent N, first byte N, N bytes`) and internal RAM.
 - **When the forecast can't be had** (`ui_place_state(i, ok)`): a page without a forecast says "Can't reach the
   forecast service. Retrying." instead of "Loading..." forever, and so does the start-up message after a failure. A
   line above the clock (`p->age`, ~220 px wide there) says "No connection" while offline and "Updated N min ago" once
@@ -165,8 +170,8 @@ order, and ~11 ms on the bus.
   At an end (no neighbour) the screen resists (a third of the movement, at most a fifth of the screen) and bounces
   back. On release it goes on to the neighbour past a third of the screen, or after a flick (more than 24 px and
   0.35 px/ms that way), else back. `commit(side)` loads the screen or `pager_switch`es the page.
-  - Five touch read errors in a row count as a release: the CST9217 often stops answering (NACK) when nothing
-    touches it instead of reporting "up", and the drag never ended. Every loop in `slide.c` that reads the finger
+  - Five touch read errors in a row count as a release (after the 60 ms hold, see "List scrolls"): the CST9217 often
+    stops answering (NACK) when nothing touches it instead of reporting "up", and the drag never ended. Every loop in `slide.c` that reads the finger
     goes through `finger()`, which keeps that rule (and "up stays up until a press"): since v1.12.0 also the
     PSRAM-busy drag (it waited for a clean "up" forever, holding the display lock) and the zoom (a failed read kept
     the swipe that started it "on", so a second swipe during the zoom was ignored).
@@ -236,9 +241,20 @@ order, and ~11 ms on the bus.
     a doubled last row). `lv_obj_scroll_by()` isn't bounded.
   - Like LVGL: the list follows the finger, resists past an end (a third of the movement, at most a fifth of the
     list) and springs back (ease out, 220 ms); after a flick it goes on and slows down (`v × e^(−t/300 ms)`: ~v ×
-    300 ms, as LVGL's 10% per frame; past an end it brakes in ~30 ms, then springs back); a touch stops it and
-    follows the finger again. The flick speed is measured over the last ~80 ms, starting with the press and the
-    16 px that made it a scroll (passed by `drag_read`): a quick flick can be over before the first frame.
+    300 ms, as LVGL's 10% per frame; past an end it brakes in ~30 ms, then springs back). The flick speed is
+    measured over the last ~80 ms of fresh readings, starting with the press and the 10 px that made it a scroll
+    (passed by `drag_read`): a quick flick can be over before the first frame.
+  - **Deciding a touch:** `drag_read` makes a move a drag or a scroll after 10 px along the larger axis; LVGL's own
+    scroll limit is 20 px (`lv_indev_set_scroll_limit`), so it never starts first (it did at 10 vs 16: flicks went to
+    LVGL's slow scroll). A touch during the coast or the spring-back stops the list and is decided the same way:
+    vertical follows from where it went down, sideways is handed to `slide_scroll_on_sideways()` (the hourly view's
+    day drag). A finger already down when a drag or scroll gives LVGL the touch back is a new press for `drag_read`
+    (`touch_forgotten()`).
+  - **Reading the finger** (`finger()`, every loop that follows it): the chip is read at most every 10 ms
+    (`touch_get()`, `touch_fresh()`); polled every millisecond it answered "up" for long stretches with the finger
+    on it. A reported "up" or 5 silent reads count after 60 ms (`UP_HOLD_US`, -2 meanwhile); the scroll starts
+    coasting at once and follows again if the finger is still there, and never ends on an undecided "up". The
+    scroll's log line counts lifts, silences, re-touches, bridged "ups" and the longest gap between reads.
   - At the start LVGL lets go of the touch (`lv_indev_reset`: the row pressed under the finger, e.g. a Settings row
     with a pressed colour) and `lv_refr_now()` draws that, into the panel and the picture. No exact picture of the
     screen yet (just opened): `slide_scroll()` returns false and LVGL scrolls as before.

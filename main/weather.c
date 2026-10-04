@@ -7,6 +7,8 @@
 #include "esp_crt_bundle.h"
 #include "cJSON.h"
 #include "esp_log.h"
+#include "esp_heap_caps.h"
+#include "esp_timer.h"
 #include "config.h"
 #include "i18n.h"
 #include "svc.h"
@@ -24,17 +26,35 @@ int weather_last_status(void) { return last_status; }
     "&minutely_15=precipitation,snowfall&forecast_minutely_15=9" \
     "&timezone=auto&forecast_days=7"
 
-typedef struct { char *buf; int len; int cap; } rx_t;
+// The request's phases (esp_timer us, 0 = not reached) and the bytes received, for the log line of a failed fetch:
+// Open-Meteo sometimes connects, takes the request and never answers within the timeout (ESP_ERR_HTTP_EAGAIN), and
+// the line says where it stopped
+typedef struct { char *buf; int len; int cap; int64_t t0, conn, sent, first; int bytes; } rx_t;
 
 static esp_err_t http_evt(esp_http_client_event_t *e)
 {
     rx_t *rx = e->user_data;
+    int64_t now = esp_timer_get_time();
+    if (e->event_id == HTTP_EVENT_ON_CONNECTED && !rx->conn) rx->conn = now;
+    if (e->event_id == HTTP_EVENT_HEADERS_SENT && !rx->sent) rx->sent = now;
+    if ((e->event_id == HTTP_EVENT_ON_HEADER || e->event_id == HTTP_EVENT_ON_DATA) && !rx->first) rx->first = now;
+    if (e->event_id == HTTP_EVENT_ON_DATA) rx->bytes += e->data_len;
     if (e->event_id == HTTP_EVENT_ON_DATA && rx->len + e->data_len < rx->cap) {
         memcpy(rx->buf + rx->len, e->data, e->data_len);
         rx->len += e->data_len;
         rx->buf[rx->len] = 0;
     }
     return ESP_OK;
+}
+
+static void log_failure(const char *what, esp_err_t err, int status, const rx_t *rx)
+{
+    #define MS(t) ((t) ? (int)(((t) - rx->t0) / 1000) : -1)
+    ESP_LOGW(TAG, "%s HTTP failed: %s, status %d (connected %d ms, request sent %d, first byte %d, %d bytes; "
+             "-1 = not reached) | internal %u KB free, largest %u", what, esp_err_to_name(err), status, MS(rx->conn),
+             MS(rx->sent), MS(rx->first), rx->bytes, (unsigned)(heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024),
+             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
+    #undef MS
 }
 
 static double num(cJSON *o, const char *k)
@@ -112,6 +132,7 @@ bool weather_fetch(const location_t *loc, weather_t *w)
         .crt_bundle_attach = esp_crt_bundle_attach, .timeout_ms = 15000, .buffer_size_tx = 1024,   // long URL
     };
     int64_t t0 = esp_timer_get_time();
+    rx.t0 = t0;
     int status;
     esp_err_t err = http_once(&cfg, &status);
     svc_http(SVC_FORECAST, err, status, t0);
@@ -119,7 +140,7 @@ bool weather_fetch(const location_t *loc, weather_t *w)
 
     bool ok = false;
     if (err != ESP_OK || status != 200) {
-        ESP_LOGW(TAG, "HTTP failed: %s, status %d", esp_err_to_name(err), status);
+        log_failure("forecast", err, status, &rx);
     } else {
         cJSON *root = cJSON_Parse(rx.buf);
         cJSON *cur = cJSON_GetObjectItem(root, "current");
@@ -231,9 +252,11 @@ bool air_fetch(air_t *a)
         .crt_bundle_attach = esp_crt_bundle_attach, .timeout_ms = 15000, .buffer_size_tx = 1024,   // long URL
     };
     int64_t t0 = esp_timer_get_time();
+    rx.t0 = t0;
     int status;
     esp_err_t err = http_once(&cfg, &status);
     svc_http(SVC_AIR, err, status, t0);
+    if (err != ESP_OK || status != 200) log_failure("air quality", err, status, &rx);
     bool ok = false;
     cJSON *root = err == ESP_OK && status == 200 ? cJSON_Parse(rx.buf) : NULL;
     cJSON *cur = cJSON_GetObjectItem(root, "current");
