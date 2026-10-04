@@ -404,7 +404,9 @@ def measure(ctx, name, action, settle=1.0):
     """Frame rate during `action` (a list of console commands): fps reset, act, wait for the animation to end.
     swipe_fps counts every frame less than 250 ms apart, so it includes LVGL's redraws after the move (a new place's
     clock and data: 57 fps for the drag, 30 with them). For drags, slide.c's own line gives the drag alone:
-    drag_fps and drag_start_ms (finger recognised -> first frame; the user noticed 0.1 s)."""
+    drag_fps and drag_start_ms (finger recognised -> first frame; the user noticed 0.1 s). swipe_gap_max_ms leaves out
+    the gap from an LVGL redraw to the move's first frame (display.c): the update check's redraw of Settings 247 ms
+    before a scroll failed v1.12.3-rc.1's run once."""
     b = ctx.board
     if time.localtime().tm_sec > 55:                 # not across a minute change: the clock's redraw right after a
         time.sleep(62 - time.localtime().tm_sec)     # move counts in swipe_gap_max_ms (127 ms once, after a radar swipe)
@@ -414,7 +416,8 @@ def measure(ctx, name, action, settle=1.0):
         b.cmd(c)
     time.sleep(settle)
     line = b.cmd('fps', r'test: fps (.*)').group(1)
-    v = {k: float(x) for k, x in (kv.split('=') for kv in line.split())}
+    kv = dict(x.split('=', 1) for x in line.split())
+    v = {k: float(x) for k, x in kv.items() if re.fullmatch(r'-?[\d.]+', x)}
     ctx.metric(f'swipe_fps.{name}', round(v['anim_fps'], 1))
     ctx.metric(f'swipe_gap_max_ms.{name}', round(v['gap_max_ms']))
     ctx.metric(f'swipe_render_avg_ms.{name}', round(v['render_avg_ms'], 1))
@@ -434,7 +437,8 @@ def measure(ctx, name, action, settle=1.0):
         ctx.metric(f'scroll_frame_ms.{name}', round(mv + rd + sd, 1))
         drag = f'; scroll frames {mv + rd + sd:.1f} ms (move {mv}, render {rd}, send {sd})'
     ctx.note(f'{name}: {v["anim_fps"]:.1f} fps, {int(v["anim_frames"])} frames, render avg {v["render_avg_ms"]:.1f} ms '
-             f'max {v["render_max_ms"]:.1f} ms, worst gap {v["gap_max_ms"]:.0f} ms' + drag)
+             f'max {v["render_max_ms"]:.1f} ms, worst gap {v["gap_max_ms"]:.0f} ms' +
+             (f' ({kv["gap_max_kind"]}, {kv["gap_max_at_ms"]} ms after the reset)' if 'gap_max_kind' in kv else '') + drag)
 
 
 def radar_settled(ctx, since, quiet=5, timeout=45):

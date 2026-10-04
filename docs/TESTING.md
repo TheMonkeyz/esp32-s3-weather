@@ -221,7 +221,8 @@ How it works:
 - **Test console** (`main/testcon.c`, USB only): `ping`, `screen`, `page` (place and day shown), `tap X Y`,
   `press X Y [ms]`, `swipe left|right|up|down`, `drag X1 Y1 X2 Y2 [ms]`, `wake`, `presence`, `wifi
   status|offline|offline-boot|online`, `portal windows-quiet`, `fps [reset]` (frames and animation fps since the
-  reset), `where` (display breadcrumbs, takes no lock), `memspeed` (PSRAM / internal copy speeds), `heap`, `bench`,
+  reset; the worst gap between frames under 250 ms apart, with when it ended and between which frames, e.g.
+  `gap_max_kind=move>lvgl`; the gap from an LVGL redraw to a move's first frame is left out), `where` (display breadcrumbs, takes no lock), `memspeed` (PSRAM / internal copy speeds), `heap`, `bench`,
   `profile` (§8, profiler builds only), `pictest` (slide.c's picture of the screen shown against a fresh rendering:
   `slide: pictest rows_differ=N first=Y`), `dirty` (what new data does to slide.c's pictures: every hidden one out
   of date and the screen shown redrawn), `alert sample en|fr|max|off` (the alert screen laid out with long sample

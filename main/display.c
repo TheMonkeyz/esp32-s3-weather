@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include <string.h>
 // CO5300 466x466 AMOLED over QSPI (Waveshare ESP32-S3-Touch-AMOLED-1.75) + LVGL v9 port
 #include "display.h"
@@ -25,13 +26,25 @@ static void count_frame(uint32_t render_us)
     }
 }
 
-static void count_anim(uint32_t gap_us)                 // back-to-back frames (an animation): the interval
+// Back-to-back frames (an animation): the interval. test = false leaves it out of the test console's "fps" (only):
+// the gap from an LVGL redraw to a move's first frame (slide.c). It is the move's start, not a stall in it (drags
+// measure their start themselves, drag_start_ms), and an unrelated redraw just before a move made it look like one:
+// the update check redrew Settings 247 ms before the harness's scroll (v1.12.3-rc.1, "REGRESSION" 247 ms > 120).
+static bool last_raw;                  // the last frame was a move's (display_raw_area), not LVGL's
+static int64_t tst_t0;                 // the test console's last "fps reset"
+
+static void count_anim(uint32_t gap_us, bool test, bool raw)
 {
     display_stats_t *s[2] = {&st, &tst};
-    for (int i = 0; i < 2; i++) {
+    for (int i = 0; i < (test ? 2 : 1); i++) {
         s[i]->anim_frames++;
         s[i]->anim_us += gap_us;
-        if (gap_us > s[i]->anim_gap_max_us) s[i]->anim_gap_max_us = gap_us;
+        if (gap_us > s[i]->anim_gap_max_us) {
+            s[i]->anim_gap_max_us = gap_us;
+            s[i]->anim_gap_max_at_ms = (uint32_t)((esp_timer_get_time() - tst_t0) / 1000);
+            snprintf(s[i]->anim_gap_max_kind, sizeof(s[i]->anim_gap_max_kind), "%s>%s", last_raw ? "move" : "lvgl",
+                     raw ? "move" : "lvgl");
+        }
     }
 }
 static TaskHandle_t lvgl_th;
@@ -149,8 +162,9 @@ void display_raw_area(int x0, int y0, int x1, int y1, bool bottom_up, display_ar
     raw_mode = false;
     count_frame(0);                                       // counted like LVGL frames (fps in the test console)
     int64_t now = esp_timer_get_time();
-    if (last_render && now - last_render < 250000) count_anim(now - last_render);
+    if (last_render && now - last_render < 250000) count_anim(now - last_render, last_raw, true);
     last_render = now;
+    last_raw = true;
 }
 
 typedef struct { display_fill_cb_t fill; void *user; } full_t;
@@ -230,8 +244,9 @@ static void render_evt(lv_event_t *e)
 {
     int64_t now = esp_timer_get_time();
     if (lv_event_get_code(e) == LV_EVENT_RENDER_START) {
-        if (last_render && now - last_render < 250000) count_anim(now - last_render);   // back-to-back = animation
+        if (last_render && now - last_render < 250000) count_anim(now - last_render, true, false);   // back-to-back = animation
         last_render = render_t0 = now;
+        last_raw = false;
     } else {
         count_frame(now - render_t0);
     }
@@ -251,7 +266,7 @@ void display_get_test_stats(display_stats_t *out, bool reset)
 {
     display_lock(-1);
     *out = tst;
-    if (reset) memset(&tst, 0, sizeof(tst));
+    if (reset) { memset(&tst, 0, sizeof(tst)); tst_t0 = esp_timer_get_time(); }
     display_unlock();
 }
 

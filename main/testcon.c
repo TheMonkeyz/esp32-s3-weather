@@ -213,10 +213,11 @@ static void run(char *line)
         display_get_test_stats(&d, true);
         if (argc == 2 && !strcmp(argv[1], "reset")) { ESP_LOGI(TAG, "ok fps reset"); return; }
         ESP_LOGI(TAG, "fps frames=%lu render_avg_ms=%.1f render_max_ms=%.1f anim_frames=%lu anim_fps=%.1f "
-                      "gap_max_ms=%.1f mpx=%.2f", (unsigned long)d.frames,
+                      "gap_max_ms=%.1f gap_max_at_ms=%lu gap_max_kind=%s mpx=%.2f", (unsigned long)d.frames,
                  d.frames ? d.render_us / 1000.0f / d.frames : 0, d.render_max_us / 1000.0f,
                  (unsigned long)d.anim_frames, d.anim_us ? d.anim_frames * 1e6f / d.anim_us : 0,
-                 d.anim_gap_max_us / 1000.0f, d.pixels / 1e6f);
+                 d.anim_gap_max_us / 1000.0f, (unsigned long)d.anim_gap_max_at_ms,
+                 d.anim_gap_max_kind[0] ? d.anim_gap_max_kind : "-", d.pixels / 1e6f);
 #if LV_USE_PROFILER && LV_USE_PROFILER_BUILTIN
     } else if (!strcmp(c, "profile")) {                    // one frame of each screen (docs/TESTING.md §7)
         xTaskCreatePinnedToCore(profile_task, "profile", 10240, NULL, 4, NULL, 1);
