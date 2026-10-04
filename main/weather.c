@@ -214,7 +214,9 @@ bool weather_fetch(const location_t *loc, weather_t *w)
                      w->day[0].tmax, w->day[0].tmin);
             ESP_LOGI(TAG, "%d hourly points, %d bytes", w->nhours, rx.len);
         } else {
-            ESP_LOGW(TAG, "Unexpected response: %.120s", rx.buf);
+            // Always a 200 here (other statuses, 429 included, go to log_failure): Open-Meteo's errors mid-stream
+            // ("allEndpointsUnavailable", October 4) arrive with a 200 and a short body
+            ESP_LOGW(TAG, "Unexpected response (HTTP %d, %d bytes): %.120s", status, rx.len, rx.buf);
         }
         cJSON_Delete(root);
     }

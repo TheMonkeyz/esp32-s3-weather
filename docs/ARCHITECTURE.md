@@ -109,7 +109,10 @@ LVGL timer and event callbacks already run inside the lock.
 - **Open-Meteo sometimes stalls:** it accepts the connection and the request, then answers nothing for 15 s and more
   (`ESP_ERR_HTTP_EAGAIN`), for a minute or so. Seen from the display (rc.6's update test, a debug run) and, on
   October 3, from the PC too: 4 of 448 requests over two hours (connected in 0.06 s, no first byte in 20 s), the rest
-  in 0.07-0.5 s. It is the server, not the display; the retries above cover it. A failed forecast or air-quality
+  in 0.07-0.5 s. On October 4 it also answered HTTP 200 with only its own error, "Unexpected error while streaming
+  data: allEndpointsUnavailable" (`weather: Unexpected response (HTTP 200, N bytes): …`; that line is only ever a
+  200, any other status, 429 included, is a `forecast HTTP failed … status N` line). Not a rate limit: no 429, and
+  the PC on the same connection got answers. It is the server, not the display; the retries above cover it. A failed forecast or air-quality
   fetch logs how far it got (`connected N ms, request sent N, first byte N, N bytes`) and internal RAM.
 - **When the forecast can't be had** (`ui_place_state(i, ok)`): a page without a forecast says "Can't reach the
   forecast service. Retrying." instead of "Loading..." forever, and so does the start-up message after a failure. A
