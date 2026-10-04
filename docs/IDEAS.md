@@ -21,6 +21,11 @@ charging (AXP2101).
   faster on small MCUs. A port touches every `lv_*` call (v9 renamed many), `slide.c`'s use of LVGL internals
   (layers, draw buffers, `lv_display_t`), `lvgl_mem.c` and the fonts. Measure first: the render bench and a
   full-screen redraw of each screen on v8 against v9 in a throwaway build, before deciding.
+  Measured October 4 (`tools/lvglbench/`): with pre-rendered fonts v8 draws these screens 19-26 % faster than v9;
+  with the app's TTF fonts 3-4x slower. v8.4's support ended in March 2025. The bigger lead: the app's v9 weather
+  screen takes twice the benchmark's 24 ms, so something in the app (the LVGL heap in PSRAM?) costs more than the
+  version. Also on v9: LVGL 9.3+ can draw on both cores (`LV_DRAW_SW_DRAW_UNIT_CNT=2`, needs `LV_USE_OS`), and 9.6's
+  software renderer is reported 4-25 % faster.
 - [ ] **The display in the browser, on the flasher site** (the owner, October 3). The firmware binary can't run in a
   browser (no emulator covers this board's AMOLED panel, touch chip and Wi-Fi), but the same UI code could: LVGL +
   `ui.c` built to WebAssembly from the stable tag, drawing to a canvas, with the mouse as the finger and the browser
