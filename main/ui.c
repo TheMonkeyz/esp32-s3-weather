@@ -28,10 +28,15 @@
 #include "esp_attr.h"
 #include "esp_heap_caps.h"
 
+#ifdef EMU_BUILD                             // the browser emulator (web/emu): the fonts are arrays, their ends pointers
+extern const uint8_t ttf_start[], syl_start[];
+extern const uint8_t *const ttf_end, *const syl_end;
+#else
 extern const uint8_t ttf_start[] asm("_binary_montserrat_ttf_start");
 extern const uint8_t ttf_end[]   asm("_binary_montserrat_ttf_end");
 extern const uint8_t syl_start[] asm("_binary_syllabics_ttf_start");   // Inuktitut syllabics (Noto subset)
 extern const uint8_t syl_end[]   asm("_binary_syllabics_ttf_end");
+#endif
 
 static lv_font_t *f_time, *f_city, *f_big, *f_cond, *f_small, *f_tiny, *f_micro;
 static lv_obj_t *scr_radar, *scr_extras, *scr_status, *scr_update, *up_pill, *up_pill_lbl;

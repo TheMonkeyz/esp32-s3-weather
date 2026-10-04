@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Weather display emulator</title>
+<style>
+  :root { --bg: #0f1114; --text: #e8eaed; --dim: #8a8f98; --bezel: #22262c; }
+  @media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) { --bg: #eef0f3; --text: #1c1f24; --dim: #5d636c; --bezel: #2a2e35; } }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 system-ui, sans-serif; }
+  main { max-width: 560px; margin: 0 auto; padding: 24px 16px; text-align: center; }
+  .watch { display: inline-block; padding: 14px; border-radius: 50%; background: var(--bezel);
+           box-shadow: 0 10px 40px rgba(0, 0, 0, .35); }
+  canvas { display: block; width: min(466px, calc(100vw - 60px)); aspect-ratio: 1; border-radius: 50%;
+           background: #000; touch-action: none; cursor: grab; }
+  canvas:active { cursor: grabbing; }
+  p { color: var(--dim); margin: 14px 0 0; }
+  #status { min-height: 1.4em; }
+</style>
+</head>
+<body>
+<main>
+  <div class="watch"><canvas id="screen" width="466" height="466"></canvas></div>
+  <p id="status">Loading…</p>
+  <p>Drag left and right for the screens, up and down for places, tap a day for its hours, press and hold for
+     settings. The forecast is live, for the places you choose (kept in this browser).</p>
+</main>
+<script src="emu.js"></script>
+<script>
+(async () => {
+  const canvas = document.getElementById('screen'), ctx = canvas.getContext('2d');
+  const status = document.getElementById('status');
+  const img = ctx.createImageData(466, 466), rgba = new Uint32Array(img.data.buffer);
+  const M = await WeatherEmu({ print: t => console.log(t), printErr: t => console.log(t) });
+  status.textContent = '';
+  const fb = M._emu_fb() >> 1;                       // RGB565 framebuffer, in 16-bit words
+  // RGB565 -> RGBA (little-endian Uint32: A B G R)
+  const draw = () => {
+    if (M._emu_fb_dirty()) {
+      const p = M.HEAPU16.subarray(fb, fb + 466 * 466);
+      for (let i = 0; i < p.length; i++) {
+        const v = p[i];
+        const r = (v >> 11) * 255 / 31, g = ((v >> 5) & 63) * 255 / 63, b = (v & 31) * 255 / 31;
+        rgba[i] = 0xff000000 | (b << 16) | (g << 8) | r;
+      }
+      ctx.putImageData(img, 0, 0);
+    }
+    requestAnimationFrame(draw);
+  };
+  requestAnimationFrame(draw);
+  // The finger: pointer events in the canvas's own 466x466 pixels
+  const at = e => {
+    const r = canvas.getBoundingClientRect();
+    return [Math.round((e.clientX - r.left) * 466 / r.width), Math.round((e.clientY - r.top) * 466 / r.height)];
+  };
+  let down = false;
+  canvas.addEventListener('pointerdown', e => { down = true; canvas.setPointerCapture(e.pointerId); M._emu_touch(1, ...at(e)); });
+  canvas.addEventListener('pointermove', e => { if (down) M._emu_touch(1, ...at(e)); });
+  const up = e => { if (!down) return; down = false; M._emu_touch(0, ...at(e)); };
+  canvas.addEventListener('pointerup', up);
+  canvas.addEventListener('pointercancel', up);
+  canvas.addEventListener('contextmenu', e => e.preventDefault());
+})().catch(e => { document.getElementById('status').textContent = 'The emulator could not start: ' + e; });
+</script>
+</body>
+</html>

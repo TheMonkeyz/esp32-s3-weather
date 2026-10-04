@@ -1,0 +1,58 @@
+# The display in the browser (README.md): LVGL + the firmware's screens built to WebAssembly with Emscripten.
+#   make            # in WSL, after `source ~/emsdk/emsdk_env.sh`: build/emu.js + build/emu.wasm, then open index.html
+# LVGL: the firmware's own copy (ESP-IDF's component manager puts it in managed_components); cJSON: ESP-IDF's.
+LVGL ?= ../../managed_components/lvgl__lvgl
+IDF_PATH ?= /mnt/c/Espressif/esp-idf
+CJSON := $(IDF_PATH)/components/json/cJSON
+MAIN := ../../main
+OUT := build
+VERSION ?= $(shell git describe --tags --always 2>/dev/null || echo dev)
+
+FIRMWARE := ui.c slide.c pager.c config.c i18n.c weather.c alerts.c
+EMU := emu_main.c emu_display.c emu_touch.c emu_http.c emu_nvs.c emu_stubs.c
+LV_SRC := $(shell find $(LVGL)/src -name '*.c')
+
+CFLAGS := -O2 -DEMU_BUILD '-DEMU_VERSION="$(VERSION)"' -I. -Ishim -I$(MAIN) -I$(LVGL) -I$(LVGL)/src -I$(CJSON) \
+          -include string.h -include stdint.h '-DLV_CONF_KCONFIG_EXTERNAL_INCLUDE="lv_kconfig.h"' \
+          -DLV_LVGL_H_INCLUDE_SIMPLE -Wno-unused-parameter
+LDFLAGS := -sASYNCIFY -sASYNCIFY_STACK_SIZE=65536 -sALLOW_MEMORY_GROWTH -sSTACK_SIZE=262144 -sENVIRONMENT=web \
+           -sEXPORTED_FUNCTIONS=_main,_emu_fb,_emu_fb_dirty,_emu_touch,_emu_brightness,_malloc,_free \
+           -sEXPORTED_RUNTIME_METHODS=HEAPU8,HEAPU16 -sMODULARIZE -sEXPORT_NAME=WeatherEmu
+
+OBJ := $(patsubst %.c,$(OUT)/fw/%.o,$(FIRMWARE)) $(patsubst %.c,$(OUT)/emu/%.o,$(EMU)) \
+       $(patsubst $(LVGL)/%.c,$(OUT)/lvgl/%.o,$(LV_SRC)) $(OUT)/cjson/cJSON.o $(OUT)/emu/fonts.o
+
+all: $(OUT)/emu.js $(OUT)/index.html
+
+$(OUT)/emu.js: $(OBJ)
+	emcc $(CFLAGS) $(LDFLAGS) $(OBJ) -o $@
+	@ls -l $(OUT)/emu.js $(OUT)/emu.wasm
+
+$(OUT)/index.html: index.html
+	cp $< $@
+
+$(OUT)/fw/%.o: $(MAIN)/%.c lv_kconfig.h
+	@mkdir -p $(dir $@)
+	emcc $(CFLAGS) -c $< -o $@
+$(OUT)/emu/%.o: %.c lv_kconfig.h
+	@mkdir -p $(dir $@)
+	emcc $(CFLAGS) -c $< -o $@
+$(OUT)/emu/fonts.o: $(OUT)/fonts.c
+	emcc $(CFLAGS) -c $< -o $@
+$(OUT)/lvgl/%.o: $(LVGL)/%.c lv_kconfig.h
+	@mkdir -p $(dir $@)
+	@emcc $(CFLAGS) -c $< -o $@
+$(OUT)/cjson/cJSON.o: $(CJSON)/cJSON.c
+	@mkdir -p $(dir $@)
+	emcc $(CFLAGS) -c $< -o $@
+
+# The two TTF fonts the firmware embeds, as arrays (ui.c, EMU_BUILD)
+$(OUT)/fonts.c: $(MAIN)/montserrat.ttf $(MAIN)/syllabics.ttf
+	@mkdir -p $(OUT)
+	python3 -c "import sys; \
+f = lambda n, p: 'const unsigned char %s_start[] = {%s};\nconst unsigned char *const %s_end = %s_start + %d;\n' % (n, ','.join(str(b) for b in open(p, 'rb').read()), n, n, len(open(p, 'rb').read())); \
+open('$@', 'w').write(f('ttf', '$(MAIN)/montserrat.ttf') + f('syl', '$(MAIN)/syllabics.ttf'))"
+
+clean:
+	rm -rf $(OUT)
+.PHONY: all clean
