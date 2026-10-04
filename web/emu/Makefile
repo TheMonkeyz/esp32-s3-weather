@@ -3,7 +3,7 @@
 # LVGL: the firmware's own copy (ESP-IDF's component manager puts it in managed_components); cJSON: ESP-IDF's.
 LVGL ?= ../../managed_components/lvgl__lvgl
 IDF_PATH ?= /mnt/c/Espressif/esp-idf
-CJSON := $(IDF_PATH)/components/json/cJSON
+CJSON ?= $(IDF_PATH)/components/json/cJSON
 MAIN := ../../main
 OUT := build
 VERSION ?= $(shell git describe --tags --always 2>/dev/null || echo dev)

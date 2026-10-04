@@ -40,6 +40,11 @@ After changing LVGL options in `sdkconfig.defaults`: `python web/emu/gen_lv_kcon
 your browser* under its screenshots (hidden on a site built without `--emu`). `index.html` uses the site's font from
 `../fonts/` and its device mockup.
 
+CI (`.github/workflows/firmware.yml`, job `emulator`) builds it on every push, from the latest stable release (the tag
+itself when a stable tag is pushed; a release older than the emulator has no `web/emu`, and then the pushed commit is
+built, said in the log), with LVGL from GitHub at the firmware's version, cJSON 1.7.19 (ESP-IDF 5.5.4's) and
+Emscripten 6.0.11. The `pages` job adds it to the site; if the emulator build fails, the site is published without it.
+
 ## Notes
 
 - A click can start and end between two of LVGL's touch reads: `emu_touch.c` holds a press until LVGL has read it.
@@ -47,4 +52,4 @@ your browser* under its screenshots (hidden on a site built without `--emu`). `i
 - The radar loads the zoom shown only: the display preloads every zoom level's map once, which a public page would turn
   into bulk downloads against OpenStreetMap's tile policy (`radar_preload_start` is never called here).
 - A request starts a `fetch()` and polls for it: an await inside a fiber isn't safe with ASYNCIFY.
-- Not yet: the settings page (the display's own web page), sounds, the alert region map, the CI build.
+- Not yet: the settings page (the display's own web page), sounds, the alert region map.
