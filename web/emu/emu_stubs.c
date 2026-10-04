@@ -89,7 +89,7 @@ void svc_fail(svc_id_t id, const char *why, int64_t t0)
     snprintf(svc[id].why, sizeof(svc[id].why), "%s", why);
 }
 void svc_get(svc_id_t id, svc_info_t *out) { *out = svc[id]; }
-const char *svc_user_agent(void) { return "esp32-s3-weather emulator"; }   // (browsers send their own)
+const char *svc_user_agent(void) { return "esp32-s3-weather emulator"; }   // (not sent: see emu_http.c)
 void svc_probe_stale(void) {}
 
 /* ---------- speaker and microphones: none ---------- */

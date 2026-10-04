@@ -14,11 +14,15 @@ struct esp_http_client {
 };
 
 // A request: fetch() started at once, its result collected by polling (js_done), so a wait works the same in the main
-// loop (a sleep) and in a task (radar.c: back to the main loop until the answer is there)
+// loop (a sleep) and in a task (radar.c: back to the main loop until the answer is there).
+// Identification: a page can't set User-Agent (browsers ignore or refuse it; a custom header would add a CORS preflight
+// that OSM's tile server may refuse), so the firmware's (svc_user_agent) isn't sent. OpenStreetMap's tile policy asks
+// browser apps for a valid Referer instead: sent explicitly here (the site's origin), with the browser's own caching
+// (never no-cache), as the policy also asks.
 EM_JS(int, js_start, (const char *url), {
     const id = (Module.emuReq = Module.emuReq || { n: 0, m: {} }).n++;
     const r = Module.emuReq.m[id] = { done: false, status: -1, body: null };
-    fetch(UTF8ToString(url)).then(async res => { r.body = new Uint8Array(await res.arrayBuffer()); r.status = res.status; })
+    fetch(UTF8ToString(url), { referrerPolicy: 'strict-origin-when-cross-origin', cache: 'default' }).then(async res => { r.body = new Uint8Array(await res.arrayBuffer()); r.status = res.status; })
         .catch(e => console.warn('fetch failed', UTF8ToString(url), e)).finally(() => { r.done = true; });
     return id;
 });

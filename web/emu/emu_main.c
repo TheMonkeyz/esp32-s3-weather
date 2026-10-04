@@ -1,7 +1,9 @@
 // The display in the browser: LVGL and the firmware's own screens (ui.c, slide.c, pager.c), its forecast, air-quality
 // and alerts code (weather.c, alerts.c) and its settings (config.c, i18n.c), with the hardware replaced by the page
 // (emu_display.c, emu_touch.c, emu_http.c, emu_nvs.c, emu_stubs.c). This loop does what main.c does once Wi-Fi is up.
+#include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <emscripten.h>
 #include "lvgl.h"
 #include "esp_timer.h"
@@ -12,13 +14,38 @@
 #include "alerts.h"
 #include "i18n.h"
 #include "freertos/task.h"
+#include "sound.h"
 
 #define REFRESH_US (10 * 60 * 1000000LL)          // as the display: every 10 min
+#define ALERT_MAP_W 300                            // the region map on the alert screen (as main.c)
+#define ALERT_MAP_H 200
+
+// A place given in the page's address (?place=lat,lon,Name), e.g. a link to a place with an alert: it becomes the
+// place shown (kept, as if chosen on the phone)
+EM_JS(int, js_place_param, (char *out, int n), {
+    const v = new URLSearchParams(location.search).get('place');
+    if (!v) return 0;
+    stringToUTF8(v, out, n);
+    return 1;
+});
+
+static void place_from_address(void)
+{
+    char v[96], name[48] = "";
+    double lat, lon;
+    if (!js_place_param(v, sizeof(v)) || sscanf(v, "%lf,%lf,%47[^\n]", &lat, &lon, name) < 2) return;
+    if (lat < -85 || lat > 85 || lon < -180 || lon > 180) return;
+    location_t l = { .lat = lat, .lon = lon };
+    snprintf(l.name, sizeof(l.name), "%s", name[0] ? name : "Here");
+    config_set_location(&l);
+}
 
 static weather_t wx[MAX_PLACES];
 static location_t wx_at[MAX_PLACES];
 static bool have[MAX_PLACES];
 static bool extras_now = true;
+static char map_key[80], map_failed[80];          // the region map shown / failed (as main.c)
+static alerts_seen_t seen;                         // alerts already heard for the place shown (as main.c)
 
 static bool cached(int i, const location_t *loc)
 {
@@ -44,6 +71,9 @@ static void place_select(int i)                    // the pager settled on place
     static const alerts_t none;
     static const air_t no_air = { .us_aqi = -1, .pollen = { -1, -1, -1, -1 } };
     ui_alerts(&none);
+    ui_alert_map(NULL, 0, 0);
+    map_key[0] = map_failed[0] = 0;
+    memset(&seen, 0, sizeof(seen));                // the new place's current alerts don't sound
     ui_air(&no_air);
     extras_now = true;
 }
@@ -67,6 +97,7 @@ int main(void)
     lv_init();
     lv_tick_set_cb(tick);
     display_init();
+    place_from_address();
     ui_init();
     ui_message(tr(T_WEATHER), tr(T_FETCHING));
     ui_on_place_select(place_select);
@@ -99,7 +130,19 @@ int main(void)
         if (shown_once && extras_now && config_get_place(config_active_place(), &loc)) {
             extras_now = false;
             static alerts_t al;
-            if (alerts_fetch(loc.lat, loc.lon, &al)) ui_alerts(&al);
+            if (alerts_fetch(loc.lat, loc.lon, &al)) {
+                ui_alerts(&al);
+                char c = alerts_to_sound(&seen, &al);     // new or worse: a sound, as on the display
+                if (c) sound_alert(c);
+                char key[80];
+                if (al.n) alerts_map_key(&al.a[0], key, sizeof(key));
+                if (!al.n) { if (map_key[0]) { ui_alert_map(NULL, 0, 0); map_key[0] = 0; } }
+                else if (strcmp(map_key, key) && strcmp(map_failed, key)) {   // map of the top alert's region
+                    uint16_t *m = alerts_map(&al.a[0], loc.lat, loc.lon, ALERT_MAP_W, ALERT_MAP_H);
+                    if (m) { ui_alert_map(m, ALERT_MAP_W, ALERT_MAP_H); snprintf(map_key, sizeof(map_key), "%s", key); }
+                    else snprintf(map_failed, sizeof(map_failed), "%s", key);
+                }
+            }
             static air_t air;
             if (air_fetch(&air)) ui_air(&air);
         }

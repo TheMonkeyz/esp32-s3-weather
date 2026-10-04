@@ -14,7 +14,7 @@ unchanged. Only the hardware is replaced:
 | `emu_stubs.c` | Wi-Fi, updates, speaker, microphones, service statuses |
 | `emu_tasks.c` | FreeRTOS tasks: each one an Emscripten fiber, run by the main loop between LVGL frames; a wait inside a task (`vTaskDelay`, `ulTaskNotifyTake`, a request) goes back to the main loop. radar.c's task runs as is |
 | `emu_partition.c` | the radar's map cache partition, in memory |
-| `emu_main.c` | `main.c` after Wi-Fi is up: fetch every place, alerts and air quality, then run LVGL |
+| `emu_main.c` | `main.c` after Wi-Fi is up: fetch every place, alerts (with the region map) and air quality, then run LVGL |
 | `shim/` | ESP-IDF and FreeRTOS headers; `vTaskDelay` hands control back to the browser (`emscripten_sleep`) |
 
 The firmware itself has one `#ifdef EMU_BUILD`: `ui.c` finds its fonts as arrays here (`build/fonts.c`).
@@ -52,4 +52,10 @@ Emscripten 6.0.11. The `pages` job adds it to the site; if the emulator build fa
 - The radar loads the zoom shown only: the display preloads every zoom level's map once, which a public page would turn
   into bulk downloads against OpenStreetMap's tile policy (`radar_preload_start` is never called here).
 - A request starts a `fetch()` and polls for it: an await inside a fiber isn't safe with ASYNCIFY.
-- Not yet: the settings page (the display's own web page), sounds, the alert region map.
+- OpenStreetMap's tile policy: a page can't set `User-Agent` (the firmware's isn't sent); for browser apps the policy
+  asks for a valid `Referer` (sent explicitly: `strict-origin-when-cross-origin`, the site's origin) and the server's
+  caching (the browser's default cache, never `no-cache`). Don't add a custom identifying header: it turns every tile
+  request into a CORS preflight.
+- `?place=lat,lon,Name` in the address makes that the place shown (kept), e.g. a link to a place with an alert:
+  `try/?place=47.574,-59.137,Port%20aux%20Basques`.
+- Not yet: the settings page (the display's own web page), sounds.
