@@ -3,7 +3,8 @@
 #include <stdbool.h>
 #include "esp_err.h"
 typedef struct esp_http_client *esp_http_client_handle_t;
-typedef enum { HTTP_EVENT_ERROR, HTTP_EVENT_ON_CONNECTED, HTTP_EVENT_HEADER_SENT, HTTP_EVENT_ON_HEADER,
+typedef enum { HTTP_EVENT_ERROR, HTTP_EVENT_ON_CONNECTED, HTTP_EVENT_HEADERS_SENT,   // (as ESP-IDF 5.5)
+               HTTP_EVENT_HEADER_SENT = HTTP_EVENT_HEADERS_SENT, HTTP_EVENT_ON_HEADER,
                HTTP_EVENT_ON_DATA, HTTP_EVENT_ON_FINISH, HTTP_EVENT_DISCONNECTED } esp_http_client_event_id_t;
 typedef struct {
     esp_http_client_event_id_t event_id;

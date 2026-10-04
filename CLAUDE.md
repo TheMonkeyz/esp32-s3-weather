@@ -202,7 +202,9 @@ Windows build gets both from `main/idf_component.yml`. `components/dns_server` *
     (g) Host tests (`tests/host`, gcc in WSL) reproduce parser bugs off the board; check the test fails on the old code.
     (h) **Build exactly what you commit.** Group A was split out of a tree that already held the next group's work by
     a script; it dropped an `#include` and v1.12.0-rc.1's CI build failed (no release). To set later work aside, use
-    `git stash push -u`, build the tree as it will be committed, commit, then `git stash pop`.
+    `git stash push -u`, build the tree as it will be committed, commit, then `git stash pop`. And run the host
+    tests (`tests/host`, `make` in WSL) before tagging when a C file they compile changed: v1.12.1-rc.2's release
+    failed on their HTTP client stand-in (`tests/host/shim/`), which lacked an event name the firmware started using.
     (i) **Changes need the display's key** (v1.12.0-rc.3, ARCHITECTURE "Settings / web"): every POST and
     `/api/snapshot` carries `X-Key`. Get it with `echo key > serial.send` (`test: key …`); the harness and
     `tools/snapshot.py` do it themselves. A cached "no key" from the firmware before a flash made the harness skip
