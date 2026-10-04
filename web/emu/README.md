@@ -49,6 +49,12 @@ Emscripten 6.0.11. The `pages` job adds it to the site; if the emulator build fa
 ## Notes
 
 - A click can start and end between two of LVGL's touch reads: `emu_touch.c` holds a press until LVGL has read it.
+  Only a new press is held, never a move, and `touch_forget()` drops it: a drag (slide.c) reads the finger itself, and
+  a press held from its moves reached LVGL after the drag as a tap (every day swipe closed the hourly view, until
+  October 4).
+- A new visitor gets three places: Québec City (the firmware's default), Vancouver and Iqaluit (`default_places()` in
+  `emu_main.c`, added once, to a visitor with a single place; NVS `emu`/`places` remembers it), so dragging up and
+  down between places works from the start, across three time zones.
 - Fetches pause the screen while they wait (one thread); a forecast takes ~0.3-0.5 s.
 - The radar loads the zoom shown only: the display preloads every zoom level's map once, which a public page would turn
   into bulk downloads against OpenStreetMap's tile policy (`radar_preload_start` is never called here).

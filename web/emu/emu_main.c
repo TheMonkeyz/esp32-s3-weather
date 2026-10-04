@@ -15,6 +15,7 @@
 #include "i18n.h"
 #include "freertos/task.h"
 #include "sound.h"
+#include "nvs.h"
 
 #define REFRESH_US (10 * 60 * 1000000LL)          // as the display: every 10 min
 #define ALERT_MAP_W 300                            // the region map on the alert screen (as main.c)
@@ -28,6 +29,25 @@ EM_JS(int, js_place_param, (char *out, int n), {
     stringToUTF8(v, out, n);
     return 1;
 });
+
+// Two more places, so a visitor can drag between places from the start: Vancouver and Iqaluit after the first one
+// (Québec City by default). Added once (NVS "emu"/"places"), to a visitor with a single place: places deleted later stay
+// deleted, and a visitor's own places are kept.
+static void default_places(void)
+{
+    static const location_t more[] = {
+        { .name = "Vancouver", .lat = 49.2827, .lon = -123.1207 },
+        { .name = "Iqaluit", .lat = 63.7467, .lon = -68.5170 },
+    };
+    nvs_handle_t h;
+    uint8_t done = 0;
+    if (nvs_open("emu", NVS_READWRITE, &h) != ESP_OK) return;
+    nvs_get_u8(h, "places", &done);
+    if (!done && config_place_count() == 1)
+        for (int i = 0; i < (int)(sizeof(more) / sizeof(more[0])); i++) config_set_place(config_place_count(), &more[i]);
+    if (!done) { nvs_set_u8(h, "places", 1); nvs_commit(h); }
+    nvs_close(h);
+}
 
 static void place_from_address(void)
 {
@@ -97,6 +117,7 @@ int main(void)
     lv_init();
     lv_tick_set_cb(tick);
     display_init();
+    default_places();
     place_from_address();
     ui_init();
     sound_start();                                 // sound.c: alert sounds through Web Audio (emu_audio.c)
