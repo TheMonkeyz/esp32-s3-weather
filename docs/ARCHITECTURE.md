@@ -439,7 +439,9 @@ order, and ~11 ms on the bus.
   and a red warning listed fifth (the request asks for 20) was dropped: no pill, no sound.
   Fetched with the weather (every 10 min); a failed request keeps the previous alerts.
 - UI: a pill in the alert colour replaces the city name; a tap in the top half opens `scr_alert` (title fixed; map,
-  when/where and text in one scrolling column).
+  when/where and text in one scrolling column). The title wraps within 260 px (the round edge's width at y = 40) and
+  `al_layout()` starts the column under its last line: up to v1.12.1 the column sat at a fixed y = 80, and a two-line
+  title ("Wreckhouse wind warning", October 4) ran into "Until …" or hid its second line behind the map.
 - **Region map** (`alerts_map()`): `items/<id>?f=json` gives the shape (≈4 KB for a county). Coordinates are pulled
   out with a small scanner instead of cJSON (thousands of points would mean thousands of small allocations). The zoom
   is the closest level (4–10) where the region fits around the location in the 300×200 crop, then one level out for

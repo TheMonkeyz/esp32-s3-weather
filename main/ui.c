@@ -1358,15 +1358,30 @@ static lv_obj_t *al_label(lv_obj_t *parent, lv_font_t *f, lv_color_t c)
 }
 
 // Title fixed at the top; when, where and the text scroll together in one column, so a long area name
-// wraps instead of running into the text.
+// wraps instead of running into the text. A long title ("Wreckhouse wind warning", longer in French) wraps too,
+// and the column starts under its last line (al_layout).
+#define AL_TITLE_Y  40
+#define AL_BOX_END  420                                 // the column's bottom edge
+static lv_obj_t *al_box;
+
+static void al_layout(void)
+{
+    lv_obj_update_layout(al_title);
+    int y = AL_TITLE_Y + lv_obj_get_height(al_title) + 9;
+    if (lv_obj_get_y(al_box) == y) return;              // unchanged: nothing to redraw
+    lv_obj_set_y(al_box, y);
+    lv_obj_set_height(al_box, AL_BOX_END - y);
+}
+
 static void alert_create(void)
 {
     scr_alert = base_screen();
-    al_title = label(scr_alert, f_city, C_TEXT, 40);
-    lv_obj_set_width(al_title, 300);
-    lv_obj_t *box = lv_obj_create(scr_alert);
+    al_title = label(scr_alert, f_city, C_TEXT, AL_TITLE_Y);
+    lv_obj_set_width(al_title, 260);                    // the round edge's width at the first line
+    lv_label_set_long_mode(al_title, LV_LABEL_LONG_WRAP);
+    lv_obj_t *box = al_box = lv_obj_create(scr_alert);
     lv_obj_remove_style_all(box);
-    lv_obj_set_size(box, 310, 340);
+    lv_obj_set_size(box, 310, AL_BOX_END - 80);
     lv_obj_align(box, LV_ALIGN_TOP_MID, 0, 80);
     lv_obj_set_flex_flow(box, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_row(box, 4, 0);
@@ -1462,6 +1477,7 @@ void ui_alerts(const alerts_t *al)
     fmt_until(a->ends, until, sizeof(until));
     lv_label_set_text(al_title, a->name[AL]);
     lv_obj_set_style_text_color(al_title, c, 0);
+    al_layout();
     lv_label_set_text_fmt(al_sub, "%s%s%s", until, until[0] && a->area[AL][0] ? "\n" : "", a->area[AL]);
     lv_obj_scroll_to_y(lv_obj_get_parent(al_body), 0, LV_ANIM_OFF);
     static EXT_RAM_BSS_ATTR char body[ALERTS_MAX * 960];
