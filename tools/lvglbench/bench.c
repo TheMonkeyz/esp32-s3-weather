@@ -20,6 +20,10 @@ static const char *TAG = "bench";
 
 extern const uint8_t ttf_start[] asm("_binary_montserrat_ttf_start");
 extern const uint8_t ttf_end[]   asm("_binary_montserrat_ttf_end");
+#if LVGL_VERSION_MAJOR >= 9
+extern const uint8_t syl_start[] asm("_binary_syllabics_ttf_start");
+extern const uint8_t syl_end[]   asm("_binary_syllabics_ttf_end");
+#endif
 
 #if LVGL_VERSION_MAJOR >= 9
 static lv_display_t *disp;
@@ -53,6 +57,7 @@ typedef lv_point_t pt_t;
 
 static const lv_font_t *f_big, *f_time, *f_small;
 static const char *fonts = "ttf";
+static bool wide;                                // labels 400 px wide, text centred (as the app's label())
 static lv_obj_t *scr[4];
 static const char *names[4] = {"blank", "weather", "hourly", "radar"};
 
@@ -62,6 +67,10 @@ static lv_obj_t *label(lv_obj_t *p, const lv_font_t *f, lv_color_t c, const char
     lv_obj_set_style_text_font(l, f, 0);
     lv_obj_set_style_text_color(l, c, 0);
     lv_label_set_text(l, t);
+    if (wide && al == LV_ALIGN_TOP_MID) {
+        lv_obj_set_style_text_align(l, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_width(l, 400);
+    }
     lv_obj_align(l, al, x, y);
     return l;
 }
@@ -221,7 +230,29 @@ static void bench_task(void *arg)
     build();
     ESP_LOGI(TAG, "LVGL %d.%d.%d, %d reps per screen, internal free %u KB", LVGL_VERSION_MAJOR, LVGL_VERSION_MINOR,
              LVGL_VERSION_PATCH, REPS, (unsigned)(heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024));
-    for (int pass = 0; pass < 2; pass++) {
+#if LVGL_VERSION_MAJOR >= 9
+    const int passes = 5;
+#else
+    const int passes = 2;
+#endif
+    for (int pass = 0; pass < passes; pass++) {
+#if LVGL_VERSION_MAJOR >= 9
+    if (pass >= 2) {                                     // the app's label and font details, one at a time
+        lv_obj_t *keep = screen();
+        lv_screen_load(keep);
+        wide = pass == 2 || pass == 4;
+        f_big = mkfont(96);
+        f_time = mkfont(26);
+        f_small = mkfont(20);
+        if (pass >= 3) {                                 // a syllabics fallback behind every size (the app's mkfont)
+            ((lv_font_t *)f_big)->fallback = lv_tiny_ttf_create_data_ex(syl_start, syl_end - syl_start, 120, LV_FONT_KERNING_NONE, 96);
+            ((lv_font_t *)f_time)->fallback = lv_tiny_ttf_create_data_ex(syl_start, syl_end - syl_start, 32, LV_FONT_KERNING_NONE, 96);
+            ((lv_font_t *)f_small)->fallback = lv_tiny_ttf_create_data_ex(syl_start, syl_end - syl_start, 25, LV_FONT_KERNING_NONE, 96);
+        }
+        fonts = pass == 2 ? "ttf+wide" : pass == 3 ? "ttf+fallback" : "ttf+wide+fallback";
+        build();
+    } else
+#endif
     if (pass) {                                          // pass 2: pre-rendered fonts, the font engine out of the way
         lv_obj_t *keep = screen();
 #if LVGL_VERSION_MAJOR >= 9

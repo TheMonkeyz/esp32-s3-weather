@@ -26,6 +26,9 @@ charging (AXP2101).
   screen takes twice the benchmark's 24 ms, so something in the app (the LVGL heap in PSRAM?) costs more than the
   version. Also on v9: LVGL 9.3+ can draw on both cores (`LV_DRAW_SW_DRAW_UNIT_CNT=2`, needs `LV_USE_OS`), and 9.6's
   software renderer is reported 4-25 % faster.
+  Followed up the same day (`tools/lvglbench/README.md`): the gap was the benchmark's simpler screen, not the app (heap
+  in PSRAM, labels, fonts and the other core all ruled out); two draw units gain little on 9.2.2 and lose on 9.6, and
+  9.6 is slower than 9.2.2 on these screens. Decision: stay on LVGL 9.2.2.
 - [ ] **The display in the browser, on the flasher site** (the owner, October 3). The firmware binary can't run in a
   browser (no emulator covers this board's AMOLED panel, touch chip and Wi-Fi), but the same UI code could: LVGL +
   `ui.c` built to WebAssembly from the stable tag, drawing to a canvas, with the mouse as the finger and the browser
