@@ -30,8 +30,15 @@ ESP-IDF's cJSON (`IDF_PATH`, default `/mnt/c/Espressif/esp-idf`). Serve `build/`
 
 After changing LVGL options in `sdkconfig.defaults`: `python web/emu/gen_lv_kconfig.py build/v55/sdkconfig > web/emu/lv_kconfig.h`.
 
+## On the flasher site
+
+`python tools/make_flasher_site.py site --stable dist --emu web/emu/build` copies `index.html`, `emu.js` and
+`emu.wasm` to the site's `try/` and adds `"try": "try/"` to `channels.json`; the flasher page then shows *Try it in
+your browser* under its screenshots (hidden on a site built without `--emu`). `index.html` uses the site's font from
+`../fonts/` and its device mockup.
+
 ## Notes
 
 - A click can start and end between two of LVGL's touch reads: `emu_touch.c` holds a press until LVGL has read it.
 - Fetches pause the screen while they wait (one thread); a forecast takes ~0.3-0.5 s.
-- Not yet: the radar, the settings page (the display's own web page), sounds, the alert region map, the flasher site.
+- Not yet: the radar, the settings page (the display's own web page), sounds, the alert region map, the CI build.

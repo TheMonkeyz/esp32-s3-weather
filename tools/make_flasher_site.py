@@ -14,7 +14,8 @@ Two steps, used by CI (.github/workflows/firmware.yml) and for local previews:
         channels.json, which the page reads to show the Stable / Beta picker, and notes.json, the
         release notes from CHANGELOG.md, which the display shows before installing an update (and the
         page shows for the selected version). fonts/ gets the display's font (main/montserrat.ttf) and
-        its license, so the page matches the display.
+        its license, so the page matches the display. With --emu web/emu/build, try/ gets the display in the
+        browser (web/emu: emu.js, emu.wasm, index.html) and channels.json says so ("try"): the page links to it.
 
 The images stay separate parts on purpose: a single merged image would also overwrite the NVS
 partition (Wi-Fi credentials, location, settings, the TLS certificate) with 0xFF on every update.
@@ -163,6 +164,12 @@ def cmd_site(a):
     channels = {"stable": add_channel(a.out, "stable", a.stable), "beta": None}
     if a.beta:
         channels["beta"] = add_channel(a.out, "beta", a.beta)
+    if a.emu:                                                      # the display in the browser (web/emu)
+        os.makedirs(os.path.join(a.out, "try"), exist_ok=True)
+        for name in ("index.html", "emu.js", "emu.wasm"):
+            shutil.copy2(os.path.join(a.emu, name), os.path.join(a.out, "try", name))
+        channels["try"] = "try/"
+        print(f"  try/: the display in the browser ({os.path.getsize(os.path.join(a.emu, 'emu.wasm')) // 1024} KB)")
     with open(os.path.join(a.out, "channels.json"), "w") as f:
         json.dump(channels, f, indent=2)
         f.write("\n")
@@ -183,6 +190,7 @@ s = sub.add_parser("site", help="web flasher from release folders")
 s.add_argument("--stable", required=True, help="folder with flash-parts.json (a dist folder or a downloaded release)")
 s.add_argument("--beta", default=None, help="same, for the beta channel (optional)")
 s.add_argument("--out", default=os.path.join(ROOT, "_site"))
+s.add_argument("--emu", default=None, help="web/emu/build: the display in the browser, published as try/ (optional)")
 s.add_argument("--changelog", default=os.path.join(ROOT, "CHANGELOG.md"), help="release notes source")
 a = ap.parse_args()
 {"dist": cmd_dist, "site": cmd_site}[a.cmd](a)

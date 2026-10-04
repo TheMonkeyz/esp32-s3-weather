@@ -88,6 +88,10 @@ h1{font-size:clamp(40px,6.2vw,64px);line-height:1.05;letter-spacing:-.025em;marg
 .dots button[aria-pressed=true]::before{width:24px;background:var(--text)}
 .dots button:hover::before{background:#6b7888}
 .dots button[aria-pressed=true]:hover::before{background:var(--text)}
+.try{display:inline-flex;align-items:center;gap:8px;font-size:15px;color:var(--text);text-decoration:none;
+  padding:8px 16px;border:1px solid var(--line2);border-radius:999px;background:#0b1016}
+.try:hover{color:var(--text);border-color:var(--accent)}
+.try[hidden]{display:none}
 
 /* install card */
 .install{position:relative;padding:24px 24px 20px;border-radius:var(--radius);border:1px solid transparent;
@@ -347,6 +351,8 @@ footer p{max-width:62em}
           <button type="button" aria-pressed="false" aria-label="Extras screen"></button>
         </div>
       </div>
+      <a class="try" id="tryLink" href="try/" hidden><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
+        Try it in your browser</a>
     </div>
   </section>
 
@@ -556,6 +562,7 @@ function showNotes() {
 }
 fetch('channels.json', {cache: 'no-store'}).then(r => r.json()).then(ch => {
   channels = ch;
+  $('tryLink').hidden = !ch.try;                       // the display in the browser, when the site has it (try/)
   $('verStable').textContent = ch.stable.version;
   if (ch.beta) {
     $('verBeta').textContent = ch.beta.version;
