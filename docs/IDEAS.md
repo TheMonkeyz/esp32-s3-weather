@@ -14,7 +14,22 @@ charging (AXP2101).
 
 - [ ] **Home Assistant (MQTT)** — publish room presence from the microphones; show an indoor temperature.
 
-## Done
+## To evaluate
+
+- [ ] **LVGL 8 instead of 9** (the owner, October 3: "I've read that LVGL 8 is better than 9"). Test it rather than
+  assume: LVGL 9.2 can't redraw a full screen in less than ~65-85 ms here (docs/TESTING.md §8), and v8 is said to be
+  faster on small MCUs. A port touches every `lv_*` call (v9 renamed many), `slide.c`'s use of LVGL internals
+  (layers, draw buffers, `lv_display_t`), `lvgl_mem.c` and the fonts. Measure first: the render bench and a
+  full-screen redraw of each screen on v8 against v9 in a throwaway build, before deciding.
+- [ ] **The display in the browser, on the flasher site** (the owner, October 3). The firmware binary can't run in a
+  browser (no emulator covers this board's AMOLED panel, touch chip and Wi-Fi), but the same UI code could: LVGL +
+  `ui.c` built to WebAssembly from the stable tag, drawing to a canvas, with the mouse as the finger and the browser
+  fetching the forecast and radar (Open-Meteo, GeoMet, the alerts API and OSM tiles all send
+  `Access-Control-Allow-Origin: *`, checked October 3). Mind OSM's tile policy for a public demo (cache, low zoom).
+  Cirkit Designer's ESP32-S3 simulator (Rust/WASM, runs real firmware) was looked at on October 3: Arduino sketches
+  only (ESP-IDF "coming soon"), plain SPI/I2C devices but not this board's QSPI AMOLED, CST9217 touch or I2S audio,
+  nothing said about embedding. Worth a second look once it runs ESP-IDF projects.
+
 
 - [x] **First setup with Easy Connect opens the settings page** — when a brand-new display gets its Wi-Fi from
   Android Easy Connect, take the phone to the settings page (place, units) on its own, as the setup network's
