@@ -10,6 +10,10 @@ their own `## vX.Y.Z-rc.N` section. Those are shown only to Beta users, while th
 list everything again. (Three tags have no section: v1.3.0-rc.1; and v1.12.0-rc.1 and v1.12.1-rc.2, whose builds failed and were published
 as v1.12.0-rc.2 and v1.12.1-rc.3.)
 
+## v1.12.3-rc.1 - 2026-10-04
+- Try it in your browser: swiping between days in the hourly view no longer closes it, and Vancouver and Iqaluit are there next to Québec City, to swipe between places from the start.
+- Behind the scenes: a new automatic test for the alert screen, and clearer messages in the display's log when the forecast service has trouble. Nothing changes on the display itself.
+
 ## v1.12.2 - 2026-10-04
 - A long alert name that takes two lines on the alert screen no longer overlaps the time and the region under it, or hides behind the map.
 
