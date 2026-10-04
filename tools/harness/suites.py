@@ -135,6 +135,29 @@ def every_screen(ctx):
     ctx.note('screens: ' + ', '.join(sorted(ctx.snapped)) + ' (+ settings1..3, phone, setup0/1, update)')
 
 
+@test('navigation')
+def alert_layout(ctx):
+    """The alert screen with long titles (console "alert sample"): a two-line title pushes the lines under it down.
+    Real alerts are rare at the board's place, so the console lays the screen out with names Environment Canada used
+    ("Wreckhouse wind warning" ran into "Until ..." and hid behind the map up to v1.12.1); the pill isn't touched."""
+    b = ctx.board
+    if 'alert sample' not in b.cmd('help', r'test: commands: (.*)').group(1):
+        ctx.note('alert layout not checked: firmware without the console command "alert sample" (v1.12.2 and older)')
+        return
+    try:
+        for which in ('en', 'fr', 'max'):
+            m = b.cmd(f'alert sample {which}',
+                      r'test: alert sample \S+ title_y=(\d+) title_h=(\d+) lines=(\d+) box_y=(\d+)')
+            ty, th, lines, by = (int(g) for g in m.groups())
+            b.snap('alert', ctx.out(f'alert_{which}.png'))
+            check(by >= ty + th, f'alert sample {which}: the column starts at y={by}, inside the title ({ty}+{th})')
+            check(lines <= 3, f'alert sample {which}: title on {lines} lines')
+            check(by <= 200, f'alert sample {which}: the column starts at y={by}, too low to read the text')
+            ctx.note(f'alert title "{which}": {lines} line(s), column at y={by}')
+    finally:
+        b.cmd('alert sample off', r'test: alert sample off')
+
+
 # ---------------------------------------------------------------- web
 
 @test('navigation')

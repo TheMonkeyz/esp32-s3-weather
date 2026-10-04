@@ -226,6 +226,13 @@ static void run(char *line)
         slide_picture_check_async();
         display_unlock();
         ESP_LOGI(TAG, "ok pictest (result: \"slide: pictest\" line)");
+    } else if (!strcmp(c, "alert") && argc == 3 && !strcmp(argv[1], "sample")) {   // the alert screen's layout
+        if (!display_lock(2000)) { ESP_LOGW(TAG, "error alert: display busy for 2 s (send 'where')"); return; }
+        int th, lines, by;
+        bool ok = ui_alert_sample(argv[2], &th, &lines, &by);
+        display_unlock();
+        if (!ok) { ESP_LOGW(TAG, "error alert sample: en, fr, max or off"); return; }
+        ESP_LOGI(TAG, "alert sample %s title_y=40 title_h=%d lines=%d box_y=%d", argv[2], th, lines, by);
     } else if (!strcmp(c, "dirty")) {                     // as new data does: hidden pictures out of date, shown redrawn
         if (!display_lock(2000)) { ESP_LOGW(TAG, "error dirty: display busy for 2 s"); return; }
         slide_cache_dirty_hidden(NULL);
@@ -260,7 +267,7 @@ static void run(char *line)
     } else if (!strcmp(c, "help")) {
         ESP_LOGI(TAG, "commands: ping, screen, tap X Y, press X Y [ms], swipe left|right|up|down, "
                       "drag X1 Y1 X2 Y2 [ms], wake, presence, key, hint next-boot, wifi status|offline|offline-boot|online, portal windows-quiet, "
-                      "fps [reset], page, pictest, dirty, where, memspeed, heap, bench, reboot");
+                      "fps [reset], page, pictest, alert sample en|fr|max|off, dirty, where, memspeed, heap, bench, reboot");
     } else {
         ESP_LOGW(TAG, "error unknown command '%s' (help lists them)", c);
         return;

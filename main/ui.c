@@ -1368,7 +1368,8 @@ static void al_layout(void)
 {
     lv_obj_update_layout(al_title);
     int y = AL_TITLE_Y + lv_obj_get_height(al_title) + 9;
-    if (lv_obj_get_y(al_box) == y) return;              // unchanged: nothing to redraw
+    // unchanged: nothing to redraw (the y set, not lv_obj_get_y(): that is the last layout's, until the next one)
+    if (lv_obj_get_style_y(al_box, LV_PART_MAIN) == y) return;
     lv_obj_set_y(al_box, y);
     lv_obj_set_height(al_box, AL_BOX_END - y);
 }
@@ -1488,6 +1489,41 @@ void ui_alerts(const alerts_t *al)
     }
     lv_label_set_text(al_body, body);
     display_unlock();
+}
+
+// Test console ("alert sample en|fr|max|off"): the alert screen laid out with long names Environment Canada used
+// (October 4, 2026; "max" fills the 47 characters alert_t.name holds), whatever the alerts are. The pill and the alerts
+// held are left alone, so the display doesn't show a fake alert; "off" puts the screen back (lock held).
+bool ui_alert_sample(const char *which, int *title_h, int *lines, int *box_y)
+{
+    static const char *const samples[][3] = {             // which, title, when + where (test data, not translated)
+        { "en", "Wreckhouse wind warning", "Until Mon 21:30\nChannel-Port aux Basques and vicinity" },
+        { "fr", "Avertissement de vent Les Suêtes", "Jusqu'à Lun. 21:30\nComté d'Inverness - Mabou et au nord" },
+        { "max", "Avertissement de pluie verglaçante et de neige", "Jusqu'à Lun. 21:30\nVille de Québec" },
+    };
+    if (!strcmp(which, "off")) {
+        if (alerts.n) ui_alerts(&alerts);                   // (redraws from the alerts held)
+        else {
+            slide_cache_dirty(NULL);
+            lv_label_set_text(al_title, ""); lv_label_set_text(al_sub, ""); lv_label_set_text(al_body, "");
+        }
+        *title_h = *lines = *box_y = 0;
+        return true;
+    }
+    for (int i = 0; i < (int)(sizeof(samples) / sizeof(samples[0])); i++) {
+        if (strcmp(which, samples[i][0])) continue;
+        slide_cache_dirty(NULL);                            // a cached picture of the alert screen is out of date
+        lv_label_set_text(al_title, samples[i][1]);
+        lv_label_set_text(al_sub, samples[i][2]);
+        lv_label_set_text(al_body, "Sample text for the layout test (test console).");
+        al_layout();
+        *title_h = lv_obj_get_height(al_title);
+        *lines = *title_h / lv_font_get_line_height(f_city);
+        lv_obj_update_layout(al_box);                       // (lv_obj_get_y() is the last layout's until then)
+        *box_y = lv_obj_get_y(al_box);
+        return true;
+    }
+    return false;
 }
 
 /* ---------- Extras page (swipe right from the weather screen) ----------

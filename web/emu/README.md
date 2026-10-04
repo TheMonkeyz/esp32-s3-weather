@@ -32,6 +32,10 @@ It needs LVGL where ESP-IDF's component manager puts it (`managed_components/lvg
 ESP-IDF's cJSON (`IDF_PATH`, default `/mnt/c/Espressif/esp-idf`). Serve `build/` over HTTP (`.claude/launch.json`:
 "emulator", or `python -m http.server -d web/emu/build`); `file://` can't load the WebAssembly.
 
+From a git worktree (no `managed_components` of its own): `make -j8 LVGL=<main checkout>/managed_components/lvgl__lvgl`.
+Port 8765 (`.claude/launch.json`) may already be serving another session's build: serve this one on another port
+(`python -m http.server 8767 -d web/emu/build`), or the page shows the other checkout's firmware.
+
 After changing LVGL options in `sdkconfig.defaults`: `python web/emu/gen_lv_kconfig.py build/v55/sdkconfig > web/emu/lv_kconfig.h`.
 
 ## On the flasher site

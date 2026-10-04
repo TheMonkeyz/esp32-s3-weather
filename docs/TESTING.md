@@ -108,6 +108,16 @@ python tools/snapshot.py <ip> weather --key <key>   # the key: see §1 (else $WE
 - **Alert sounds:** `POST /api/sound {"test":1}` (2, 3) plays the yellow / orange / red sound; the log shows
   `sound: alert sound, level N`. Check the microphones still measure afterwards (`presence: level` lines). The
   "new alert" decision (once per alert, quiet hours, red exception) needs fake alerts: see CLAUDE.md.
+- **The alert screen with a real alert** (text, layout, region map): find a place under an alert with
+  `https://api.weather.gc.ca/collections/weather-alerts/items?f=json&lang=en` (each feature's `alert_name_en/_fr`,
+  `feature_name_en` and a point of its polygon; sort by the French name's length for layout checks).
+  - Emulator: open it with `?place=lat,lon,Name` there (web/emu/README.md) and tap the pill.
+  - Board: a throwaway build (never committed) with that point in `main.c` instead of `loc.lat, loc.lon` in both
+    `alerts_fetch()` and `alerts_map()`: Environment Canada's real texts in both languages and the real region map.
+    Wait for `app: alert map drawn`, then `snapshot.py <ip> alert`; French: `POST /api/units {"lang":"fr"}` (a code,
+    not a number), ~20 s for the refetch, snapshot, put the language back. Done October 4 with "Wreckhouse wind
+    warning" (Channel-Port aux Basques, 47.5745,-59.13).
+  - The harness's `alert_layout` checks the layout without an alert (console `alert sample`, §6).
 - **Presence (dim / off / wake):** shorten the delays through the API for the test
   (`POST /api/presence {"dim_s":10,"off_s":20}`), have the user stay quiet and still, then restore the values read
   from `GET /api/presence` beforehand. Look for `presence: ACTIVE -> DIM`, `DIM -> OFF`, `picked up / moved`.
@@ -179,7 +189,7 @@ the window at the end.
 | Suite | What it proves |
 |---|---|
 | `smoke` | console answers, firmware version, Wi-Fi up, settings API |
-| `navigation` | swipes and taps land on the right screen (weather ↔ extras ↔ status, radar, Settings by long-press, hourly by tapping a day); the ends bounce back, a short slow drag snaps back; places (from the first place: drag up / down, the first one bounces) and hourly days (left / right) change by one (`page`); snapshot of every screen incl. `settings1..3`, `phone`, `setup0/1`, `update`; `hourly_touches`: three quick short flicks scroll the hours list, and a day swipe made while it coasts changes the day |
+| `navigation` | swipes and taps land on the right screen (weather ↔ extras ↔ status, radar, Settings by long-press, hourly by tapping a day); the ends bounce back, a short slow drag snaps back; places (from the first place: drag up / down, the first one bounces) and hourly days (left / right) change by one (`page`); snapshot of every screen incl. `settings1..3`, `phone`, `setup0/1`, `update`; `hourly_touches`: three quick short flicks scroll the hours list, and a day swipe made while it coasts changes the day; `alert_layout`: the alert screen with long titles in English, French and the longest a name can be (console `alert sample`), the column under a two-line title starts below it (snapshots `alert_en/fr/max.png`) |
 | `web` | the Playwright suite (`tools/webtest`) and the live API on the board; the page must arrive whole; who may change things (`main/web.c`): 403 for a POST over plain HTTP, 302 to the device itself, 401 without or with a wrong key, 415 for a non-JSON POST, 421 for another Host, 401 for a snapshot without the key, 200 with it |
 | `perf` | boot stage times and internal RAM, heap low points, full-screen render bench (best of 3), radar first frame and lightning, frame rate of each move (`fps`: screen to screen, places, days, the hourly list and Settings scrolling; for drags also `drag_fps` and `drag_start_ms` from slide.c's log line, a place drag back 2 s after a switch, and a place drag 0.8 s after new data: console `dirty`); compared with `tools/harness/baseline.json`. The radar animation plays at 3 fps by design: not measured |
 | `presence` | dim, off and wake with short delays set through the API (the user's put back after, even on a failure): ACTIVE → DIM → OFF → `wake`; three fades up during a swipe (the brightness command from core 0 while LVGL sends bands from core 1), and `where` must show `raw_phase=0` after each |
@@ -187,6 +197,24 @@ the window at the end.
 | `wifi_runtime` | network lost while running: retries go on; long-press opens setup and **pauses them**; tap closes it; reconnects, and an update check follows at once |
 | `wifi_setup` | start-up with the network unreachable (the October 1 path): setup after 30 s, no retries while open, **the PC joins the setup network like a phone** (DNS answers every name with 192.168.4.1, the Android check gets the 302, the page and `/api/config` load without the places' coordinates, the Sound card's API answers, a snapshot is refused, the PC is not dropped for 15 s; it joins with this display's own password, read from `wifi status`), Easy Connect listens on the router's 2.4 GHz channel as the PC sees it, the setup network works again after Easy Connect (DNS socket bug), tap → 30 s retry → setup again, network back → weather screen. `--phone` adds the real Easy Connect scan |
 | `wifi_setup` (2) | `setup_stops_opening_by_itself`: a boot that can't reach the network with a 60 s automatic-setup window (`wifi offline-boot-short`; 15 min normally): setup opens by itself, then no longer after the window (*Still trying*), a long-press still opens it, recovery |
+
+**Ad-hoc scripts** use the harness's classes, which find the helper's files and carry the display's key:
+
+```python
+import sys; sys.path.insert(0, 'tools/harness')
+from board import Board, Log
+b = Board('<ip>', Log())                     # or harness.find_ip(log) from a fresh log
+b.api('/api/config')['units']                # GET; b.api(path, {...}) POSTs with X-Key
+b.snap('alert', 'alert.png')                 # /api/snapshot to PNG
+b.start_log(900, r'C:\full\path\weather_amoled.bin')   # flash (md5 checked) + log window; None = restart
+b.cmd('screen', r'test: screen (\S+)')       # test console (needs the log window)
+```
+
+**From a git worktree** (`.claude/worktrees/…`): the flash helper and its files (`flash.request`, `serial_live.txt`,
+`serial.send`) are in the main checkout, and the harness finds them from its own location. Build in the worktree, then
+run the **main checkout's** `tools/harness/harness.py --flash <absolute path to the worktree's build\v55\weather_amoled.bin>`
+(same harness code when both are on the same commit). A new worktree has no `managed_components`: its first
+`idf.py` build downloads them; the emulator build takes LVGL from the main checkout (web/emu/README.md).
 
 How it works:
 
@@ -196,7 +224,9 @@ How it works:
   reset), `where` (display breadcrumbs, takes no lock), `memspeed` (PSRAM / internal copy speeds), `heap`, `bench`,
   `profile` (§8, profiler builds only), `pictest` (slide.c's picture of the screen shown against a fresh rendering:
   `slide: pictest rows_differ=N first=Y`), `dirty` (what new data does to slide.c's pictures: every hidden one out
-  of date and the screen shown redrawn), `reboot`, `help`. Answers are log lines `test: …`. Simulated touches enter at the
+  of date and the screen shown redrawn), `alert sample en|fr|max|off` (the alert screen laid out with long sample
+  names, pill and alerts held untouched: `test: alert sample en title_y=40 title_h=62 lines=2 box_y=111`; `off` puts it
+  back), `reboot`, `help`. Answers are log lines `test: …`. Simulated touches enter at the
   touch controller read (`touch_inject()`), so wake-up, long-press and gestures run the real code. `wifi offline`
   points the station at a network that doesn't exist (saved credentials untouched); `offline-boot` does it for the
   next boot only (flag in RTC memory) so the real start-up path runs.

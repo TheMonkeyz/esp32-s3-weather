@@ -25,6 +25,7 @@ void ui_place_state(int i, bool ok);
 void ui_first_run(bool location, bool gestures);
 void ui_pages(int *place, int *day, int *places, int *days);   // test console (display lock held)
 const char *ui_screen_name(void);        // "weather", "radar", "settings", "setup0"... (display lock held)
+bool ui_alert_sample(const char *which, int *title_h, int *lines, int *box_y);   // test console (lock held)
 void ui_alerts(const alerts_t *al);     // weather alerts for the location (empty = none)
 void ui_alert_map(uint16_t *buf, int w, int h);   // region map for the alert screen (takes ownership; NULL hides)
 void ui_air(const air_t *a);            // air quality for the extras page

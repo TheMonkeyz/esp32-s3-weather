@@ -67,7 +67,8 @@ Windows build gets both from `main/idf_component.yml`. `components/dns_server` *
   before asking the user for a photo. The full routine is in **docs/TESTING.md**. (The first session dumped a
   1/3-scale framebuffer as base64 between `IMGDUMP` and `IMGEND` in the serial log; it found the PNG decoding bug and
   the CARTO "API KEY REQUIRED" tiles. That code is gone; the endpoint replaces it.)
-- **Harness: `python tools/harness/harness.py`** (docs/TESTING.md §6) runs everything without the user: screens by
+- **Harness: `python tools/harness/harness.py`** (docs/TESTING.md §6; from a git worktree, run the main
+  checkout's harness with `--flash <absolute path>`, and use its `Board` class for ad-hoc scripts) runs everything without the user: screens by
   simulated touch, the settings page, performance against `tools/harness/baseline.json`, and the offline Wi-Fi
   setup paths with the PC's Wi-Fi card acting as a phone. Run it before calling a change done, and add a test when
   a bug is fixed. Only Easy Connect's final phone scan needs a person (`--phone`). Testing a release: `--expect
@@ -231,6 +232,13 @@ Windows build gets both from `main/idf_component.yml`. `components/dns_server` *
     (`slide_scroll_on_sideways`), vertical follows from where it went down. `touch_forget()` bumps a counter so
     `drag_read` takes a finger already down after a drag or scroll for a new press (it was ignored).
     (d) The scroll log line counts the finger's lifts, silences, re-touches and bridged brief "ups": read it first.
+24. **A label that can wrap must not have a fixed-position neighbour below it** (v1.12.2, October 4): the alert title
+    wrapped ("Wreckhouse wind warning") while the column under it stayed at y = 80, so it ran into "Until …" and hid
+    behind the region map. Wrap to the round edge's width at the label's own height (260 px at y = 40) and lay what
+    follows from the label's real height (`al_layout()`). Environment Canada's and French texts are longer than you
+    expect; the harness's `alert_layout` checks it with sample names (console `alert sample`). Its first run caught
+    a measuring slip: `lv_obj_get_y()` is the last layout's position until the next one (it said 80 after
+    `lv_obj_set_y(111)`); compare with `lv_obj_get_style_y()`, or `lv_obj_update_layout()` before reading.
 
 - Internal RAM ran out silently (10 KB free, 0 KB min ever) because LVGL's small allocations went to internal RAM
   first. Fixed with `lvgl_mem.c` (LVGL heap in PSRAM). Font kerning cost 71% of render time; fonts now use
@@ -307,6 +315,9 @@ Windows build gets both from `main/idf_component.yml`. `components/dns_server` *
   `sound: new alert (o): quiet hours` (if inside quiet hours), at 60 s only alert 2 sounds (`alert sound, level
   2`); the fake ids' region maps give HTTP 404 (expected). Then restore quiet hours, `git checkout main/main.c`, and
   flash a clean build.
+- **The alert screen with a real alert** (October 4): no fakes needed. Find a place under a long-named alert with
+  the Environment Canada API, open the emulator there (`?place=`), or point a throwaway build's `alerts_fetch()` and
+  `alerts_map()` at it: real texts in both languages and the real map (docs/TESTING.md §4).
 - **Lightning on the radar** (October 1): GeoMet `Lightning_2.5km_Density`, see ARCHITECTURE "Radar". There was no
   lightning in Canada while it was built: test with fake marks at fixed **lat/lon** in a throwaway build (fixed
   screen positions don't follow zooms, which looked like a bug). Check `diag: heap` against a baseline build after
