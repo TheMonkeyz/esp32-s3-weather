@@ -1,9 +1,10 @@
-// esp_http_client for the browser: a request is a fetch(), awaited through ASYNCIFY, so the firmware's own forecast,
-// air-quality and alerts code (weather.c, alerts.c) runs unchanged. The services all allow cross-origin requests.
+// esp_http_client for the browser: a request is a fetch(), so the firmware's own forecast, air-quality, alerts and
+// radar code (weather.c, alerts.c, radar.c) runs unchanged. The services all allow cross-origin requests.
 #include <stdlib.h>
 #include <string.h>
 #include <emscripten.h>
 #include "esp_http_client.h"
+#include "freertos/task.h"
 
 struct esp_http_client {
     char *url;
@@ -12,24 +13,35 @@ struct esp_http_client {
     int status;
 };
 
-// The body in a malloc'ed buffer (NULL: no answer); *status = HTTP status (-1: no answer), *len = its length
-EM_ASYNC_JS(uint8_t *, js_fetch, (const char *url, int *status, int *len), {
-    try {
-        const r = await fetch(UTF8ToString(url));
-        const b = new Uint8Array(await r.arrayBuffer());
-        const p = _malloc(b.length + 1);
-        HEAPU8.set(b, p);
-        HEAPU8[p + b.length] = 0;
-        setValue(status, r.status, 'i32');
-        setValue(len, b.length, 'i32');
-        return p;
-    } catch (e) {
-        console.warn('fetch failed', UTF8ToString(url), e);
-        setValue(status, -1, 'i32');
-        setValue(len, 0, 'i32');
-        return 0;
-    }
+// A request: fetch() started at once, its result collected by polling (js_done), so a wait works the same in the main
+// loop (a sleep) and in a task (radar.c: back to the main loop until the answer is there)
+EM_JS(int, js_start, (const char *url), {
+    const id = (Module.emuReq = Module.emuReq || { n: 0, m: {} }).n++;
+    const r = Module.emuReq.m[id] = { done: false, status: -1, body: null };
+    fetch(UTF8ToString(url)).then(async res => { r.body = new Uint8Array(await res.arrayBuffer()); r.status = res.status; })
+        .catch(e => console.warn('fetch failed', UTF8ToString(url), e)).finally(() => { r.done = true; });
+    return id;
 });
+EM_JS(int, js_done, (int id), { return Module.emuReq.m[id].done ? 1 : 0; });
+// The body in a malloc'ed buffer (NULL: no answer), *status, *len; the request is forgotten
+EM_JS(uint8_t *, js_take, (int id, int *status, int *len), {
+    const r = Module.emuReq.m[id];
+    delete Module.emuReq.m[id];
+    setValue(status, r.status, 'i32');
+    setValue(len, r.body ? r.body.length : 0, 'i32');
+    if (!r.body) return 0;
+    const p = _malloc(r.body.length + 1);
+    HEAPU8.set(r.body, p);
+    HEAPU8[p + r.body.length] = 0;
+    return p;
+});
+
+static uint8_t *js_fetch(const char *url, int *status, int *len)
+{
+    int id = js_start(url);
+    while (!js_done(id)) vTaskDelay(5);
+    return js_take(id, status, len);
+}
 
 esp_http_client_handle_t esp_http_client_init(const esp_http_client_config_t *cfg)
 {

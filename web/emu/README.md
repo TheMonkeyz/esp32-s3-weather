@@ -1,8 +1,9 @@
 # The display in the browser
 
 The firmware's own screens, compiled to WebAssembly: LVGL 9.2.2 with the display's settings (`lv_kconfig.h`, generated
-from its sdkconfig), `ui.c`, `slide.c`, `pager.c`, `config.c`, `i18n.c`, and the forecast, air-quality and alerts code
-(`weather.c`, `alerts.c`), all unchanged. Only the hardware is replaced:
+from its sdkconfig), `ui.c`, `slide.c`, `pager.c`, `config.c`, `i18n.c`, the forecast, air-quality and alerts code
+(`weather.c`, `alerts.c`) and the radar (`radar.c`, `png_rows.c` with miniz's tinfl as the chip's ROM has), all
+unchanged. Only the hardware is replaced:
 
 | File | Stands in for |
 |---|---|
@@ -10,7 +11,9 @@ from its sdkconfig), `ui.c`, `slide.c`, `pager.c`, `config.c`, `i18n.c`, and the
 | `emu_touch.c` | the touch chip: the mouse or a finger on the canvas |
 | `emu_http.c` | `esp_http_client`: `fetch()`, awaited with ASYNCIFY (Open-Meteo, GeoMet and the alerts API allow it) |
 | `emu_nvs.c` | NVS: the settings, kept in the page's `localStorage` |
-| `emu_stubs.c` | Wi-Fi, updates, speaker, microphones, service statuses, the radar (not in the browser yet) |
+| `emu_stubs.c` | Wi-Fi, updates, speaker, microphones, service statuses |
+| `emu_tasks.c` | FreeRTOS tasks: each one an Emscripten fiber, run by the main loop between LVGL frames; a wait inside a task (`vTaskDelay`, `ulTaskNotifyTake`, a request) goes back to the main loop. radar.c's task runs as is |
+| `emu_partition.c` | the radar's map cache partition, in memory |
 | `emu_main.c` | `main.c` after Wi-Fi is up: fetch every place, alerts and air quality, then run LVGL |
 | `shim/` | ESP-IDF and FreeRTOS headers; `vTaskDelay` hands control back to the browser (`emscripten_sleep`) |
 
@@ -41,4 +44,7 @@ your browser* under its screenshots (hidden on a site built without `--emu`). `i
 
 - A click can start and end between two of LVGL's touch reads: `emu_touch.c` holds a press until LVGL has read it.
 - Fetches pause the screen while they wait (one thread); a forecast takes ~0.3-0.5 s.
-- Not yet: the radar, the settings page (the display's own web page), sounds, the alert region map, the CI build.
+- The radar loads the zoom shown only: the display preloads every zoom level's map once, which a public page would turn
+  into bulk downloads against OpenStreetMap's tile policy (`radar_preload_start` is never called here).
+- A request starts a `fetch()` and polls for it: an await inside a fiber isn't safe with ASYNCIFY.
+- Not yet: the settings page (the display's own web page), sounds, the alert region map, the CI build.

@@ -8,11 +8,12 @@ MAIN := ../../main
 OUT := build
 VERSION ?= $(shell git describe --tags --always 2>/dev/null || echo dev)
 
-FIRMWARE := ui.c slide.c pager.c config.c i18n.c weather.c alerts.c
-EMU := emu_main.c emu_display.c emu_touch.c emu_http.c emu_nvs.c emu_stubs.c
+FIRMWARE := ui.c slide.c pager.c config.c i18n.c weather.c alerts.c radar.c png_rows.c
+EMU := emu_main.c emu_display.c emu_touch.c emu_http.c emu_nvs.c emu_stubs.c emu_tasks.c emu_partition.c
 LV_SRC := $(shell find $(LVGL)/src -name '*.c')
 
-CFLAGS := -O2 -DEMU_BUILD '-DEMU_VERSION="$(VERSION)"' -I. -Ishim -I$(MAIN) -I$(LVGL) -I$(LVGL)/src -I$(CJSON) \
+MINIZ := $(OUT)/miniz
+CFLAGS := -O2 -DEMU_BUILD '-DEMU_VERSION="$(VERSION)"' -I. -Ishim -I$(MAIN) -I$(LVGL) -I$(LVGL)/src -I$(CJSON) -I$(MINIZ) \
           -include string.h -include stdint.h '-DLV_CONF_KCONFIG_EXTERNAL_INCLUDE="lv_kconfig.h"' \
           -DLV_LVGL_H_INCLUDE_SIMPLE -Wno-unused-parameter
 LDFLAGS := -sASYNCIFY -sASYNCIFY_STACK_SIZE=65536 -sALLOW_MEMORY_GROWTH -sSTACK_SIZE=262144 -sENVIRONMENT=web \
@@ -20,7 +21,7 @@ LDFLAGS := -sASYNCIFY -sASYNCIFY_STACK_SIZE=65536 -sALLOW_MEMORY_GROWTH -sSTACK_
            -sEXPORTED_RUNTIME_METHODS=HEAPU8,HEAPU16 -sMODULARIZE -sEXPORT_NAME=WeatherEmu
 
 OBJ := $(patsubst %.c,$(OUT)/fw/%.o,$(FIRMWARE)) $(patsubst %.c,$(OUT)/emu/%.o,$(EMU)) \
-       $(patsubst $(LVGL)/%.c,$(OUT)/lvgl/%.o,$(LV_SRC)) $(OUT)/cjson/cJSON.o $(OUT)/emu/fonts.o
+       $(patsubst $(LVGL)/%.c,$(OUT)/lvgl/%.o,$(LV_SRC)) $(OUT)/cjson/cJSON.o $(OUT)/emu/fonts.o $(OUT)/miniz/miniz.o
 
 all: $(OUT)/emu.js $(OUT)/index.html
 
@@ -31,7 +32,7 @@ $(OUT)/emu.js: $(OBJ)
 $(OUT)/index.html: index.html
 	cp $< $@
 
-$(OUT)/fw/%.o: $(MAIN)/%.c lv_kconfig.h
+$(OUT)/fw/%.o: $(MAIN)/%.c lv_kconfig.h | $(MINIZ)/miniz.h
 	@mkdir -p $(dir $@)
 	emcc $(CFLAGS) -c $< -o $@
 $(OUT)/emu/%.o: %.c lv_kconfig.h
@@ -44,6 +45,15 @@ $(OUT)/lvgl/%.o: $(LVGL)/%.c lv_kconfig.h
 	@emcc $(CFLAGS) -c $< -o $@
 $(OUT)/cjson/cJSON.o: $(CJSON)/cJSON.c
 	@mkdir -p $(dir $@)
+	emcc $(CFLAGS) -c $< -o $@
+
+# miniz 3.0.2 (MIT): its tinfl is what png_rows.c finds in the ESP32-S3's ROM (as tests/host). Downloaded once.
+$(MINIZ)/miniz.c: $(MINIZ)/miniz.h
+$(MINIZ)/miniz.h:
+	@mkdir -p $(MINIZ)
+	curl -fsSL -o $(OUT)/miniz.zip https://github.com/richgel999/miniz/releases/download/3.0.2/miniz-3.0.2.zip
+	python3 -c "import zipfile; zipfile.ZipFile('$(OUT)/miniz.zip').extractall('$(MINIZ)', ['miniz.c', 'miniz.h'])"
+$(OUT)/miniz/miniz.o: $(MINIZ)/miniz.c
 	emcc $(CFLAGS) -c $< -o $@
 
 # The two TTF fonts the firmware embeds, as arrays (ui.c, EMU_BUILD)

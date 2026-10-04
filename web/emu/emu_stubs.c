@@ -11,7 +11,6 @@
 #include "sound.h"
 #include "presence.h"
 #include "web.h"
-#include "radar.h"
 #include "alerts.h"
 #include "display.h"
 
@@ -119,34 +118,3 @@ bool presence_touch(void) { return false; }
 bool presence_screen_off(void) { return false; }
 
 const char *web_key(void) { return "browser"; }
-
-/* ---------- radar: not in the browser yet ---------- */
-lv_obj_t *radar_create(lv_font_t *f_title, lv_font_t *f_small, lv_font_t *f_micro)
-{
-    (void)f_micro;
-    lv_obj_t *s = lv_obj_create(NULL);
-    lv_obj_set_style_bg_color(s, lv_color_black(), 0);
-    lv_obj_remove_flag(s, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_t *t = lv_label_create(s);
-    lv_obj_set_style_text_font(t, f_title, 0);
-    lv_obj_set_style_text_color(t, lv_color_white(), 0);
-    lv_label_set_text(t, "Radar");
-    lv_obj_align(t, LV_ALIGN_CENTER, 0, -20);
-    lv_obj_t *l = lv_label_create(s);
-    lv_obj_set_style_text_font(l, f_small, 0);
-    lv_obj_set_style_text_color(l, lv_color_hex(0x8A8F98), 0);
-    lv_obj_set_style_text_align(l, LV_TEXT_ALIGN_CENTER, 0);
-    lv_label_set_text(l, "on the display\n(not in the browser yet)");
-    lv_obj_align(l, LV_ALIGN_CENTER, 0, 30);
-    return s;
-}
-void radar_set_visible(bool visible) { (void)visible; }
-void radar_relocate(void) {}
-void radar_zoom(int step) { (void)step; }
-void radar_units_changed(void) {}
-bool radar_basemap_read(int z, uint16_t *dst, double *ox, double *oy) { (void)z; (void)dst; (void)ox; (void)oy; return false; }
-bool radar_osm_render(int z, double ox, double oy, uint16_t *dst, int w, int h)
-{
-    (void)z; (void)ox; (void)oy; (void)dst; (void)w; (void)h;
-    return false;
-}

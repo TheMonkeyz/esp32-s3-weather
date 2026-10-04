@@ -11,6 +11,7 @@
 #include "weather.h"
 #include "alerts.h"
 #include "i18n.h"
+#include "freertos/task.h"
 
 #define REFRESH_US (10 * 60 * 1000000LL)          // as the display: every 10 min
 
@@ -55,6 +56,7 @@ static void run_lvgl(int ms)                       // LVGL for a while, giving t
 {
     int64_t end = esp_timer_get_time() + ms * 1000LL;
     do {
+        emu_tasks_run();                           // the radar task (radar.c), until its next wait
         uint32_t wait = lv_timer_handler();
         emscripten_sleep(wait > 15 ? 15 : wait < 1 ? 1 : wait);
     } while (esp_timer_get_time() < end);
