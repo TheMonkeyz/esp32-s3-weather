@@ -4,6 +4,7 @@
 // radar.c's task runs unchanged: LVGL never runs while a task does, as the display lock guarantees on the board.
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 #include <emscripten.h>
 #include <emscripten/fiber.h>
 #include "freertos/FreeRTOS.h"
@@ -104,4 +105,40 @@ BaseType_t xTaskNotifyGive(TaskHandle_t h)
 }
 
 TaskHandle_t xTaskGetCurrentTaskHandle(void) { return current; }
+
+/* ---------- queues (sound.c's requests) ---------- */
+#include "freertos/queue.h"
+struct emu_queue { int len, size, n, head; uint8_t *items; };
+
+QueueHandle_t xQueueCreate(UBaseType_t len, UBaseType_t size)
+{
+    struct emu_queue *q = calloc(1, sizeof(*q));
+    if (!q) return NULL;
+    q->len = (int)len;
+    q->size = (int)size;
+    q->items = calloc(len, size);
+    return q;
+}
+
+BaseType_t xQueueSend(QueueHandle_t q, const void *item, TickType_t ms)
+{
+    (void)ms;
+    if (q->n == q->len) return pdFALSE;
+    memcpy(q->items + ((q->head + q->n) % q->len) * q->size, item, q->size);
+    q->n++;
+    return pdTRUE;
+}
+
+BaseType_t xQueueReceive(QueueHandle_t q, void *out, TickType_t ms)
+{
+    int64_t end = ms == portMAX_DELAY ? INT64_MAX : esp_timer_get_time() + (int64_t)ms * 1000;
+    while (!q->n) {
+        if (esp_timer_get_time() >= end) return pdFALSE;
+        vTaskDelay(20);                                  // a task: back to the main loop meanwhile
+    }
+    memcpy(out, q->items + q->head * q->size, q->size);
+    q->head = (q->head + 1) % q->len;
+    q->n--;
+    return pdTRUE;
+}
 bool emu_in_task(void) { return current != NULL; }

@@ -99,6 +99,7 @@ int main(void)
     display_init();
     place_from_address();
     ui_init();
+    sound_start();                                 // sound.c: alert sounds through Web Audio (emu_audio.c)
     ui_message(tr(T_WEATHER), tr(T_FETCHING));
     ui_on_place_select(place_select);
     ui_on_data_refresh(data_refresh);

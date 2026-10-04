@@ -2,8 +2,8 @@
 
 The firmware's own screens, compiled to WebAssembly: LVGL 9.2.2 with the display's settings (`lv_kconfig.h`, generated
 from its sdkconfig), `ui.c`, `slide.c`, `pager.c`, `config.c`, `i18n.c`, the forecast, air-quality and alerts code
-(`weather.c`, `alerts.c`) and the radar (`radar.c`, `png_rows.c` with miniz's tinfl as the chip's ROM has), all
-unchanged. Only the hardware is replaced:
+(`weather.c`, `alerts.c`), the radar (`radar.c`, `png_rows.c` with miniz's tinfl as the chip's ROM has) and the alert
+sounds (`sound.c`), all unchanged. Only the hardware is replaced:
 
 | File | Stands in for |
 |---|---|
@@ -11,7 +11,8 @@ unchanged. Only the hardware is replaced:
 | `emu_touch.c` | the touch chip: the mouse or a finger on the canvas |
 | `emu_http.c` | `esp_http_client`: `fetch()`, awaited with ASYNCIFY (Open-Meteo, GeoMet and the alerts API allow it) |
 | `emu_nvs.c` | NVS: the settings, kept in the page's `localStorage` |
-| `emu_stubs.c` | Wi-Fi, updates, speaker, microphones, service statuses |
+| `emu_stubs.c` | Wi-Fi, updates, microphones, service statuses |
+| `emu_audio.c` | the speaker (`esp_codec_dev`): sound.c's PCM, collected between open and close, played through Web Audio at the codec volume; the first touch unlocks audio (browsers' rule) |
 | `emu_tasks.c` | FreeRTOS tasks: each one an Emscripten fiber, run by the main loop between LVGL frames; a wait inside a task (`vTaskDelay`, `ulTaskNotifyTake`, a request) goes back to the main loop. radar.c's task runs as is |
 | `emu_partition.c` | the radar's map cache partition, in memory |
 | `emu_main.c` | `main.c` after Wi-Fi is up: fetch every place, alerts (with the region map) and air quality, then run LVGL |
@@ -58,4 +59,5 @@ Emscripten 6.0.11. The `pages` job adds it to the site; if the emulator build fa
   request into a CORS preflight.
 - `?place=lat,lon,Name` in the address makes that the place shown (kept), e.g. a link to a place with an alert:
   `try/?place=47.574,-59.137,Port%20aux%20Basques`.
-- Not yet: the settings page (the display's own web page), sounds.
+- Not yet: the settings page (the display's own web page). Alerts already there when the page opens are only recorded,
+  as on the display: a sound plays when one is new or gets worse, or with Settings > Test the sound.

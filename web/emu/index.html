@@ -98,7 +98,12 @@ canvas:active{cursor:grabbing}
     return [Math.round((e.clientX - r.left) * 466 / r.width), Math.round((e.clientY - r.top) * 466 / r.height)];
   };
   let down = false;
-  canvas.addEventListener('pointerdown', e => { down = true; canvas.setPointerCapture(e.pointerId); M._emu_touch(1, ...at(e)); });
+  canvas.addEventListener('pointerdown', e => {
+    // Sound (sound.c through emu_audio.c): browsers allow it only after a gesture, so the first touch unlocks it
+    if (!M.emuAudio) M.emuAudio = new (window.AudioContext || window.webkitAudioContext)();
+    else if (M.emuAudio.state === 'suspended') M.emuAudio.resume();
+    down = true; canvas.setPointerCapture(e.pointerId); M._emu_touch(1, ...at(e));
+  });
   canvas.addEventListener('pointermove', e => { if (down) M._emu_touch(1, ...at(e)); });
   const up = e => { if (!down) return; down = false; M._emu_touch(0, ...at(e)); };
   canvas.addEventListener('pointerup', up);

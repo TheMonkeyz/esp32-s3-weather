@@ -1,5 +1,5 @@
 // What the screens ask of the rest of the firmware, answered for the browser: online, no setup network, no updates,
-// no speaker or microphones. The service statuses are recorded as the firmware's are (svc_http), for the status page.
+// no microphones (the speaker is sound.c with emu_audio.c). The service statuses are recorded as the firmware's are (svc_http), for the status page.
 #include <stdio.h>
 #include <string.h>
 #include <emscripten.h>
@@ -8,7 +8,7 @@
 #include "net.h"
 #include "ota.h"
 #include "svc.h"
-#include "sound.h"
+#include "esp_codec_dev.h"
 #include "presence.h"
 #include "web.h"
 #include "alerts.h"
@@ -93,13 +93,6 @@ const char *svc_user_agent(void) { return "esp32-s3-weather emulator"; }   // (n
 void svc_probe_stale(void) {}
 
 /* ---------- speaker and microphones: none ---------- */
-static sound_cfg_t snd = { .level = 2, .volume = 60, .quiet_from = 22 * 60, .quiet_to = 7 * 60 };
-void sound_get_config(sound_cfg_t *out) { *out = snd; }
-bool sound_set_config(const sound_cfg_t *in) { snd = *in; return true; }
-void sound_test(int level) { (void)level; }
-void sound_alert(char colour) { (void)colour; }
-bool sound_ok(void) { return false; }
-
 static presence_cfg_t pres = { .enabled = false, .margin_db = 6, .wake_s = 1, .dim_s = 600, .off_s = 1800,
                                .bright_pct = 80, .dim_pct = 15, .baseline_db = -60 };
 void presence_get_config(presence_cfg_t *out) { *out = pres; }
@@ -116,5 +109,7 @@ void presence_preview_brightness(int pct) { display_brightness(pct * 255 / 100);
 void presence_wake(void) {}
 bool presence_touch(void) { return false; }
 bool presence_screen_off(void) { return false; }
+// sound.c waits for the microphones' I2S bus before opening the speaker: "there"
+const void *presence_audio_data_if(void) { static const audio_codec_data_if_t i2s; return &i2s; }
 
 const char *web_key(void) { return "browser"; }
