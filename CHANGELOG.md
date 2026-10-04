@@ -7,8 +7,14 @@ publishes them as `notes.json`, built by `tools/make_flasher_site.py`.
 How to write an entry: add a `## vX.Y.Z - YYYY-MM-DD` section at the top **before** tagging the release, with one
 `- ` line per change. Write for the person holding the display, not for developers. Release candidates can get
 their own `## vX.Y.Z-rc.N` section. Those are shown only to Beta users, while the final release's section should
-list everything again. (Three tags have no section: v1.3.0-rc.1, v1.12.0-rc.1 and v1.12.1-rc.2, whose builds failed and were published as
-v1.12.0-rc.2 and v1.12.1-rc.3.)
+list everything again. (Three tags have no section: v1.3.0-rc.1; and v1.12.0-rc.1 and v1.12.1-rc.2, whose builds failed and were published
+as v1.12.0-rc.2 and v1.12.1-rc.3.)
+
+## v1.12.1 - 2026-10-04
+- The hourly view follows your finger: quick short flicks scroll the hours, swiping up and down without lifting your finger no longer stops the list, and a swipe to the next day works even while the list is still moving.
+- Swiping to another place or screen right after the forecast updates no longer pauses for a moment first.
+- The radar zoom starts sooner.
+- On the display's setup network, the settings page explains why the map and the place search don't load there, and what to do instead.
 
 ## v1.12.1-rc.3 - 2026-10-04
 - The hourly view follows your finger: quick short flicks scroll the hours, swiping up and down without lifting your finger no longer stops the list, and a swipe to the next day works even while the list is still moving.
