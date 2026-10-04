@@ -10,6 +10,9 @@ their own `## vX.Y.Z-rc.N` section. Those are shown only to Beta users, while th
 list everything again. (Three tags have no section: v1.3.0-rc.1; and v1.12.0-rc.1 and v1.12.1-rc.2, whose builds failed and were published
 as v1.12.0-rc.2 and v1.12.1-rc.3.)
 
+## v1.12.2 - 2026-10-04
+- A long alert name that takes two lines on the alert screen no longer overlaps the time and the region under it, or hides behind the map.
+
 ## v1.12.2-rc.1 - 2026-10-04
 - A long alert name that takes two lines on the alert screen no longer overlaps the time and the region under it, or hides behind the map.
 
