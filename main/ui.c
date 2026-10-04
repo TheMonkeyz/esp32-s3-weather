@@ -871,7 +871,7 @@ static void hour_create(void)
 
 /* ---------- drags that follow the finger (slide.c) ----------
  * Screens, left to right: status | extras | weather | radar. Places: the weather screen's vertical pager. Days: the
- * hourly view's horizontal pager. A drag (16 px, along the larger axis) is handed to slide_drag(): the neighbour comes
+ * hourly view's horizontal pager. A drag (10 px, along the larger axis) is handed to slide_drag(): the neighbour comes
  * in under the finger, the ends resist and bounce back. The pagers are frozen (LVGL no longer scrolls them). A
  * vertical drag on any other list goes to slide_scroll(); the radar's zoom swipes stay with LVGL (gestures). Pictures
  * come from slide.c's cache, keyed by screen, or by page for the two pagers (key_of). gesture_cb() is the fallback
@@ -996,6 +996,12 @@ static bool drag_paint(const void *key, lv_draw_buf_t *dst, int y0, int y1)
     return slide_picture_rows(scr, dst, y0, y1);
 }
 
+// A move becomes a drag or a list scroll after 10 px, before LVGL's own scroll (its limit is raised to 20 px in
+// ui_init). With 16 px here and LVGL's 10, a quick flick read at 10-15 px went to LVGL, which scrolled the hours
+// list itself at 17-28 fps and read the touch only between its 35-60 ms frames: flicks missed, scrolls sluggish.
+#define DRAG_PX 10
+static int64_t drag_seen;                 // drag_read: the last read with a finger down ("untouched" below)
+
 // Every 30 ms: keep the pictures of what's shown and its neighbours ready (slide.c's cache), a 64-row strip at a time
 // (~15-25 ms), once nothing has changed on screen for 0.8 s and no finger is down (or a picture has been out of date
 // for 2 s). LVGL reads the touch between strips, so a quick swipe isn't lost behind a picture being rendered.
@@ -1032,6 +1038,9 @@ static void pictures_tick(lv_timer_t *t)
     int64_t now = esp_timer_get_time();
     bool pressed = in && lv_indev_get_state(in) == LV_INDEV_STATE_PRESSED;
     if (pressed) last_touch = now;
+    // (the touches LVGL never saw count too: drags and scrolls read the finger themselves, drag_read sees every press)
+    int64_t seen = slide_last_touch() > drag_seen ? slide_last_touch() : drag_seen;
+    if (seen > last_touch) last_touch = seen;
     bool untouched = now - last_touch > 2000000;
     bool work = !ov_state && !pressed && !lv_anim_count_running() && slide_cache_idle_work(untouched ? 150 : 800);
     uint32_t want = work && untouched ? 1 : 30;
@@ -1053,7 +1062,13 @@ static bool drag_start(bool vertical, slide_neighbour_cb_t neighbour, slide_comm
 
 static void drag_read(lv_indev_t *in, lv_indev_data_t *data)
 {
+    // A drag or scroll ran meanwhile (slide.c read the finger, LVGL and this hook didn't): the press this hook was
+    // following is over, even if it never saw the release. Without this, a swipe already under way when a list scroll
+    // ended was taken for the old press and ignored.
+    static uint32_t forgotten;
+    if (touch_forgotten() != forgotten) { forgotten = touch_forgotten(); drag_down = false; }
     if (data->state != LV_INDEV_STATE_PRESSED) { drag_down = false; return; }
+    drag_seen = esp_timer_get_time();
     lv_point_t p = data->point;
     if (!drag_down) {                                    // a new press: may become a drag
         drag_down = true;
@@ -1065,9 +1080,9 @@ static void drag_read(lv_indev_t *in, lv_indev_data_t *data)
     if (!drag_armed || ov_state) return;
     lv_obj_t *cur = lv_screen_active();
     int dx = p.x - drag_p0.x, dy = p.y - drag_p0.y;
-    // Decided after 16 px, by the larger axis (as LVGL picks a scroll direction). Requiring a 2:1 ratio missed curved
+    // Decided after DRAG_PX, by the larger axis (as LVGL picks a scroll direction). Requiring a 2:1 ratio missed curved
     // swipes on the round screen, and the hours list took those that started slightly vertical.
-    if (abs(dx) < 16 && abs(dy) < 16) return;
+    if (abs(dx) < DRAG_PX && abs(dy) < DRAG_PX) return;
     drag_armed = false;
     bool horiz = abs(dx) > abs(dy), vert = !horiz;
     drag_p1 = p;
@@ -1080,6 +1095,17 @@ static void drag_read(lv_indev_t *in, lv_indev_data_t *data)
         if (list) took = slide_scroll(list, drag_p0.y, drag_t0, drag_p1.y);
     }
     if (took) lv_indev_wait_release(in);       // the drag owns this touch: LVGL ignores it from this read on
+}
+
+// A touch that stopped the hours list while it was coasting and then went sideways (slide.c): the day drag
+static bool scroll_sideways(int x0, int y0, int x1, int y1)
+{
+    if (lv_screen_active() != scr_hour || ov_state) return false;
+    drag_p0 = (lv_point_t){x0, y0};
+    drag_p1 = (lv_point_t){x1, y1};
+    bool took = drag_start(false, day_neighbour, day_commit);
+    if (took) lv_indev_wait_release(lv_indev_get_next(NULL));
+    return took;
 }
 
 static void gesture_cb(lv_event_t *e)
@@ -2524,6 +2550,8 @@ void ui_init(void)
     cfg_create();
     touch_register_lvgl();
     touch_set_read_hook(drag_read);                                     // drags and list scrolls (slide.c)
+    lv_indev_set_scroll_limit(lv_indev_get_next(NULL), 2 * DRAG_PX);    // LVGL's own scroll: only after drag_read's
+    slide_scroll_on_sideways(scroll_sideways);                          // a day swipe while the hours coast
     slide_cache_init(drag_paint, key_of);
     lv_timer_create(pictures_tick, 30, NULL);
 

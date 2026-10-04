@@ -107,15 +107,47 @@ static void touch_resync(bool lifted)
  * last seen down count as a release, as in touch.c, and further failures stay "up" until a press. A loop that waited
  * for a clean "up" kept the display lock forever (the PSRAM-busy drag), or took a new swipe for the old one (the zoom).
  * *errs carries the state between calls: start it at 0 (finger down) or FINGER_UP.
- * 1 = down at x,y; 0 = up; -1 = a read error while down, not yet a release (keep the last point). */
+ * 1 = down at x,y; 0 = up; -1 = a read error while down, not yet a release (keep the last point); -2 = the chip says
+ * "up" but not for UP_HOLD_US yet (keep the last point; the list scroll starts coasting meanwhile). */
 #define FINGER_UP 5
+static int64_t last_touch;                 // the finger last seen by these loops (slide_last_touch)
+
+static int err_lifts;                      // releases that were 5 read errors in a row, not a reported "up"
+// A reported "up" counts once it has lasted UP_HOLD_US: during quick back-and-forth moves the CST9217 reports brief
+// "ups" with the finger still down (37 in 1.3 s once, at the top of the hours list). Each one ended the scroll: the
+// list coasted or sprang back, then took the finger for a new touch, and stopped under it.
+#define UP_HOLD_US 60000
+static int64_t up_since;                   // when a reported "up" began (0: the finger was seen down since)
+static int brief_ups;                      // "ups" shorter than UP_HOLD_US, bridged
+static int64_t brief_max;                  // the longest of them (us)
+
 static int finger(int *x, int *y, int *errs)
 {
     int r = touch_get(x, y);
-    if (r > 0) { *errs = 0; return 1; }
-    if (r == 0) { *errs = FINGER_UP; return 0; }
-    if (*errs < FINGER_UP) ++*errs;
-    return *errs >= FINGER_UP ? 0 : -1;
+    // The chip is read every 10 ms (touch_get): in between, the same answer, nothing counted again
+    if (!touch_fresh()) return r > 0 ? 1 : *errs >= FINGER_UP ? 0 : up_since ? -2 : -1;
+    int64_t now = esp_timer_get_time();
+    if (r > 0) {
+        if (up_since) {
+            if (now - up_since > brief_max) brief_max = now - up_since;
+            brief_ups++;
+            up_since = 0;
+        }
+        *errs = 0;
+        last_touch = now;
+        return 1;
+    }
+    if (*errs >= FINGER_UP) return 0;              // up already
+    if (r < 0 && !up_since) {                      // a read error: keep the last point, up to 5 in a row
+        if (++*errs < FINGER_UP) return -1;
+        *errs = FINGER_UP - 1;
+        err_lifts++;                               // 5: the chip's silence, as good as an "up" (but held too:
+    }                                              // they came in bursts while the finger moved, v1.12.1-fix.24)
+    if (!up_since) up_since = now;
+    if (now - up_since < UP_HOLD_US) return -2;    // maybe a brief "up": keep the last point
+    up_since = 0;
+    *errs = FINGER_UP;
+    return 0;
 }
 
 // Safety caps for the loops that hold the display lock while a finger is down: a pure wait for the lift (3 s), and a
@@ -134,6 +166,8 @@ static bool room_for(int pictures)
     return heap_caps_get_free_size(MALLOC_CAP_SPIRAM) > (1000 + 440 * pictures) * 1024 &&
            heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM) > 900 * 1024;
 }
+
+int64_t slide_last_touch(void) { return last_touch; }
 
 bool slide_picture(lv_obj_t *scr, lv_draw_buf_t *dst) { return slide_picture_rows(scr, dst, 0, DISP_H - 1); }
 
@@ -554,7 +588,9 @@ static void drag_run(void *unused)
             if (off < -S / 5) off = -S / 5;
         }
         int64_t now = esp_timer_get_time();
-        if (now - t_last > 8000) { t_prev = t_last; pos_prev = pos_last; t_last = now; pos_last = raw; }
+        // (fresh readings only: a bridged "up" or the cached reading between two chip reads (every 10 ms) repeats the
+        // point, and a flick measured 0 px/ms: the first day swipe to Monday snapped back, v1.12.1-fix.26)
+        if (r > 0 && touch_fresh() && now - t_last > 8000) { t_prev = t_last; pos_prev = pos_last; t_last = now; pos_last = raw; }
         show(&f, off);
         if (!frames++) t_first = esp_timer_get_time();
     }
@@ -564,7 +600,7 @@ static void drag_run(void *unused)
     bool have = side && bs[si];
     bool go = have && (abs(f.off) > S / 3 || (abs(f.off) > 24 && vel * f.off > 0 && fabsf(vel) > 0.35f));
     // Lifted before the first frame (a flick while a picture was being rendered): a flick that way, if there's a
-    // neighbour (the screen only moved the 16 px that made it a drag; judged by that, it bounced back)
+    // neighbour (the screen only moved the 10-16 px that made it a drag; judged by that, it bounced back)
     if (!samples && bs[fi]) { side = first; si = fi; have = true; go = true; }
     // The neighbour's picture failed (PSRAM busy) but the finger went far: switch anyway, without the animation. By the
     // finger's distance: the screen itself only moved a resisting fifth (judged by that, it never switched).
@@ -665,6 +701,8 @@ lv_obj_t *slide_scroll_target(lv_obj_t *scr, int x, int y)
 }
 
 static void scroll_run(void *unused);
+static slide_sideways_cb_t sideways_cb;
+void slide_scroll_on_sideways(slide_sideways_cb_t cb) { sideways_cb = cb; }
 
 bool slide_scroll(lv_obj_t *list, int y0, int64_t t0, int y1)
 {
@@ -787,21 +825,50 @@ static void scroll_run(void *unused)
     int ref_y = scroll.y1, ref_pos = s.shown, pos = s.shown, fy = scroll.y1, errs = 0, moved = 0;
     float fpos = pos, v = 0;
     struct { int64_t t; int p; } smp[8];                 // finger samples (time, position) for the flick speed:
-    smp[0].t = scroll.t0;                                // the press and the 16 px that made it a scroll come first
+    smp[0].t = scroll.t0;                                // the press and the 10 px that made it a scroll come first
     smp[0].p = ref_pos + (scroll.y1 - scroll.y0);        // (a flick can be over by now)
     smp[1].t = scroll.t1;
     smp[1].p = ref_pos;
     int ns = 2;
     bool down = true;
+    // A touch while coasting stops the list; it moves again only once the finger has moved 10 px (as a new touch is decided,
+    // new touch), and a sideways one goes to sideways_cb (the hourly view: the next day). It used to follow the finger
+    // vertically at once: a day swipe made before the list had stopped was swallowed.
+    bool deciding = false, sideways = false, maybe_up = false;   // maybe_up: coasting on an "up" not confirmed yet
+    int lifts = 0, touches = 0, err0 = err_lifts, read_errs = 0, brief0 = brief_ups;
+    brief_max = 0;
+    int64_t last_read = 0, gap_max = 0;
+    int tx0 = 0, ty0 = 0, sx1 = 0, sy1 = 0;
     int64_t t = esp_timer_get_time(), touched_at = t;
     for (;;) {
         int x, y, r = finger(&x, &y, &errs);
         int64_t now = esp_timer_get_time();
         if (down) {
+            if (r == -1) read_errs++;
+            if (last_read && now - last_read > gap_max) gap_max = now - last_read;
+            last_read = now;
+        } else last_read = 0;
+        if (down && deciding && r != 0) {
+            if (r < 0 || (abs(x - tx0) < 10 && abs(y - ty0) < 10)) { vTaskDelay(1); continue; }
+            deciding = false;
+            if (abs(x - tx0) > abs(y - ty0) && sideways_cb) { sideways = true; sx1 = x; sy1 = y; break; }
+            ref_y = ty0;                                 // vertical: the list follows from where the touch went down
+            fy = y;                                      // (catching up the 10 px it took to decide), and its flick
+            ref_pos = pos;                               // speed counts from the touch, as a first flick's
+            smp[0].t = touched_at;
+            smp[0].p = ref_pos;
+            smp[1].t = now;
+            smp[1].p = ref_pos + (ty0 - y);
+            ns = 2;
+        }
+        if (down) {
             bool stuck = now - touched_at > FINGER_FOLLOW_US;
             if (stuck) ESP_LOGW(TAG, "scroll: finger down for 20 s, ending it");
-            if (r == 0 || stuck) {                       // lifted (or 5 silent reads: the chip NACKs when idle)
+            if (r == 0 || r == -2 || stuck) {            // lifted (or 5 silent reads: the chip NACKs when idle), or
+                maybe_up = r == -2;                      // maybe: coast now, and follow again if the finger is back
+                if (!maybe_up) lifts++;
                 down = false;
+                deciding = false;
                 v = 0;                                   // speed over the last ~80 ms (0 if the finger stopped)
                 if (ns) {                                // (none yet: touched again and lifted at once)
                     int nk = (ns - 1) % 8;
@@ -811,7 +878,7 @@ static void scroll_run(void *unused)
                         if (span > 80000) break;
                         if (span >= 10000) v = (float)(smp[nk].p - smp[k].p) / (span / 1000.0f);
                     }
-                    if (now - smp[nk].t > 80000) v = 0;
+                    if (now - smp[nk].t > 80000 + UP_HOLD_US) v = 0;   // (the lift is known UP_HOLD_US late)
                 }
                 fpos = pos;
                 t = now;
@@ -820,7 +887,7 @@ static void scroll_run(void *unused)
             }
             if (r > 0) fy = y;                           // (a read error: keep the last point)
             int raw = ref_pos + (ref_y - fy);            // the content follows the finger
-            if (!ns || now - smp[(ns - 1) % 8].t >= 8000) { smp[ns % 8].t = now; smp[ns % 8].p = raw; ns++; }
+            if (r > 0 && touch_fresh() && (!ns || now - smp[(ns - 1) % 8].t >= 8000)) { smp[ns % 8].t = now; smp[ns % 8].p = raw; ns++; }   // (real readings)
             int want = raw < lo ? lo - (lo - raw) / 3 : raw > hi ? hi + (raw - hi) / 3 : raw;   // resists past an end
             if (want < lo - over) want = lo - over;
             if (want > hi + over) want = hi + over;
@@ -830,9 +897,25 @@ static void scroll_run(void *unused)
             scroll_step(&s, pos);
             continue;
         }
-        if (r > 0) {                                     // touched while moving: stop, follow the finger again
-            down = true;
+        if (maybe_up && r >= 0) {                        // the "up" settled: a real lift, or the same finger back
+            maybe_up = false;
+            if (r == 0) lifts++;
+            else if (r > 0) {                            // it never lifted (a brief "up"): follow it again from here
+                down = true;
+                ref_y = fy = y;
+                ref_pos = pos;
+                smp[0].t = now;
+                smp[0].p = pos;
+                ns = 1;
+                continue;
+            }
+        }
+        if (r > 0) {                                     // touched while moving: stop, and see where the finger goes
+            touches++;
+            down = deciding = true;
             touched_at = now;
+            tx0 = x;
+            ty0 = y;
             ref_y = fy = y;
             ref_pos = pos;
             ns = 0;
@@ -844,10 +927,13 @@ static void scroll_run(void *unused)
         if (past) v *= expf(-dt / 30.0f);                // past an end: brake hard...
         else v *= expf(-dt / 300.0f);                    // a flick goes on ~v x 300 ms, as LVGL's (10% per frame)
         if (past ? fabsf(v) < 0.1f : fabsf(v) < 0.03f) {
+            if (!past && maybe_up) { vTaskDelay(1); continue; }   // stopped, but the finger may still be there
             if (!past) break;
-            // ...then spring back to the end (ease out, 220 ms)
+            // ...then spring back to the end (ease out, 220 ms). A touch meanwhile is one during the coast (it read
+            // no finger: a day swipe made as a flick reached the end of the short hours list was lost)
             int from = pos, to = pos < lo ? lo : hi;
             int64_t start = esp_timer_get_time();
+            bool touched = false;
             for (;;) {
                 float k = (esp_timer_get_time() - start) / 220000.0f;
                 if (k > 1) k = 1;
@@ -855,8 +941,32 @@ static void scroll_run(void *unused)
                 pos = from + (int)((to - from) * ease);
                 scroll_step(&s, pos);
                 if (k >= 1) break;
+                if (finger(&x, &y, &errs) > 0) { touched = true; touches++; break; }
             }
-            break;
+            if (!touched && maybe_up) { fpos = pos; v = 0; continue; }   // (undecided "up": wait at the end)
+            if (!touched) break;
+            if (maybe_up) {                              // the finger never lifted: follow it again
+                maybe_up = false;
+                down = true;
+                ref_y = fy = y;
+                ref_pos = pos;
+                fpos = pos;
+                v = 0;
+                smp[0].t = esp_timer_get_time();
+                smp[0].p = pos;
+                ns = 1;
+                continue;
+            }
+            down = deciding = true;
+            touched_at = esp_timer_get_time();
+            tx0 = x;
+            ty0 = y;
+            ref_y = fy = y;
+            ref_pos = pos;
+            fpos = pos;
+            v = 0;
+            ns = 0;
+            continue;
         }
         fpos += v * dt;
         if (fpos < lo - over) { fpos = lo - over; v = 0; }
@@ -870,14 +980,19 @@ static void scroll_run(void *unused)
     disp->inv_p = inv0;                                  // LVGL's redraw requests for the list: already on the panel
     if (s.strip) lv_draw_buf_destroy(s.strip);
     last_change = esp_timer_get_time();
-    touch_resync(true);
+    if (!sideways) touch_resync(true);
     int64_t t1 = esp_timer_get_time();
     int f = s.frames ? s.frames : 1;
     ESP_LOGI(TAG, "scroll: %d frames in %lld ms, moved %d px, now at %d of %d..%d; per frame: move %.1f, render %.1f, "
-             "send %.1f ms", s.frames, (t1 - t0) / 1000, moved, pos, lo, hi, s.us_move / 1000.0f / f,
-             s.us_render / 1000.0f / f, s.us_send / 1000.0f / f);
+             "send %.1f ms%s; finger: %d lifts, %d silences, %d touches again, %d brief ups bridged "
+             "(longest %lld ms), %d read errors, longest gap %lld ms", s.frames, (t1 - t0) / 1000, moved, pos, lo, hi,
+             s.us_move / 1000.0f / f, s.us_render / 1000.0f / f, s.us_send / 1000.0f / f,
+             sideways ? "; then a sideways touch" : "", lifts, err_lifts - err0, touches, brief_ups - brief0,
+             brief_max / 1000, read_errs, gap_max / 1000);
     scroll.queued = false;
     slide_phase = 0;
+    // The sideways touch: to its drag (which reads the finger from here), else LVGL ignores it until it lifts
+    if (sideways && !sideways_cb(tx0, ty0, sx1, sy1)) touch_resync(false);
 }
 
 // Test console "pictest": the picture of the screen shown against a fresh rendering, 32 rows at a time. Returns the

@@ -71,6 +71,8 @@ static int touch_read(int *x, int *y)
 
 uint32_t touch_idle_ms(void) { return (uint32_t)((esp_timer_get_time() - last_down_us) / 1000); }
 
+static int n_nofinger, n_status;        // "up" answers: no finger in the report / a status other than contact
+
 static int touch_read_chip(int *x, int *y)
 {
     if (inj_on) { *x = inj_x; *y = inj_y; return inj_down; }
@@ -82,7 +84,8 @@ static int touch_read_chip(int *x, int *y)
     i2c_master_transmit(dev, ack, 3, 20);
     n_ok++;
     if (d[6] != 0xAB) return -1;
-    if ((d[5] & 0x7F) == 0 || (d[0] & 0x0F) != 0x06) return 0;
+    if ((d[5] & 0x7F) == 0) { n_nofinger++; return 0; }
+    if ((d[0] & 0x0F) != 0x06) { n_status++; return 0; }
     int rx = (d[1] << 4) | (d[3] >> 4);
     int ry = (d[2] << 4) | (d[3] & 0x0F);
     // Panel is mounted rotated 180° relative to the touch sensor (mirror X and Y)
@@ -98,7 +101,9 @@ static volatile bool forget;            // touch_forget(): the touch LVGL last s
 // A drag drawn outside LVGL (slide.c) consumed the touch. Without this, a bus error right after it made read_cb
 // "hold" the last point LVGL had seen (the NACK guard below): a fake press there, then a release, so a tap where the
 // drag had started (it opened the hourly view after place drags).
-void touch_forget(void) { forget = true; }
+static volatile uint32_t forgotten;
+void touch_forget(void) { forget = true; forgotten++; }
+uint32_t touch_forgotten(void) { return forgotten; }
 
 static void read_core(lv_indev_t *indev, lv_indev_data_t *data)
 {
@@ -109,7 +114,8 @@ static void read_core(lv_indev_t *indev, lv_indev_data_t *data)
     if (forget) { forget = false; was = false; errs = 0; }
     uint32_t now = lv_tick_get();
     if (now - last_log > 15000) {
-        ESP_LOGI(TAG, "reads ok=%d err=%d", n_ok, n_err);
+        ESP_LOGI(TAG, "reads ok=%d err=%d, up answers: no finger %d, other status %d", n_ok, n_err, n_nofinger,
+                 n_status);
         last_log = now;
     }
     int x, y;
@@ -145,7 +151,25 @@ static void read_core(lv_indev_t *indev, lv_indev_data_t *data)
 
 // The finger now, read directly (for drags drawn outside LVGL, slide.c): 1 = pressed at x,y, 0 = up, -1 = bus error
 // (keep the last point). LVGL isn't reading meanwhile (display lock held by the caller).
-int touch_get(int *x, int *y) { return touch_read(x, y); }
+// The loops that follow a finger (slide.c) read the chip directly. Read at most every 10 ms, as LVGL does every
+// 15 ms: polled every millisecond, the chip answered "up" for long stretches while the finger moved on it (each read is
+// acknowledged, and a new report takes it a while), and the hourly list stopped under the finger.
+static bool fresh;
+bool touch_fresh(void) { return fresh; }
+
+int touch_get(int *x, int *y)
+{
+    static int64_t last;
+    static int lr, lx, ly;
+    int64_t now = esp_timer_get_time();
+    fresh = inj_on || !last || now - last >= 10000;
+    if (!fresh) { *x = lx; *y = ly; return lr; }
+    last = now;
+    lr = touch_read(x, y);
+    lx = *x;
+    ly = *y;
+    return lr;
+}
 
 static touch_read_hook_t read_hook;
 

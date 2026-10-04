@@ -151,7 +151,7 @@ Windows build gets both from `main/idf_component.yml`. `components/dns_server` *
     `touch_forget()`, `wait_until_release`, `lv_indev_reset`). Otherwise the next swipe is ignored, or `touch.c`'s
     NACK guard replays the last point as a stray tap (the hourly view opened after place drags).
     (c) **The CST9217 NACKs instead of reporting "up".** A loop waiting for the finger to lift must count read errors
-    as a release (5 in a row), or it never ends.
+    as a release (5 in a row), or it never ends. And it lies the other way under a fast finger: see 23.
     (d) **Anything that blocks LVGL for more than ~50 ms loses quick flicks:** cache pictures are rendered in
     64-row strips, the neighbour is rendered before the first frame, and the automatic render bench is off.
     (e) **Big PSRAM users fragment PSRAM for the others:** with the 2.2 MB picture cache, lodepng's 2–3 MB radar
@@ -166,7 +166,7 @@ Windows build gets both from `main/idf_component.yml`. `components/dns_server` *
     (g) **Flash writes stall the whole chip** (PSRAM and code caches are off during an erase): the radar's map save
     made drags crawl. Background flash writes wait for `slide_screen_busy()`. And check what a save stores: a
     download for one place finishing after a switch was saved as the other place's map.
-    (h) A drag must decide its axis like LVGL (larger axis after 16 px): a 2:1 rule missed curved swipes on the
+    (h) A drag must decide its axis like LVGL (larger axis after 10 px since v1.12.1, see 23): a 2:1 rule missed curved swipes on the
     round screen. Check drags with the harness (`navigation`, `perf`), then ask the user to try them: the
     harness's straight synthetic drags passed while real swipes were still missed.
     (i) **List scrolls** (v1.10.1-rc.4) move the picture of the screen shown and render only the new rows, so the
@@ -213,8 +213,22 @@ Windows build gets both from `main/idf_component.yml`. `components/dns_server` *
     (l) An empty translation ("") is not "missing": it showed as nothing. `tr()` now falls back on empty too, and
     `tests/host/test_i18n.c` checks every text in every language (and the same printf conversions as English).
     New French text: snapshot it (`hint next-boot` + restart for the first-run hint); long lines wrap badly on the
-    round screen, so give them explicit `
-` breaks.
+    round screen, so give them explicit `\n` breaks.
+23. **Touches lost on the hourly view (v1.12.1, October 3-4):** found from the user's reports, each cause from the log
+    of a try with their finger (the harness's straight synthetic touches passed every time). Read
+    `docs/ARCHITECTURE.md` "List scrolls" before touching `finger()`, `scroll_run()` or `drag_read()`.
+    (a) **LVGL took quick flicks:** its scroll starts after 10 px, `drag_read` decided at 16: a read landing between
+    went to LVGL, which scrolled the list at 17-28 fps and read the touch only between its 35-60 ms frames. Ours
+    decides at 10 px now and LVGL's limit is 20. Found by logging every touch read with its time (reads 60 ms apart).
+    (b) **Don't poll the CST9217 every millisecond:** read that fast (each read is acknowledged) it answered "not in
+    contact" for long stretches with the finger on it, and every fix built on those false "ups" (a 60 ms hold, then
+    waiting for the hold to settle) only moved the problem. `touch_get()` reads it at most every 10 ms (LVGL: 15);
+    `touch_fresh()` says whether a reading is new. Take speed samples from fresh readings only, or a repeated point
+    measures a flick as 0 px/ms (a day swipe snapped back).
+    (c) A touch during a list's coast or spring-back is decided like a new one (10 px): sideways goes to the day drag
+    (`slide_scroll_on_sideways`), vertical follows from where it went down. `touch_forget()` bumps a counter so
+    `drag_read` takes a finger already down after a drag or scroll for a new press (it was ignored).
+    (d) The scroll log line counts the finger's lifts, silences, re-touches and bridged brief "ups": read it first.
 
 - Internal RAM ran out silently (10 KB free, 0 KB min ever) because LVGL's small allocations went to internal RAM
   first. Fixed with `lvgl_mem.c` (LVGL heap in PSRAM). Font kerning cost 71% of render time; fonts now use

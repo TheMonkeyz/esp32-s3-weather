@@ -137,6 +137,43 @@ def every_screen(ctx):
 
 # ---------------------------------------------------------------- web
 
+@test('navigation')
+def hourly_touches(ctx):
+    """The hours list takes quick short flicks, and a day swipe made while it still coasts changes the day.
+    Before v1.12.1 a 30 px flick in 60 ms was read at 10 px, LVGL's own scroll took it (17-28 fps, the touch read only
+    between its frames) and nothing moved; and a touch during the coast only ever followed the finger vertically."""
+    b = ctx.board
+    b.cmd('wake')
+    go_weather(ctx)
+    b.cmd('tap 125 350')                                 # a day: the hourly view
+    b.wait_screen('hourly', 6)
+    time.sleep(1.5)
+    scroll = r'slide: scroll: \d+ frames in \d+ ms, moved (\d+) px'
+    for i in range(3):                                   # a quick short flick, three times
+        at = len(ctx.log.lines())
+        b.cmd('drag 233 330 233 300 60')
+        m = ctx.log.wait(scroll, 4, f'quick flick {i + 1} taken by the list (slide.c)', start=at)
+        check(int(m.group(1)) > 30, f'quick flick {i + 1} barely moved the list ({m.group(1)} px)')
+        b.cmd('drag 233 160 233 400 90')                 # back to the top
+        time.sleep(1.5)
+    day0 = b.cmd('page', r'test: page .*day=(\d+)').group(1)
+    at = len(ctx.log.lines())
+    b.cmd('drag 233 330 233 300 60')                     # a flick, and while the list coasts, a day swipe
+    time.sleep(0.2)
+    b.cmd('drag 400 300 80 300 250')
+    ctx.log.wait(r'slide: drag: first frame', 4, 'the day swipe made during the coast', start=at)
+    time.sleep(1)
+    day1 = b.cmd('page', r'test: page .*day=(\d+)').group(1)
+    check(day1 != day0, f'day swipe during the coast missed (day {day0} -> {day1})')
+    handed = any('then a sideways touch' in l for l in ctx.log.lines()[at:])
+    ctx.note(f'3 quick flicks scrolled; day swipe during the coast: day {day0} -> {day1}'
+             f'{" (handed over by the coasting list)" if handed else " (the list had stopped)"}')
+    b.cmd('drag 80 300 400 300 250')
+    time.sleep(1)
+    b.cmd('tap 233 233')
+    b.wait_screen('weather', 6)
+
+
 @test('web')
 def settings_page_tests(ctx):
     """Playwright suite against the mock display (tools/webtest)."""

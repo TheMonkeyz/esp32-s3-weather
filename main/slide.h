@@ -36,6 +36,8 @@ bool slide_drag_running(void);
 // Someone is using the screen: a finger down in the last 0.5 s, or a slide or drag queued or running. Any task (no
 // lock): radar.c holds its flash writes meanwhile (they stall both cores, and a drag then crawled at 3 fps).
 bool slide_screen_busy(void);
+// When a drag, scroll or zoom last saw a finger (esp_timer us): LVGL doesn't see those touches
+int64_t slide_last_touch(void);
 
 // A zoom of a full-screen image (the radar's map) drawn without LVGL: its source (RGB565, the screen's size) scaled
 // from `from` to `to` (LVGL's scale: 256 = 1x; both at least 1x; pivot = the centre) with an ease out over ms, the
@@ -73,5 +75,9 @@ bool slide_picture_rows(lv_obj_t *scr, lv_draw_buf_t *dst, int y0, int y1);   //
 // picture of the screen yet): let LVGL scroll.
 lv_obj_t *slide_scroll_target(lv_obj_t *scr, int x, int y);
 bool slide_scroll(lv_obj_t *list, int y0, int64_t t0, int y1);
+// A touch that stops a coasting list and then moves sideways (16 px, larger axis) is handed to this callback with
+// where it went down and where it is: e.g. the hourly view's day drag. Returns true if it took the touch.
+typedef bool (*slide_sideways_cb_t)(int x0, int y0, int x1, int y1);
+void slide_scroll_on_sideways(slide_sideways_cb_t cb);
 lv_draw_buf_t *slide_picture_copy(void);   // snapshot "picture" (tests)
 void slide_picture_check_async(void);  // test console "pictest": logs "slide: pictest rows_differ=N first=Y"
