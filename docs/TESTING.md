@@ -176,6 +176,13 @@ npm test
   screen; French text is longer and is where layouts break. *the page in Inuktitut fits* checks the draft
   Inuktitut page at phone width (no English left, no overflow). For the display, see docs/translations/README.md
   (`{"lang":"iu"}`, then snapshot every screen including `settings1..3`, `phone`, `setup0/1`).
+- `update.spec.js` goes through **every updater state** (idle, checking, up to date, available, downloading, done,
+  failed), scripted with `POST /__update` (an unknown state is refused): its exact text, the Install button only
+  when an update is offered, the progress bar, Check disabled while busy; the French text of each; a rollback note
+  (not over a download); a failed install with the update still offered; Check through "Checking…" to the answer
+  (`check_result`); the channel picker. The mock refuses a POST that isn't JSON (415) and an Install with nothing
+  offered (409), as `web.c` / `ota.c` do. Put back the bug that hid the Install button in v1.11 (a parameter named
+  `t` in `fwShow`) and 13 of its 17 tests fail (checked October 4).
 - Every test saves a full-page screenshot in `tools/webtest/shots/`; the `review:` test saves the Places card (list
   and editor) for design review. Look at them before flashing a page change.
 - Node.js is installed on the PC (`C:\Program Files\nodejs`); in PowerShell put it first in `PATH` if a shell

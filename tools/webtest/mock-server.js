@@ -1,7 +1,8 @@
 // Mock of the display's settings server for browser tests: serves the real main/web/index.html and answers
 // /api/* like the firmware (web.c), with the state in memory. POST /__reset restores the starting state;
-// GET /__state returns it (tests check what the page sent); POST /__update {state, latest, notes, ...} sets the
-// updater's state (ota.c) for the firmware card.
+// GET /__state returns it (tests check what the page sent); POST /__update {state, latest, notes, progress, error,
+// rolled_back, channel, check_result} sets the updater's state (ota.c) for the firmware card: every state the page can
+// show must be scriptable here (a page bug hid the Install button in two releases, and nothing tested "available").
 //   node mock-server.js [port]     (default 8099)
 const http = require('http');
 const fs = require('fs');
@@ -10,6 +11,7 @@ const path = require('path');
 const PAGE = path.join(__dirname, '..', '..', 'main', 'web', 'index.html');
 const port = Number(process.argv[2] || process.env.PORT || 8099);
 const MAX_PLACES = 4;
+const STATES = ['idle', 'checking', 'up_to_date', 'available', 'downloading', 'done', 'failed'];   // web.c ota_state_name
 
 function fresh() {
   return {
@@ -19,7 +21,8 @@ function fresh() {
     ssid: 'HomeNet',
     version: 'v1.5.0-test',
     update: { current: 'v1.5.0-test', latest: '', channel: 'stable', state: 'up_to_date', progress: 0, error: '',
-              notes: '', pending_verify: false, uptime_s: 300 },
+              notes: '', pending_verify: false, uptime_s: 300, rolled_back: '' },
+    checkResult: 'up_to_date',                // what a check ends in (POST /__update {check_result})
     presence: { enabled: true, state: 'active', mic_ok: true, calibrating: false, calib_left_s: 0, brightness: 100,
                 level_db: -48, threshold_db: -55, baseline_db: -60, margin_db: 5, wake_progress: 0, wake_s: 3,
                 quiet_s: 12, dim_s: 600, off_s: 3000, bright_pct: 100, dim_pct: 20,
@@ -82,18 +85,28 @@ const routes = {
   'POST /api/units': b => { if (!b) return [400, 'bad json']; Object.assign(st.units, b); return [200, { ok: true }]; },
   'GET /api/update': () => {                       // web.c update_get: notes only while an update is offered
     const u = st.update;
-    if (u.state === 'downloading') {                 // an install moves on at each poll: 50 %, 100 %, done
+    if (u.state === 'checking' && st.checkResult !== 'checking') u.state = st.checkResult;   // a check: one poll
+    else if (u.state === 'downloading' && st.installing) {   // an install moves on at each poll: 50 %, 100 %, done
       u.progress = Math.min(100, u.progress + 50);
       if (u.progress === 100) u.state = 'done';
     }
     const out = { ...u };
     if (u.state !== 'available') delete out.notes;
+    if (!u.rolled_back) delete out.rolled_back;      // web.c adds it only when there is one
     return [200, out];
   },
   'POST /api/update': b => {                       // web.c update_post: channel and/or action
-    if (b && b.channel) st.update.channel = b.channel;
-    if (b && b.action === 'install' && st.update.state === 'available') { st.update.state = 'downloading'; st.update.progress = 0; }
-    return routes['GET /api/update']();
+    if (!b) return [400, 'bad json'];
+    if (b.channel) st.update.channel = b.channel;
+    if (b.action === 'check') st.update.state = 'checking';
+    if (b.action === 'install') {
+      if (st.update.state !== 'available') return [409, { error: 'nothing to install' }];
+      st.update.state = 'downloading'; st.update.progress = 0; st.installing = true;
+    }
+    const out = { ...st.update };                    // the answer to a POST: the state as it is (no poll step)
+    if (out.state !== 'available') delete out.notes;
+    if (!out.rolled_back) delete out.rolled_back;
+    return [200, out];
   },
   'GET /api/presence': () => [200, st.presence],
   'POST /api/presence': b => { Object.assign(st.presence, b || {}); return [200, { ok: true }]; },
@@ -115,7 +128,13 @@ http.createServer(async (req, res) => {
   if (req.method === 'GET' && url === '/__state') return json(res, 200, st);
   if (req.method === 'POST' && url === '/__setup') { st.setupNet = true; return json(res, 200, { ok: true }); }
   if (req.method === 'POST' && url === '/__key') { st.key = (await body(req) || {}).key || null; return json(res, 200, { ok: true }); }
-  if (req.method === 'POST' && url === '/__update') { Object.assign(st.update, await body(req) || {}); return json(res, 200, st.update); }
+  if (req.method === 'POST' && url === '/__update') {
+    const b = await body(req) || {};
+    if (b.state && !STATES.includes(b.state)) return json(res, 400, { error: 'state', states: STATES });
+    if ('check_result' in b) { st.checkResult = b.check_result; delete b.check_result; }
+    Object.assign(st.update, b);
+    return json(res, 200, st.update);
+  }
   if (req.method === 'GET' && url === '/') {
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
     return res.end(fs.readFileSync(PAGE));
@@ -125,6 +144,11 @@ http.createServer(async (req, res) => {
   if (req.method === 'POST' && st.key && !st.setupNet && req.headers['x-key'] !== st.key) {   // web.c guarded()
     st.log.push({ method: req.method, url, refused: 401 });
     return json(res, 401, { error: 'key' });
+  }
+  // web.c: a POST must say it is JSON (415 otherwise: a form posted from another site can't)
+  if (req.method === 'POST' && !(req.headers['content-type'] || '').startsWith('application/json')) {
+    st.log.push({ method: req.method, url, refused: 415 });
+    return json(res, 415, { error: 'json' });
   }
   const b = req.method === 'POST' ? await body(req) : undefined;
   st.log.push({ method: req.method, url, body: b });
