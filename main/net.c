@@ -157,6 +157,11 @@ void net_init(void)
         nvs_flash_erase();
         nvs_flash_init();
     }
+#if CONFIG_ESP_WIFI_DEBUG_PRINT
+    // Debug builds only (docs/TESTING.md, "Easy Connect: the phone's side"): the supplicant's DPP steps are DEBUG lines;
+    // the build also needs CONFIG_LOG_MAXIMUM_LEVEL_DEBUG. (ESP-IDF 5.5 renamed CONFIG_WPA_DEBUG_PRINT to this.)
+    esp_log_level_set("wpa", ESP_LOG_DEBUG);
+#endif
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
     ev = xEventGroupCreate();
@@ -201,7 +206,8 @@ static void sta_config(const char *ssid, const char *pass)
     put_field(wc.sta.ssid, sizeof(wc.sta.ssid), ssid);
     put_field(wc.sta.password, sizeof(wc.sta.password), pass);
     wc.sta.threshold.authmode = pass[0] ? WIFI_AUTH_WPA_PSK : WIFI_AUTH_OPEN;
-    esp_wifi_set_config(WIFI_IF_STA, &wc);
+    esp_err_t e = esp_wifi_set_config(WIFI_IF_STA, &wc);
+    if (e != ESP_OK) ESP_LOGE(TAG, "station config not set: %s", esp_err_to_name(e));
 }
 
 void net_test_offline_next_boot(bool short_setup) { test_offline_boot = short_setup ? TEST_MAGIC ^ TEST_SHORT : TEST_MAGIC; }
@@ -210,8 +216,8 @@ void net_test_offline(void)
 {
     ESP_LOGW(TAG, "TEST: saved network replaced by \"" TEST_SSID "\" until 'wifi online' or a restart");
     esp_timer_stop(retry_timer);
-    sta_config(TEST_SSID, "unreachable");
     esp_wifi_disconnect();                        // the disconnect event schedules retries (to the fake network)
+    sta_config(TEST_SSID, "unreachable");
 }
 
 void net_test_online(void)
@@ -219,11 +225,14 @@ void net_test_online(void)
     char ssid[33] = "", pass[65] = "";
     if (!net_load_creds(ssid, sizeof(ssid), pass, sizeof(pass))) return;
     ESP_LOGW(TAG, "TEST: saved network \"%s\" restored", ssid);
+    // Disconnect first: it also cancels an attempt in progress. esp_wifi_set_config() refuses while the station is
+    // connecting ("sta is connecting, cannot set config"): the device then kept trying the fake network forever
+    // (espforge harness, wifi_runtime, October 4; its LESSONS L155)
+    esp_timer_stop(retry_timer);
+    esp_wifi_disconnect();
     sta_config(ssid, pass);
     if (setup_on() || net_is_connected()) return;  // setup open: tried once it closes (resume_saved)
     retries = 0;
-    esp_timer_stop(retry_timer);
-    esp_wifi_disconnect();
     esp_wifi_connect();
 }
 
@@ -377,8 +386,8 @@ void net_setup_ap_stop_any(void) { ap_down(); }
 
 /* ---------------- Wi-Fi Easy Connect (DPP enrollee) ----------------
  * The display shows a DPP QR code; an Android phone (10+) scans it (camera or any QR scanner) and sends
- * the network it's connected to (SSID + password). Needs STA mode without connection attempts, so the
- * setup AP and our reconnects are paused while it listens. */
+ * the network it's connected to (SSID + password). No connection attempts while it listens; the setup AP stays up,
+ * moved to the Easy Connect channel (dpp_hold_channel). */
 
 // Listen on ONE channel, the one the phone is most likely on: the saved network's if it is in range, else the
 // strongest network's. The phone stays on its own network's channel; the display needs ~0.3 s to answer, and a
@@ -405,23 +414,48 @@ static int scan_channel(const char *ssid, int dwell_ms, int *seen)
     return ch;
 }
 
-static void dpp_pick_channel(void)
+// connected: the channel of the network the station was on, used if the scan by name finds nothing; 0 when offline
+static void dpp_pick_channel(int connected)
 {
     char saved[33] = "", pass[65];
     net_load_creds(saved, sizeof(saved), pass, sizeof(pass));
     int seen = 0, ch = 0;
     const char *why = "default";
+    // The scan is kept even when the channel is known from the connection: skipping it made every Easy Connect attempt
+    // time out (ESP_ERR_DPP_AUTH_TIMEOUT, espforge, October 4), while the attempts after a scan had worked.
     // The saved network first, by name: a probe request carrying its name is answered more reliably than a broadcast
     // one, and only its records come back (a broadcast scan keeps the 16 strongest). The broadcast scan at 40-80 ms per
     // channel missed a router on a busy channel (v1.10.0 harness run: it picked the strongest network, channel 11).
     if (saved[0] && (ch = scan_channel(saved, 120, &seen))) why = "saved network";      // ~1.6 s
+    else if (connected) { ch = connected; why = "the network it was connected to"; }
     else if ((ch = scan_channel(NULL, 80, &seen))) why = "strongest network";          // ~1 s more
     if (ch < 1 || ch > 13) ch = 6;
     snprintf(dpp_chan, sizeof(dpp_chan), "%d", ch);
     ESP_LOGI(TAG, "Easy Connect: channel %d (%s, %d networks seen)", ch, why, seen);
 }
 
+/* The setup AP runs on the Easy Connect channel while it listens, to keep the radio parked there. ESP-IDF stops
+ * listening when the phone's request arrives (ROC cancelled), computes the answer (~0.24 s), and sends it with a short
+ * wait on the channel; the phone confirms ~7 ms after receiving it. With the station off every network nothing held
+ * the radio on the channel, and the phone's log showed its confirmation not ACKed: Auth Confirm timeout, every time
+ * with a Pixel 8 Pro (espforge and this display alike, October 4; ESP-IDF issues #12151, #17672). An AP never leaves
+ * its channel. This is also why Easy Connect used to "only work online" here (v1.10). */
+static void dpp_hold_channel(int ch)
+{
+    if (!ap_active) ap_up();
+    wifi_config_t c;
+    if (esp_wifi_get_config(WIFI_IF_AP, &c) == ESP_OK && c.ap.channel != ch) {
+        c.ap.channel = ch;
+        esp_wifi_set_config(WIFI_IF_AP, &c);
+    }
+    ESP_LOGI(TAG, "Easy Connect: setup AP held on channel %d (keeps the radio there for the phone's confirmation)", ch);
+}
+
 static net_dpp_uri_cb_t dpp_uri_cb;
+// Easy Connect starts in steps that finish in the supplicant's own task: bootstrap_gen -> URI_READY -> start_listen ->
+// the listen itself. Deinit before the listen ran made it use a deleted event group: assert in dpp_listen_start, a
+// restart (espforge, a setup page switched back within a second, October 4). net_dpp_stop waits for the listen.
+static volatile int64_t dpp_started_us, dpp_listen_us;
 static net_dpp_done_cb_t dpp_done_cb;
 static bool dpp_inited;
 
@@ -437,6 +471,7 @@ static void dpp_event(esp_supp_dpp_event_t evt, void *data)
             // bootstrap_gen() is asynchronous: listening is only possible once the code exists
             esp_err_t e = dpp_active ? esp_supp_dpp_start_listen() : ESP_OK;
             if (e != ESP_OK) ESP_LOGE(TAG, "Easy Connect: can't listen: %s", esp_err_to_name(e));
+            dpp_listen_us = esp_timer_get_time();
         }
         break;
     case ESP_SUPP_DPP_CFG_RECVD: {
@@ -480,11 +515,19 @@ bool net_dpp_start(net_dpp_uri_cb_t on_uri, net_dpp_done_cb_t on_done)
     dpp_uri_cb = on_uri;
     dpp_done_cb = on_done;
     dpp_active = true;
+    dpp_started_us = esp_timer_get_time();
+    dpp_listen_us = 0;
+    wifi_ap_record_t ap;                                   // the router's channel, while still connected to it
+    int connected = net_is_connected() && esp_wifi_sta_get_ap_info(&ap) == ESP_OK ? ap.primary : 0;
     esp_timer_stop(retry_timer);
     esp_wifi_disconnect();                                 // listening needs the radio (also cancels an attempt)
     ESP_LOGI(TAG, "Easy Connect: not trying the saved network meanwhile");
-    esp_wifi_set_mode(WIFI_MODE_STA);
-    dpp_pick_channel();
+    // Listen only once the station has really left (the listen must not race it), with power save off: the radio must
+    // be awake on the channel for the phone's request
+    for (int i = 0; i < 50 && net_is_connected(); i++) vTaskDelay(pdMS_TO_TICKS(20));
+    esp_wifi_set_ps(WIFI_PS_NONE);
+    dpp_pick_channel(connected);
+    dpp_hold_channel(atoi(dpp_chan));
     esp_err_t err = ESP_OK;
     if (!dpp_inited) {
         err = esp_supp_dpp_init(dpp_event);
@@ -493,6 +536,7 @@ bool net_dpp_start(net_dpp_uri_cb_t on_uri, net_dpp_done_cb_t on_done)
     if (err == ESP_OK) err = esp_supp_dpp_bootstrap_gen(dpp_chan, DPP_BOOTSTRAP_QR_CODE, NULL, NULL);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Easy Connect unavailable: %s", esp_err_to_name(err));
+        dpp_started_us = 0;                                // nothing pending: no wait in net_dpp_stop
         net_dpp_stop();
         return false;
     }
@@ -503,11 +547,17 @@ bool net_dpp_start(net_dpp_uri_cb_t on_uri, net_dpp_done_cb_t on_done)
 void net_dpp_stop(void)
 {
     if (!dpp_active) return;
+    // Not from the task that delivers DPP events, and not holding a lock its callbacks take (ui.c's su_dpp_uri takes
+    // the display lock): the wait would block the event it waits for. At most 3 s for the QR code, then 300 ms for the
+    // listen it starts. The caller is ui.c's setup radio task.
+    while (dpp_started_us && !dpp_listen_us && esp_timer_get_time() - dpp_started_us < 3000000) vTaskDelay(pdMS_TO_TICKS(50));
+    while (dpp_listen_us && esp_timer_get_time() - dpp_listen_us < 300000) vTaskDelay(pdMS_TO_TICKS(50));
     esp_supp_dpp_stop_listen();
     if (dpp_inited) { esp_supp_dpp_deinit(); dpp_inited = false; }
     dpp_active = false;
     dpp_uri_cb = NULL;
     dpp_done_cb = NULL;
+    esp_wifi_set_ps(WIFI_PS_MIN_MODEM);                    // ESP-IDF's default for a station
     ESP_LOGI(TAG, "Easy Connect stopped");
     resume_saved();
 }

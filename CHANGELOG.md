@@ -10,6 +10,12 @@ their own `## vX.Y.Z-rc.N` section. Those are shown only to Beta users, while th
 list everything again. (Three tags have no section: v1.3.0-rc.1; and v1.12.0-rc.1 and v1.12.1-rc.2, whose builds failed and were published
 as v1.12.0-rc.2 and v1.12.1-rc.3.)
 
+## v1.13.0-rc.1 - 2026-10-04
+- Wi-Fi Easy Connect works with phones that failed before (a Pixel 8 Pro failed every time): the display now stays on the right radio channel until the phone has finished, online and offline.
+- The Easy Connect page appears as soon as you swipe to it; the screen no longer freezes for two seconds while the display looks for your network.
+- Switching quickly between the two Wi-Fi setup pages can no longer restart the display.
+- Behind the scenes: start-up details reach the log even when the computer reconnects late, and leftover data in the crash-report area is cleaned up.
+
 ## v1.12.3 - 2026-10-04
 - Try it in your browser: swiping between days in the hourly view no longer closes it, and Vancouver and Iqaluit are there next to Québec City, to swipe between places from the start.
 - Behind the scenes: a new automatic test for the alert screen, a smoothness test that no longer mistakes an unrelated screen update for a stutter, and clearer messages in the display's log when the forecast service has trouble. Nothing changes on the display itself.

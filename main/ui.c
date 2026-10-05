@@ -27,6 +27,9 @@
 #include "esp_log.h"
 #include "esp_attr.h"
 #include "esp_heap_caps.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
+#include "freertos/task.h"
 
 #ifdef EMU_BUILD                             // the browser emulator (web/emu): the fonts are arrays, their ends pointers
 extern const uint8_t ttf_start[], syl_start[];
@@ -1158,8 +1161,9 @@ static void gesture_cb(lv_event_t *e)
 /* ---------- Wi-Fi setup screen ----------
  * Page 1 (any phone): QR code to join the display's setup network; the setup page opens by itself.
  * Page 2 (Android 10+): Wi-Fi Easy Connect (DPP). The phone scans this QR code from its Wi-Fi settings and
- * sends the network it's connected to, password included. The radio can't do both at once, so the
- * setup network runs on page 1 and Easy Connect listens on page 2. Swipe to switch. */
+ * sends the network it's connected to, password included. Swipe to switch. The setup network stays up on page 2:
+ * net.c moves it to Easy Connect's channel, which keeps the radio there for the phone's confirmation (without it a
+ * Pixel 8 Pro failed every time, October 4). The radio work runs in its own task (su_radio_task). */
 
 static lv_obj_t *scr_setup, *su_title, *su_note, *su_qr, *su_body, *su_dot[2];
 static int su_page;
@@ -1168,6 +1172,55 @@ static volatile bool su_open;
 static lv_timer_t *su_timer;
 static char su_note_text[96];
 static char su_ap_qr[64];                 // "WIFI:T:WPA;S:Weather-Setup;P:<this display's password>;;"
+
+/* The radio work of a page (Easy Connect's channel scan: 1.6-2.6 s, stopping the other mode) runs in its own task:
+ * done in the swipe's handler it froze the screen. And net_dpp_stop() waits up to 3 s for Easy Connect's listen to
+ * start (stopping before it crashed), while su_dpp_uri() needs the display lock: no stop may run under that lock.
+ * Only the latest page request counts; stops are never skipped. A request with `notify` wakes its sender when done. */
+enum { RADIO_AP, RADIO_DPP, RADIO_DPP_OFF, RADIO_OFF };
+typedef struct { int mode; TaskHandle_t notify; } radio_req_t;
+static QueueHandle_t su_q;
+static void su_dpp_uri(const char *uri);
+static void su_dpp_done(bool ok, const char *ssid);
+
+static void radio_do(const radio_req_t *r)
+{
+    switch (r->mode) {
+    case RADIO_AP:  net_dpp_stop(); net_setup_ap_start(); break;
+    case RADIO_DPP:
+        if (!net_dpp_start(su_dpp_uri, su_dpp_done)) {
+            display_lock(-1);
+            if (su_page == 1) lv_label_set_text(su_body, tr(T_WIFI_DPP_NONE));
+            display_unlock();
+        }
+        break;
+    case RADIO_DPP_OFF: net_dpp_stop(); break;
+    default:        net_dpp_stop(); net_setup_ap_stop(); break;
+    }
+    if (r->notify) xTaskNotifyGive(r->notify);
+}
+
+static void su_radio_task(void *arg)
+{
+    radio_req_t r, next;
+    while (xQueueReceive(su_q, &r, portMAX_DELAY)) {
+        while (xQueueReceive(su_q, &next, 0)) {
+            if (r.mode == RADIO_AP || r.mode == RADIO_DPP) {   // a newer request replaces a page's radio
+                if (r.notify) xTaskNotifyGive(r.notify);
+            } else {
+                radio_do(&r);
+            }
+            r = next;
+        }
+        radio_do(&r);
+    }
+}
+
+static void su_radio(int mode)
+{
+    radio_req_t r = { mode, NULL };
+    if (su_q) xQueueSend(su_q, &r, pdMS_TO_TICKS(100));
+}
 
 static void su_dots(void)
 {
@@ -1206,20 +1259,17 @@ static void su_show_page(int page)
     su_page = page;
     su_dots();
     if (page == 0) {
-        net_dpp_stop();
-        net_setup_ap_start();
         lv_label_set_text(su_title, tr(T_WIFI_SETUP));
         snprintf(su_ap_qr, sizeof(su_ap_qr), "WIFI:T:WPA;S:" SETUP_AP_SSID ";P:%s;;", net_setup_ap_pass());
         lv_qrcode_update(su_qr, su_ap_qr, strlen(su_ap_qr));
         lv_obj_remove_flag(su_qr, LV_OBJ_FLAG_HIDDEN);
         lv_label_set_text_fmt(su_body, tr(T_WIFI_JOIN), SETUP_AP_SSID, net_setup_ap_pass());
+        su_radio(RADIO_AP);
     } else {
         lv_label_set_text(su_title, tr(T_WIFI_DPP_TITLE));
         lv_obj_add_flag(su_qr, LV_OBJ_FLAG_HIDDEN);          // until the code is generated
         lv_label_set_text(su_body, tr(T_WIFI_DPP_HOW));
-        net_setup_ap_stop_any();
-        if (!net_dpp_start(su_dpp_uri, su_dpp_done))
-            lv_label_set_text(su_body, tr(T_WIFI_DPP_NONE));
+        su_radio(RADIO_DPP);                                 // the setup network stays up (net.c holds it there)
     }
     ESP_LOGI("ui", "Wi-Fi setup page %d (%s)", page, page ? "Easy Connect" : "setup network");
 }
@@ -1229,8 +1279,7 @@ static void su_close(void)
     ESP_LOGI("ui", "Wi-Fi setup closed");
     su_open = false;
     if (su_timer) { lv_timer_delete(su_timer); su_timer = NULL; }
-    net_dpp_stop();
-    net_setup_ap_stop();
+    su_radio(RADIO_OFF);
     lv_screen_load_anim(back_to_cfg ? scr_cfg : scr_main, LV_SCR_LOAD_ANIM_FADE_IN, 200, 0, false);
     back_to_cfg = false;
 }
@@ -1312,12 +1361,15 @@ bool ui_wifi_setup_close(void)
     return close;
 }
 
+// Easy Connect stops before this returns (main.c then lets a phone finish on the setup network): through the radio
+// task, so it never runs at the same time as a stop queued by ui_wifi_setup_close(), and not under the display lock
 void ui_wifi_setup_end(void)
 {
     display_lock(-1);
     if (su_timer) { lv_timer_delete(su_timer); su_timer = NULL; }
-    net_dpp_stop();
     display_unlock();
+    radio_req_t r = { RADIO_DPP_OFF, xTaskGetCurrentTaskHandle() };
+    if (su_q && xQueueSend(su_q, &r, pdMS_TO_TICKS(1000)) == pdTRUE) ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(10000));
 }
 
 /* ---------- Weather alerts ---------- */
@@ -2530,6 +2582,8 @@ static void cfg_create(void)
 
 void ui_init(void)
 {
+    su_q = xQueueCreate(4, sizeof(radio_req_t));
+    xTaskCreatePinnedToCore(su_radio_task, "setup_radio", 4096, NULL, 3, NULL, 0);   // internal RAM: NVS writes
     display_lock(-1);
     f_time = mkfont(26);  f_city = mkfont(26);  f_big = mkfont(96);
     f_cond = mkfont(28);  f_small = mkfont(20); f_tiny = mkfont(19); f_micro = mkfont(15);

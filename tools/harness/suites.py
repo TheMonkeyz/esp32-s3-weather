@@ -6,7 +6,7 @@ import re
 import subprocess
 import time
 
-from board import Fail, OLD_SETUP_PASS, SETUP_IP, dns_query, http_get, ROOT
+from board import Fail, OLD_SETUP_PASS, READY, SETUP_IP, dns_query, http_get, ROOT
 
 SUITES = {}
 
@@ -171,6 +171,11 @@ def hourly_touches(ctx):
     b.cmd('tap 125 350')                                 # a day: the hourly view
     b.wait_screen('hourly', 6)
     time.sleep(1.5)
+    # Tomorrow: its 24 hours. Today's list shrinks through the day: at 20:30 it scrolled 14 px in all ("now at 14 of
+    # 0..14"), and every flick "barely moved" (October 4, v1.13.0-align.1, the code unchanged)
+    b.cmd('drag 400 300 80 300 250')
+    time.sleep(1.5)
+    check(b.cmd('page', r'test: page .*day=(\d+)').group(1) == '1', 'the day swipe to tomorrow did not happen')
     scroll = r'slide: scroll: \d+ frames in \d+ ms, moved (\d+) px'
     for i in range(3):                                   # a quick short flick, three times
         at = len(ctx.log.lines())
@@ -542,7 +547,102 @@ def swipes(ctx):
     b.wait_screen('weather', 6)
 
 
+# ---------------------------------------------------------------- start-up lines
+
+@test('boot')
+def start_lines_after_reset(ctx):
+    """The lines the tools rely on come after the first ~2.5 s, which a PC monitor misses after a reset on USB
+    Serial/JTAG (espforge LESSONS L154): before v1.13.0 "ota: Running" was lost in about one restart out of two."""
+    b = ctx.board
+    ctx.reset_ok = True                              # this test restarts the board on purpose
+    for i in range(3):
+        at = len(ctx.log.lines())
+        b.cmd('reboot', r'test: ok restarting')
+        ctx.log.wait(r'ota: Running \S+ from', 40, f'"ota: Running" after restart {i + 1}', start=at)
+        ctx.log.wait(r'diag: firmware ', 10, f'the boot info after restart {i + 1}', start=at)
+    ctx.log.wait(r'diag: mark first weather', 120, 'the first forecast after the restarts', start=at)
+    ctx.note('3 restarts: "ota: Running" and the boot info logged each time')
+
+
 # ---------------------------------------------------------------- Wi-Fi: lost at run time
+
+@test('wifi_runtime')
+def online_during_attempt(ctx):
+    """'wifi online' while the station is busy with an attempt: esp_wifi_set_config() refuses then ("sta is
+    connecting"), and firmware before v1.13.0 set the config before disconnecting: the refusal went unnoticed and it
+    kept trying the fake network forever (espforge LESSONS L155)."""
+    b = ctx.board
+    go_weather(ctx)
+    at = len(ctx.log.lines())
+    b.cmd('wifi offline', r'test: wifi (.*)')
+    end = time.time() + 15
+    while b.wifi()['connected'] == '1':
+        if time.time() > end:
+            raise Fail('still connected 15 s after the network was taken away')
+        time.sleep(1)
+    # An attempt starts 1 s after each failure and scans for the missing network for 1-2 s: land inside one
+    r0 = b.wifi()['retries']
+    end = time.time() + 20
+    while b.wifi()['retries'] == r0:
+        if time.time() > end:
+            raise Fail('no reconnect attempt within 20 s')
+        time.sleep(0.2)
+    time.sleep(1.3)
+    b.cmd('wifi online', r'test: wifi (.*)')
+    end = time.time() + 30
+    while b.wifi()['connected'] != '1':
+        if time.time() > end:
+            refused = ctx.log.count(r'station config not set', start=at)
+            raise Fail(f'not connected 30 s after "wifi online" sent during an attempt (refused configs logged: {refused})')
+        time.sleep(1)
+    ctx.note(f'"wifi online" during an attempt: connected; refused configs logged: '
+             f'{ctx.log.count(r"station config not set", start=at)}')
+
+
+@test('wifi_runtime')
+def setup_pages_quick(ctx):
+    """The Easy Connect page appears at once (its channel scan runs in a task, not in the swipe's handler: it froze
+    the screen 1.6-2.6 s before v1.13.0), and quick switches back don't crash (Easy Connect deinit before its listen
+    started: an assert and a restart, espforge LESSONS L165). Offline, where setup opens on a long-press."""
+    b = ctx.board
+    go_weather(ctx)
+    b.cmd('wifi offline', r'test: wifi (.*)')
+    try:
+        end = time.time() + 15
+        while b.wifi()['connected'] == '1':
+            if time.time() > end:
+                raise Fail('still connected 15 s after the network was taken away')
+            time.sleep(1)
+        b.cmd('press 233 233')
+        b.wait_screen('setup0', 6)
+        at = len(ctx.log.lines())
+        b.cmd('swipe left')
+        t0 = time.time()
+        b.wait_screen('setup1', 5, step=0.05)
+        shown = time.time() - t0
+        check(shown < 0.6, f'the Easy Connect page took {shown:.2f} s after the swipe (the radio work blocks the screen)')
+        ctx.log.wait(r'Easy Connect: setup AP held on channel \d+', 10, 'the setup network held on the channel', start=at)
+        check(b.wifi()['ap'] == '1', 'the setup network is down on the Easy Connect page')
+        for i in range(3):                           # back within ~0.3 s: before Easy Connect's listen started
+            at = len(ctx.log.lines())
+            b.cmd('swipe right')
+            b.cmd('swipe left')
+            b.wait_screen('setup1', 6, step=0.2)
+            ctx.log.wait(r'Easy Connect: QR code ready, listening', 15, f'Easy Connect listening again (round {i + 1})',
+                         start=at)
+        b.cmd('swipe right')
+        b.wait_screen('setup0', 6)
+        b.cmd('tap 233 233')                         # close: "Tap to try again"
+        ctx.log.wait(r'Setup closed: trying the saved network again', 10)
+    finally:
+        b.cmd('wifi online', r'test: wifi (.*)')
+    end = time.time() + 40
+    while b.wifi()['connected'] != '1':
+        if time.time() > end:
+            raise Fail('did not reconnect within 40 s after setup closed and the network came back')
+        time.sleep(1)
+    ctx.note(f'Easy Connect page shown {shown:.2f} s after the swipe; 3 quick switches back and forth, no restart')
+
 
 @test('wifi_runtime')
 def lose_and_recover(ctx):
@@ -628,7 +728,7 @@ def unreachable_at_startup(ctx):
     # 1. restart with the saved network unreachable: Connecting... -> offline setup after ~30 s
     ctx.reset_ok = True                              # this test restarts the board on purpose
     b.cmd('wifi offline-boot', r'test: ok restarting')
-    ctx.log.wait(r'test: console ready', 30, 'the restart')
+    ctx.log.wait(READY, 30, 'the restart')
     ctx.log.wait(r'TEST: this boot uses', 10, 'the fake network on this boot')
     ctx.log.wait(r'offering the setup network', 50, 'offline setup after the 30 s connect timeout')
     b.wait_screen('setup0', 5)
@@ -642,14 +742,20 @@ def unreachable_at_startup(ctx):
     check(w1['retries'] == w0['retries'], f'reconnect attempts while setup was open ({w0["retries"]} -> {w1["retries"]})')
 
     # 3. Easy Connect: listens on the saved network's channel (the phone's), not 6
+    at = len(ctx.log.lines())
     b.cmd('swipe left')
     b.wait_screen('setup1', 6)
-    m = ctx.log.wait(r'Easy Connect: channel (\d+) \(([^,]+),', 15)
+    m = ctx.log.wait(r'Easy Connect: channel (\d+) \(([^,]+),', 15, start=at)
     ch, why = int(m.group(1)), m.group(2)
-    ctx.log.wait(r'Easy Connect: QR code ready, listening on channel', 10)
+    # The setup network stays up, moved to that channel: it keeps the radio there for the phone's confirmation
+    # (without it a Pixel 8 Pro's confirmation was never received, v1.13.0)
+    held = int(ctx.log.wait(r'Easy Connect: setup AP held on channel (\d+)', 10, start=at).group(1))
+    check(held == ch, f'setup network held on channel {held}, Easy Connect listens on {ch}')
+    ctx.log.wait(r'Easy Connect: QR code ready, listening on channel', 10, start=at)
+    check(b.wifi()['ap'] == '1', 'the setup network is down on the Easy Connect page')
     if want_ch:
         check(ch == want_ch, f'Easy Connect listens on channel {ch} ({why}); "{saved}" is on {want_ch}')
-    ctx.note(f'Easy Connect channel {ch} ({why})')
+    ctx.note(f'Easy Connect channel {ch} ({why}), setup network held there')
     if ctx.opts.phone:
         ctx.ask('On your Android phone (connected to "%s"): scan the code on the display now with the camera or '
                 'any QR scanner. The harness waits 3 minutes.' % saved)
@@ -659,10 +765,12 @@ def unreachable_at_startup(ctx):
         ctx.skip('internal_min_kb.reconnect', 'Easy Connect restarted the board (--phone)')
         return                                       # the restart cleared the fake network: done
 
-    # 4. back to the setup network: its DNS must work again (stop_dns_server leaked the socket: errno 112)
+    # 4. back to the setup network: its DNS must work (stop_dns_server leaked the socket once: errno 112). Since
+    # v1.13.0 it stayed up during Easy Connect, so it isn't started again.
+    at = len(ctx.log.lines())
     b.cmd('swipe right')
     b.wait_screen('setup0', 6)
-    ctx.log.wait(r'Setup AP started', 5)
+    ctx.log.wait(r'Easy Connect stopped', 10, start=at)
     phone_check(ctx)
     check(ctx.log.count(r'unable to bind') == 0, 'DNS server could not bind port 53 again')
 
@@ -752,7 +860,7 @@ def setup_stops_opening_by_itself(ctx):
         return
     ctx.reset_ok = True
     b.cmd('wifi offline-boot-short', r'test: ok restarting')
-    ctx.log.wait(r'test: console ready', 30, 'the restart')
+    ctx.log.wait(READY, 30, 'the restart')
     at = len(ctx.log.lines())
     ctx.log.wait(r'offering the setup network', 50, 'offline setup after the 30 s connect timeout', start=at)
     b.wait_screen('setup0', 5)
@@ -792,7 +900,7 @@ def location_hint(ctx):
     ctx.reset_ok = True
     at = len(ctx.log.lines())
     b.cmd('reboot', r'test: ok')
-    ctx.log.wait(r'test: console ready', 40, 'the restart', start=at)
+    ctx.log.wait(READY, 40, 'the restart', start=at)
     ctx.log.wait(r'ui: first run: location hint', 90, 'the hint once the forecast is shown', start=at)
     b.wait_screen('phone', 5)
     b.snap('current', ctx.out('screen_first_run_hint.png'))

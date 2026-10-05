@@ -69,7 +69,20 @@ static void startup_info(void)
     // xtensa-esp32s3-elf-addr2line -pfC -e build/v55/weather_amoled.elf <addresses>), then erased
 #if CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH
     esp_core_dump_summary_t *cd = malloc(sizeof(*cd));
-    if (cd && esp_core_dump_image_check() == ESP_OK && esp_core_dump_get_summary(cd) == ESP_OK) {
+    esp_err_t chk = esp_core_dump_image_check();
+    // Not a crash: whatever was in the partition before (another firmware's data at that address after a different
+    // partition table, e.g. espforge's, which keeps its core dump where this one has the map cache). ESP-IDF logs an
+    // E line about it at every boot until it is erased (espforge LESSONS L158). A blank partition (size word
+    // 0xFFFFFFFF, which is also what an erase leaves) gives the same error code: read the word to tell them apart.
+    if (chk == ESP_ERR_INVALID_SIZE) {
+        const esp_partition_t *cp = esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_COREDUMP, NULL);
+        uint32_t size = 0xFFFFFFFF;
+        if (cp && esp_partition_read(cp, 0, &size, sizeof(size)) == ESP_OK && size != 0xFFFFFFFF) {
+            ESP_LOGW(TAG, "core dump partition held no valid dump (size word 0x%08lx), erased", (unsigned long)size);
+            esp_core_dump_image_erase();
+        }
+    }
+    if (cd && chk == ESP_OK && esp_core_dump_get_summary(cd) == ESP_OK) {
         char bt[16 * 11 + 1] = "";
         for (uint32_t i = 0, n = 0; i < cd->exc_bt_info.depth && i < 16; i++)
             n += snprintf(bt + n, sizeof(bt) - n, " 0x%08lx", (unsigned long)cd->exc_bt_info.bt[i]);
@@ -145,6 +158,10 @@ static void diag_task(void *arg)
 {
     int period = (int)(intptr_t)arg;
     size_t int_lg_min = SIZE_MAX, dma_lg_min = SIZE_MAX;
+    // After the USB Serial/JTAG port is back: it re-enumerates at reset, and a monitor on the PC misses the first
+    // ~2.5 s of the log (espforge LESSONS L154: the boot info was lost in one run out of two)
+    int64_t up_ms = esp_timer_get_time() / 1000;
+    if (up_ms < 4000) vTaskDelay(pdMS_TO_TICKS(4000 - up_ms));
     startup_info();
     report_tasks();                                               // baseline
     for (int tick = 1;; tick++) {

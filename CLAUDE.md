@@ -32,6 +32,21 @@ release candidate and tests it with `harness.py --ota` → a stable release only
   log window). Long silences read as "stuck". Don't take control of the user's screen; ask first, and prefer the flash
   helper. Ask the user to interact with the board (swipe, tap, open the page) *during* the log window, and say when.
 
+## Shared with espforge
+
+[espforge](https://github.com/TheMonkeyz/espforge) (`C:\Users\lmathieu\ESPDEV\espforge`) is this project's framework,
+extracted on October 4 (its `docs/LESSONS.md` L1-L176 generalize the bugs below, plus newer ones). The two drifted
+within hours: Easy Connect was fixed there while this display still failed with the user's phone. Plan (chosen
+October 4): first port fixes both ways; then this project takes forge_core, forge_net and forge_ota from espforge as a
+git submodule, and keeps its own display, touch, `slide.c` and app code.
+
+- **Twin files** (same code in both, until the submodule): `net.c`, `web.c`, `ota.c`, `diag.c`, `testcon.c`, `svc.c`,
+  `i18n.c`, `tlscert.c`, `version.c`, `png_rows.c`, `http_once.h`, `utf8.h`, `lvgl_mem.c`, `pager.c`, `imu.c`,
+  `display.c`, `touch.c`, `components/dns_server`; the harness's `board.py` / `harness.py`, the flash helper.
+  `slide.c` is not a twin: espforge's is a trimmed fork; port ideas, not the file.
+- **A fix in a twin file** gets ported to espforge in the same session, or a task chip for it, and a lesson there.
+  Before debugging Wi-Fi setup, OTA or the tools here, read espforge's LESSONS for that topic.
+
 ## Cloud build recipe (when no local IDF)
 
 The network allowlist blocked PyPI, dl.espressif.com, Docker Hub and the component registry; only GitHub worked:
@@ -137,11 +152,20 @@ Windows build gets both from `main/idf_component.yml`. `components/dns_server` *
     Easy Connect: now no attempts while any setup mode is on. (b) `stop_dns_server()` leaks its socket: the DNS
     server now runs forever, else the next setup AP has no captive portal. (c) Easy Connect timed out
     (`ESP_ERR_DPP_AUTH_TIMEOUT`) unless the display listened on the phone's own channel: scan and listen on the saved
-    (or strongest) network's channel. To see DPP steps, set `CONFIG_WPA_DEBUG_PRINT=y` in `build\v55\sdkconfig`
-    only (lines `wpa: DPP: …`). Reproduce with the bogus-SSID throwaway build (see Useful facts).
+    (or strongest) network's channel. To see DPP steps, set `CONFIG_ESP_WIFI_DEBUG_PRINT=y` and
+    `CONFIG_LOG_MAXIMUM_LEVEL_DEBUG=y` in `build\v55\sdkconfig` only (lines `wpa: DPP: …`; the old
+    `CONFIG_WPA_DEBUG_PRINT` does nothing on IDF 5.5). Reproduce with `wifi offline-boot` (harness `wifi_setup`).
     (d) v1.10.0's harness run caught the channel pick guessing: the broadcast scan missed the router (busy channel),
     so the display scans for the saved network by name first. A flaky check needs several runs before calling it
     fixed (4/4 after the fix).
+    (e) **The real Easy Connect failure (v1.13.0, found in espforge, October 4):** with the station off every network
+    nothing held the radio on the channel; a Pixel 8 Pro's confirmation arrived 7 ms after the display's answer and
+    was never received (`no-ACK` in the phone's log, Auth Confirm timeout here), 7 times out of 7. That is also why it
+    "only worked online" (c). The setup network now stays up on Easy Connect's channel (`dpp_hold_channel`). Found
+    with the phone's own log (docs/TESTING.md, "Easy Connect: the phone's side"), after three wrong theories.
+    (f) The radio work of a setup page (a 1.6-2.6 s scan) ran in the swipe's handler and froze the screen; Easy
+    Connect stopped before its listen started crashed (assert). A task does it now (`su_radio_task`), and
+    `net_dpp_stop()` waits for the listen: never call it under the display lock (`su_dpp_uri` takes it).
 21. **Frame rate (v1.11.0, October 2):** LVGL 9.2 can't redraw a full screen in less than ~65–85 ms, and profiling
     found no single hot spot (docs/TESTING.md §8). Moves between screens, places and days are now pictures sent
     straight to the panel by `slide.c` (ARCHITECTURE "Moves"). What it took, in order of cost:

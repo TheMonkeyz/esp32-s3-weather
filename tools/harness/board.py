@@ -21,6 +21,9 @@ import snapshot  # noqa: E402  (tools/snapshot.py)
 
 SETUP_SSID, SETUP_IP = 'Weather-Setup', '192.168.4.1'   # main/net.h
 OLD_SETUP_PASS = 'meteo1234'   # firmware before v1.12.0; since then each display has its own (wifi status: ap_pass)
+# The board is up: the console's line (~3 s) or the update task's (after 4 s, since v1.13.0). A PC monitor misses the
+# first ~2.5 s after a reset (espforge LESSONS L154): the console's line had a ~0.5 s margin.
+READY = r'test: console ready|ota: Running '
 
 
 class Fail(Exception):
@@ -154,7 +157,7 @@ class Board:
             time.sleep(1)
         self.log.pos = 0
         self._key = None                               # other firmware now (a flash): ask again
-        self.log.wait(r'test: console ready', 30, 'firmware with the test console')
+        self.log.wait(READY, 30, 'firmware with the test console')
 
     def stop_log(self):
         if self.helper_status() == 'logging':

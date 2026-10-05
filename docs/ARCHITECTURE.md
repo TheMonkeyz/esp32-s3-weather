@@ -581,10 +581,16 @@ order, and ~11 ms on the bus.
   page 2 = Wi-Fi Easy Connect; swipe switches. A tap closes it (except in first-time setup); offline the note says
   *Tap to try again*, because closing it lets the saved network be tried. Timer: 10 min online; 5 min offline unless a
   phone is on the setup AP (so a display whose router was rebooting gets back online by itself). `ui_wifi_setup_open()`
-  tells `main.c` when it closed.
-- **Easy Connect (DPP enrollee, `net.c`)**: `CONFIG_ESP_WIFI_DPP_SUPPORT=y`, `wpa_supplicant` in REQUIRES. The radio
-  can't serve the AP and listen at once, so page 2 stops the AP (`net_setup_ap_stop_any()`, even in first-time setup),
-  disconnects the station and pauses our reconnects (`dpp_active`). It then scans (~2 s) and listens on **one
+  tells `main.c` when it closed. The radio work of a page runs in its own task (`su_radio_task`, a queue: only the
+  latest page request counts, stops are never skipped), never in a touch handler (the scan froze the screen
+  1.6-2.6 s) nor under the display lock (`net_dpp_stop()` waits for Easy Connect's callbacks, which take it).
+  `ui_wifi_setup_end()` goes through the task too and waits for it (main.c, "Saved network is back").
+- **Easy Connect (DPP enrollee, `net.c`)**: `CONFIG_ESP_WIFI_DPP_SUPPORT=y`, `wpa_supplicant` in REQUIRES. Page 2
+  disconnects the station and pauses our reconnects (`dpp_active`), turns power save off, and keeps the **setup AP up,
+  moved to Easy Connect's channel** (`dpp_hold_channel()`, v1.13.0): ESP-IDF stops listening when the phone's request
+  arrives and answers with a short wait on the channel; the phone confirms ~7 ms later, and with nothing holding the
+  radio there that confirmation was lost (a Pixel 8 Pro: 7 failures out of 7, `no-ACK` in the phone's log). An AP
+  never leaves its channel. `CONFIG_MBEDTLS_ECP_FIXED_POINT_OPTIM` makes the answer ~4x faster. It scans (~2 s) and listens on **one
   channel**: the saved network's if in range, else the strongest network's (`dpp_pick_channel()`). The saved network
   is looked for **by name** first (probe requests carrying its SSID, 120 ms per channel): a broadcast scan at 40-80 ms
   missed a router on a busy channel and keeps only the 16 strongest records (v1.10.0: picked channel 11 instead
@@ -596,7 +602,9 @@ order, and ~11 ms on the bus.
   it right after bootstrap_gen returns `ESP_FAIL`, which was the first bug). `ESP_SUPP_DPP_CFG_RECVD` gives a
   `wifi_config_t`: saved with `net_save_creds()`, restart after 2.5 s. `ESP_SUPP_DPP_FAIL` re-listens; its data is
   the error code on IDF 5.4 but a `wifi_event_dpp_failed_t *` on 5.5 (`failure_reason`). Leaving page 2
-  deinitialises DPP and resumes reconnects.
+  deinitialises DPP and resumes reconnects; `net_dpp_stop()` first waits for the listen to start (≤3 s + 300 ms):
+  a deinit while it was still queued in the supplicant's task asserted (espforge, a page switched back at once).
+  When the scan finds nothing and the station was connected, the router's channel is used.
 - **Settings overlay** (`ui.c`, `ov_state`): 0 = hidden, 1 = settings QR (`https://<ip>/#k=<key>`, see Settings /
   web). The Settings screen's *Location & more (phone)* row and the first-run hint open it; a long-press on it opens
   the Wi-Fi setup screen (a screen of its own, not an overlay state).

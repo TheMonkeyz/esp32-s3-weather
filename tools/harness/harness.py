@@ -24,7 +24,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from board import Board, Fail, Log, PCWifi, ROOT  # noqa: E402
 from suites import SUITES  # noqa: E402
 
-ORDER = ['smoke', 'navigation', 'web', 'perf', 'presence', 'firstrun', 'wifi_runtime', 'wifi_setup']
+ORDER = ['smoke', 'boot', 'navigation', 'web', 'perf', 'presence', 'firstrun', 'wifi_runtime', 'wifi_setup']
 BASELINE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'baseline.json')
 
 

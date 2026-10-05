@@ -36,6 +36,9 @@ CONFIG_HTTPD_MAX_URI_LEN=600
 # the settings page arrived truncated; with LVGL's heap in PSRAM (v1.4) and the radar palettes out of internal RAM
 # (rc.2) it works: snapshots over HTTPS 2.2 -> 1.5 s, the page whole every time, the same internal RAM (harness 14/14).
 CONFIG_MBEDTLS_HARDWARE_AES=y
+# Easy Connect: the display makes a key pair before answering the phone, which may only visit this channel briefly.
+# Fixed-point ECC cut that answer to ~236 ms from ~900 ms (espforge, October 4, its LESSONS L173); costs flash, not RAM.
+CONFIG_MBEDTLS_ECP_FIXED_POINT_OPTIM=y
 CONFIG_COMPILER_OPTIMIZATION_PERF=y
 CONFIG_LV_DEF_REFR_PERIOD=15
 # No theme style transitions (80 ms fades on press): one ran on the weather screen after every drag and redrew it

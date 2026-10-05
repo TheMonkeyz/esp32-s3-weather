@@ -125,6 +125,31 @@ python tools/snapshot.py <ip> weather --key <key>   # the key: see §1 (else $WE
 - **Settings page:** the Playwright tests below, before every build that changes `main/web/index.html`.
 - **Host LVGL simulator:** used in the first session for layout work (see CLAUDE.md). It isn't in the repo. The
   snapshot endpoint now covers most of what it was used for, with the real fonts and data.
+- **Core dump partition with junk in it** (v1.13.0, not in the harness): with the user's OK and the flash helper
+  stopped, `esptool --port COM5 write_flash 0xa20000 junk.bin` (a few KB of random bytes). Next boot: ESP-IDF's own
+  `E (…) Incorrect size of core dump image` once, then `diag: core dump partition held no valid dump …, erased`; the
+  boot after has neither. A blank partition (what an erase leaves) is not "invalid": no line.
+
+### Easy Connect: the phone's side
+
+The display's log says what the display saw; only the phone's log says why the phone stopped. Android 11+, no
+cable (from espforge's docs/TESTING.md, where it found the cause in one try, October 4):
+
+1. On the phone: Developer options (tap Build number 7 times) → **Wireless debugging** on → **Pair device with
+   pairing code**. Note the IP:port and the code; also turn on **Enable Wi-Fi verbose logging**.
+2. On the PC (`C:\Users\lmathieu\ESPDEV\platform-tools\adb.exe`): `adb pair <ip>:<pairing port> <code>` (the IP, not
+   the mDNS name; a failed try uses the code up: ask for a new one), then `adb mdns services` for the connect port
+   and `adb connect <ip>:<port>`.
+3. `adb logcat -c`, then `adb logcat -v time > phone_dpp.txt` in the background; the user scans; then
+   `grep -E "DPP|DppManager" phone_dpp.txt`.
+4. Read: `DPP-TX ... type=0` (the phone's request), `DPP: Authentication Response from ...` (the display's answer
+   arrived), `DPP-TX-STATUS ... type=2 ... result=SUCCESS` (its confirmation received; `no-ACK`: the display's radio
+   was elsewhere, the v1.12 failure), `DPP-CONF-SENT` (the network was sent). The link drops when the phone changes
+   network; the phone keeps its log.
+
+The display's side in a test build: `CONFIG_ESP_WIFI_DEBUG_PRINT=y` **and** `CONFIG_LOG_MAXIMUM_LEVEL_DEBUG=y` in
+`build\v55\sdkconfig` only (lines `wpa: DPP: …`). ESP-IDF 5.5 renamed the old `CONFIG_WPA_DEBUG_PRINT`, which now does
+nothing; grep the generated sdkconfig for the option you set.
 
 ## 5. Settings page tests (`tools/webtest/`)
 

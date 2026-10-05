@@ -13,6 +13,12 @@ charging (AXP2101).
 ## Everyday use
 
 - [ ] **Home Assistant (MQTT)** — publish room presence from the microphones; show an indoor temperature.
+- [ ] **Wi-Fi setup pages that follow the finger** — the two setup pages switch on an LVGL gesture; espforge's are a
+  pager dragged as pictures (its `main/ui.c`). Weather's `slide_drag` could do the same (v1.13.0 left it out).
+- [ ] **Online setup: the home network back on the setup network's page** — opened while connected, the setup network
+  starts alongside the connection; after a visit to the Easy Connect page (which leaves the home network) the display
+  stays off it until setup closes (10 min at most). Not new in v1.13.0 (before, `net_setup_ap_start()` paused the
+  reconnect `net_dpp_stop()` had just scheduled). Reconnect when page 1 is shown and a saved network is in range.
 
 ## To evaluate
 
