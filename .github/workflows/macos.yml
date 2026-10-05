@@ -63,7 +63,7 @@ jobs:
           make -C web/emu -j4
           ls -l web/emu/build/emu.wasm
 
-      - name: Doctor (informational: no board, no GitHub sign-in here)
+      - name: "Doctor (informational, no board and no GitHub sign-in here)"
         if: always()
         run: bash tools/mac/doctor.sh || true
 
