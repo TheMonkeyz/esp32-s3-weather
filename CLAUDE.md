@@ -315,7 +315,10 @@ Windows build gets both from `main/idf_component.yml`. `components/dns_server` *
 - Screen-to-screen moves should feel like the hourly view: follow the finger, snap, bounce at the ends, no
   wrap-around. Since v1.11.0 screens, places and days all go through `slide.c` (~60 fps). The user asked for 60 fps,
   noticed at once when a faster animation lost the finger-following and the bounce, and noticed a 0.1 s delay
-  before a drag started. Frame rate alone isn't the goal: it has to follow the finger.
+  before a drag started. Frame rate alone isn't the goal: it has to follow the finger. October 4, v1.13.1-rc.1 (the
+  page keeps the finger's speed while a release is confirmed, instead of stopping ~50 ms then snapping): "felt
+  smooth like never before" (44 swipes: 57-71 fps, gaps 16-23 ms). The next thing to feel: 13 of those 44 drags
+  rendered a picture first (78-116 ms before the first frame instead of ~17).
 - **French = Canadian French (Québec), standard written:** "endroit(s)" for places (not "lieux"), "tamiser" for dim
   (not "atténuer"), "balayez le code QR", "appuyez longuement", **1er** for the first of the month. No joual, slang
   or anglicisms. Check grammar agreement when a noun changes (un endroit → "Nouvel endroit", "cet endroit").
