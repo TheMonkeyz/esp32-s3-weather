@@ -179,7 +179,12 @@ class Board:
                 time.sleep(0.5)
 
     # ---- test console ----
-    def cmd(self, line, expect=r'test: (ok|pong|screen|heap|wifi|presence|bench)', timeout=15):
+    # Commands that only read: sent again once when an answer is lost. The USB console has dropped a command line
+    # now and then with the board fine ("wifi status" sent right after a burst of Wi-Fi log lines, no answer; "where"
+    # answered at once 15 s later, October 4): a lost read is not a failure of the firmware under test.
+    READ_ONLY = ('screen', 'wifi status', 'heap', 'page', 'ping', 'presence', 'key')
+
+    def cmd(self, line, expect=r'test: (ok|pong|screen|heap|wifi|presence|bench)', timeout=15, _again=True):
         at = len(self.log.lines())
         with open(p('serial.send.tmp'), 'w') as f:
             f.write(line + '\n')
@@ -195,6 +200,9 @@ class Board:
                 w = self.cmd('where', r'test: where (.*)', timeout=5).group(1)
             except Fail:
                 w = 'no answer either'
+            if _again and w != 'no answer either' and line in self.READ_ONLY:
+                print(f'  (no answer to "{line}" while the console answers "where": sent again)', flush=True)
+                return self.cmd(line, expect, timeout, _again=False)
             raise Fail(f'{e}; where: {w}')
         if m.group(0).startswith('test: error'):
             if 'busy' in m.group(0) and line != 'where':

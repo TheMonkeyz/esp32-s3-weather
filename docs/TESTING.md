@@ -290,6 +290,17 @@ How it works:
   (`drag: PSRAM busy`, a touch loop's safety cap, a raw band timeout), which go to the report's notes. Tests keep
   their own positions (`at = len(ctx.log.lines())`, `wait(..., start=at)`, `count(..., start=at)`): a test that
   moved the mark hid a crash from the restart check.
+- **Prove a new test on the old firmware:** it must fail there, for the reason it names. Get the old build with
+  `gh release download vX -p weather_amoled-vX.bin -p partition-table.bin -p bootloader.bin` into a folder laid out
+  like a build (`partition_table/`, `bootloader/`) and `--flash` it. `online_during_attempt` and
+  `setup_pages_quick` fail on v1.12.3 (ESP-IDF's `sta is connecting, cannot set config`; the Easy Connect page after
+  1.8 s) and pass on v1.13.x (October 4).
+- **A test that changes the device's state cleans up without hiding its own failure:** `with recovering(ctx):`
+  runs `back_online()` (setup closed, the saved network back, a restart as the last resort) after the block,
+  whether it passed or not. Without it one failure on v1.12.3 failed the two Wi-Fi tests after it.
+- **A lost console line:** the USB console occasionally drops a command line with the board fine (no answer, while
+  `where` answers at once). `Board.cmd` sends a read-only command (`READ_ONLY`: screen, wifi status, heap...) once
+  more in that case and prints so; anything else still fails with `where`'s answer.
 - **Memory floors:** `internal_min_kb` (read in `perf`, floor 8 KB) and `internal_min_kb.reconnect` (read at the end
   of `wifi_setup`, after the reconnect path with three TLS clients and the forecast parse: 5 KB on October 2).
 - The harness's own logic has unit tests: `python -m unittest discover -s tools/harness -p "test_*.py"`.
