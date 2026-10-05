@@ -136,6 +136,35 @@ def every_screen(ctx):
 
 
 @test('navigation')
+def scroll_other_languages(ctx):
+    """Settings scrolled in French and Inuktitut: the picture still equals the screen. Inuktitut's syllabics (a
+    fallback font drawn 5/4 larger) reach above their label's box, and a strip of rows ending just above a label lost
+    their tips (pictest 1 row off, October 5): slide.c's render_rows draws a margin of rows around each strip."""
+    b = ctx.board
+    was = b.api('/api/config')['units']['lang']
+    try:
+        for lang in ('fr', 'iu'):
+            b.api('/api/units', {'lang': lang})
+            time.sleep(2)
+            b.cmd('wake')
+            go_weather(ctx)
+            b.cmd('press 233 233')
+            b.wait_screen('settings', 6)
+            time.sleep(1)
+            b.cmd('drag 233 330 233 130 300')
+            time.sleep(2.5)
+            pictest(ctx, f'Settings scrolled in {lang}')
+            b.cmd('drag 233 130 233 330 300')       # and back to the top
+            time.sleep(2.5)
+            pictest(ctx, f'Settings scrolled back in {lang}')
+            b.cmd('tap 233 45')
+            b.wait_screen('weather', 6)
+    finally:
+        b.api('/api/units', {'lang': was})
+        time.sleep(2)
+
+
+@test('navigation')
 def alert_layout(ctx):
     """The alert screen with long titles (console "alert sample"): a two-line title pushes the lines under it down.
     Real alerts are rare at the board's place, so the console lays the screen out with names Environment Canada used

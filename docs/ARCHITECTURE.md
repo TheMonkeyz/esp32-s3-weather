@@ -167,7 +167,10 @@ found no single hot spot to fix. Copying finished pictures is cheap: ~8 ms per s
 order, and ~11 ms on the bus.
 
 - **Pictures:** a screen is rendered off-display into a 466×466 RGB565 draw buffer (434 KB, PSRAM through LVGL's
-  heap). `slide_picture_rows()` renders only rows y0..y1, so a picture can be made one strip at a time. Painting saves
+  heap). `slide_picture_rows()` renders only rows y0..y1, so a picture can be made one strip at a time. `render_rows()`
+  also clears and draws up to 8 rows on each side (`ROW_MARGIN`, as far as the buffer has room): LVGL skips a label
+  whose box misses the rows drawn, and Inuktitut's syllabics (the fallback font, 5/4 larger) reach a few rows past
+  their box, so a strip ending just above a label lost the glyphs' tips (v1.14.1). Painting saves
   and restores the display's redraw list (`inv_p`) and ignores the invalidations it causes.
 - **Slides** (`slide_screen(to, MOVE_*, ms)`, run on the next LVGL cycle via `lv_async_call`): pictures of both
   screens, then frames sent with `display_raw_frame()`. `fill()` composes each row from the two pictures with a byte
@@ -248,7 +251,7 @@ order, and ~11 ms on the bus.
 - **List scrolls** (`slide_scroll()`, from `drag_read` for a vertical drag on a scrollable object other than the
   weather screen's places and the radar's zoom swipes: `slide_scroll_target()`): LVGL redrew all of a scrolling list
   for every frame (35–50 ms: 17–22 fps). Here each frame moves the list's rows within the picture of the screen shown
-  (which matches the panel, see Cache), has LVGL render only the rows coming into view (into an 87 KB strip buffer),
+  (which matches the panel, see Cache), has LVGL render only the rows coming into view (into a 102 KB strip buffer, 96 rows and the margins),
   and sends just the list's rectangle (`display_raw_area`); the move and the send are one pass
   (`scroll_move_fill`), bottom up when the content goes down. LVGL's own scroll position is kept up to date with
   `lv_obj_scroll_by()` so it renders those rows right; its redraw requests are dropped at the end (`inv_p` restored:
