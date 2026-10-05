@@ -187,6 +187,7 @@ Run `bash tools/mac/doctor.sh` first: most problems show up there as a FAIL with
 | Build fails after pulling the owner's changes | If `sdkconfig.defaults` changed: `rm build/v55/sdkconfig` and build again. Else `idf.py -B build/v55 fullclean`, build |
 | `git push` → 403 | The GitHub invitation isn't accepted yet, or `gh auth login` was for another account |
 | `git push` → rejected (non-fast-forward) | `git pull --rebase`, then push |
+| `git push` to `main` → rejected (`protect main` ruleset) | Expected: `main` only takes pull requests with the owner's approval. Push your branch and open a pull request |
 
 ---
 
