@@ -1,5 +1,14 @@
 # Architecture
 
+
+**Where the code lives (v1.14.0).** The infrastructure is espforge's (github.com/TheMonkeyz/espforge), taken at a
+release tag by the component manager (`main/idf_component.yml` → `managed_components/`): forge_core (diag, test
+console, i18n core, NVS helpers, version, png_rows, textfit, http_once, utf8), forge_net (`net.c`, `web.c`, `svc.c`,
+`tlscert.c`), forge_ota and dns_server. Their sections below describe how this display uses them; espforge's
+`docs/COMPONENTS.md` and the headers are the reference. This project's glue: `routes.c` (the page's app routes),
+`console.c` (its console commands, "where", the "diag: display" line), `services.c` (its outside services),
+`i18n.c` (texts, Inuktitut), Kconfig `CONFIG_FORGE_*` in `sdkconfig.defaults` (names, update site). CLAUDE.md,
+"Shared with espforge", says how to change shared code.
 ## Hardware (Waveshare ESP32-S3-Touch-AMOLED-1.75)
 
 | Part | Details | Pins |
@@ -69,7 +78,7 @@ LVGL timer and event callbacks already run inside the lock.
   `slide.c`, which copies it into its picture of the screen shown (see Moves, Cache).
 - Fonts: Montserrat TTF embedded and rendered by TinyTTF at 15–96 px, so accents and "°" render correctly.
 - **Core dump** (since v1.12.0-rc.6): a crash is written to the `coredump` partition (128 KB at 0xA20000, ELF,
-  CRC32) and the next boot logs `diag: last crash (core dump): task …, PC …, backtrace …` and erases it (decode
+  CRC32) and the next boot logs `diag: coredump: last crash in task …, PC …, backtrace …` and erases it (decode
   with `xtensa-esp32s3-elf-addr2line -pfC -e build/v55/weather_amoled.elf <addresses>`). The partition comes with a
   USB / web-flasher install (the table isn't updated over the air); without it the firmware logs that once and
   carries on.
@@ -361,7 +370,7 @@ order, and ~11 ms on the bus.
   weather screen. *Done* or a swipe right closes Settings.
 - Unused swipes call `lv_indev_wait_release()`; otherwise their release is also delivered as a `SHORT_CLICKED`.
 
-## Updates over Wi-Fi (`ota.c`)
+## Updates over Wi-Fi (espforge's forge_ota `ota.c`, `ota_web.c`; texts: `main.c` `ota_err_text`)
 
 - **Flash layout** (`partitions.csv`): nvs 0x9000 and phy 0xF000 stay where v1.0–1.2 had them (settings survive),
   `ota_0` 0x10000 and `ota_1` 0x310000 (3 MB each), `otadata` 0x610000, `mapcache` 0x620000. Web flasher, flash
@@ -411,7 +420,7 @@ order, and ~11 ms on the bus.
 - UV and AQI levels use the standard category colours. The weather request's URL is long enough to need
   `buffer_size_tx = 1024` (the default 512 logged "Buffer length is small to fit all the headers").
 
-## Status page (`svc.c`, `ui.c`)
+## Status page (espforge's forge_net `svc.c`; `services.c`, `ui.c`)
 
 - Two swipes right of the weather screen. Header: firmware version, channel and running slot
   (`esp_ota_get_running_partition()`); Wi-Fi RSSI, IP, uptime. Then one row per external service, in a list box at
@@ -565,7 +574,7 @@ order, and ~11 ms on the bus.
   The live view (`show_live()`) shows the newest frame that loaded, so a failed download keeps the previous image
   (with its time in the label) rather than a map without rain.
 
-## Wi-Fi setup / captive portal (`net.c`, `ui.c`, `web.c`)
+## Wi-Fi setup / captive portal (espforge's forge_net `net.c`, `web.c`; `ui.c`)
 
 - **Boot** (`main.c`): no saved network → `portal()` (AP only, until credentials are saved and the board
   restarts). Saved network → `net_begin()` + `web_start()` right away, then `net_wait(30000)`. If that fails,
@@ -703,7 +712,7 @@ order, and ~11 ms on the bus.
   (Testing/Short/Normal/Long) live only in `index.html` (`PRESETS`); loading the config picks the matching preset or
   *Custom*. Firmware default = Normal (`dim_s 600`, `off_s 3000`, `wake_s 3`).
 
-## Settings / web (`web.c`, `config.c`)
+## Settings / web (espforge's forge_net `web.c`; `routes.c`, `config.c`)
 
 - HTTPS server (`esp_https_server`, per-device self-signed EC P-256 cert from `tlscert.c`) on 443. The plain HTTP
   server on 80 is the captive portal on the setup network and redirects to HTTPS on the home network. The HTTPS
@@ -769,7 +778,7 @@ order, and ~11 ms on the bus.
   which also bumps `wx_gen` through `place_current()` so the graph canvases redraw), the alerts' "Until", and `radar_units_changed()` (clock, frame
   time, range ring in km or mi, radius). No refetch.
 
-## TLS certificate (`tlscert.c`)
+## TLS certificate (espforge's forge_net `tlscert.c`)
 
 - `tlscert_get()` loads `cert` / `key` (PEM strings) from NVS namespace `tls` and checks that the certificate
   parses. If they're missing, a short-lived task (`tlsgen`, 8 KB internal stack: key generation needs stack and
@@ -798,7 +807,7 @@ the install button's `manifest` attribute when the channel changes. `new_install
 the first install. The firmware version (`esp_app_get_description()->version`) is logged by `diag.c` and returned
 by `GET /api/config` as `version`.
 
-## Test console (`testcon.c`)
+## Test console (espforge's forge_core `testcon.c`; `console.c`)
 
 - Line commands on the USB serial port (USB-Serial-JTAG driver installed for input; the log keeps using the
   secondary console for output). Answers are `test:` log lines. Task `testcon`: 3 KB stack in internal RAM, core 0,

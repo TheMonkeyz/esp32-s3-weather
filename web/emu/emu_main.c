@@ -13,6 +13,7 @@
 #include "weather.h"
 #include "alerts.h"
 #include "i18n.h"
+#include "services.h"
 #include "freertos/task.h"
 #include "sound.h"
 #include "nvs.h"
@@ -114,6 +115,10 @@ static void run_lvgl(int ms)                       // LVGL for a while, giving t
 
 int main(void)
 {
+    app_text_init();                               // the texts and languages (forge_core's i18n), as the firmware
+    services_init();                               // the outside services in the firmware's order, then its two
+    svc_add("GitHub Pages", "updates", NULL);      // (forge_ota's update site: no updates in the browser)
+    svc_add("Browser clock", "", NULL);            // (forge_net's NTP: the browser's clock)
     lv_init();
     lv_tick_set_cb(tick);
     display_init();

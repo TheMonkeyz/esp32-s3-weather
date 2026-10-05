@@ -43,3 +43,4 @@ tools/harness/.display_key
 tools/harness/.setup_profile.xml
 tools/harness/baseline.proposed.json
 tools/harness/.display_ip
+.espforge/

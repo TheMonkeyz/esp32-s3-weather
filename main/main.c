@@ -25,6 +25,9 @@
 #include "testcon.h"
 #include "sound.h"
 #include "textfit.h"
+#include "routes.h"
+#include "services.h"
+#include "console.h"
 #include "cJSON.h"
 #include "esp_heap_caps.h"
 
@@ -200,10 +203,25 @@ static void offline_setup(const char *saved)
     net_setup_ap_stop();
 }
 
+// An update failure's reason in the display language (the update screen and the settings page show it)
+static const char *ota_err_text(ota_err_t e)
+{
+    switch (e) {
+    case OTA_E_NO_SITE:     return tr(T_OTA_NO_SITE);
+    case OTA_E_BAD_SITE:    return tr(T_OTA_BAD_SITE);
+    case OTA_E_NO_IMAGE:    return tr(T_OTA_NO_IMAGE);
+    case OTA_E_NO_START:    return tr(T_OTA_NO_START);
+    case OTA_E_WRONG:       return tr(T_OTA_WRONG);
+    case OTA_E_INTERRUPTED: return tr(T_OTA_INTERRUPTED);
+    case OTA_E_INVALID:     return tr(T_OTA_INVALID);
+    default:                return NULL;
+    }
+}
+
 static void portal(void)
 {
     net_start_portal();
-    web_start(on_location_changed);
+    web_start();
     ui_wifi_setup(tr(T_FIRST_SETUP));
     while (1) vTaskDelay(portMAX_DELAY);     // restarts after credentials are saved
 }
@@ -215,20 +233,27 @@ void app_main(void)
     main_task = xTaskGetCurrentTaskHandle();
     setenv("TZ", "EST5EDT,M3.2.0,M11.1.0", 1);   // until the weather service reports the local offset
     tzset();
+    app_text_init();            // the texts and languages (forge_core's i18n); English until the units are read
     diag_mark("start");
     display_init();
     diag_mark("display");
     touch_init();
+    services_init();            // the outside services, before net_init() adds NTP: ids and status rows as before
     net_init();                 // also initialises NVS (settings)
+    config_get_units(&(units_t){0});   // the saved language, before any text is shown
     diag_mark("net init");
     diag_start(60);             // "diag:" lines in the log every 60 s (heap, frames, CPU/stack per task)
     presence_start();           // microphones -> screen brightness (uses touch's I2C bus + NVS)
     sound_start();              // alert chimes (speaker shares the microphones' I2S bus)
     diag_mark("presence");
+    routes_init(on_location_changed);   // the settings page's routes, before web_start()
+    ota_set_err_text(ota_err_text);
+    ota_start(ui_ota);          // before ui_init (the status page's update-site row); checks once Wi-Fi is up; marks a
+                                // new firmware valid after 60 s
     ui_init();
-    ota_start(ui_ota);          // update checks start once Wi-Fi is up; marks a new firmware valid after 60 s
     diag_mark("ui");
     testcon_start();            // USB test console (tools/harness), ready before Wi-Fi so start-up can be tested
+    console_init();             // the display's own commands
     ui_message(tr(T_WEATHER), tr(T_STARTING));
 
     if (boot_button_held()) {
@@ -246,7 +271,7 @@ void app_main(void)
     snprintf(body, sizeof(body), tr(T_CONNECTING), fitted);
     ui_message("Wi-Fi", body);
     net_begin(ssid, pass);
-    web_start(on_location_changed);   // up early, so a long-press can offer the setup page right away
+    web_start();                // up early, so a long-press can offer the setup page right away
     diag_mark("web");
     if (!net_wait(30000)) {
         ESP_LOGW(TAG, "Wi-Fi connect failed, offering the setup network");

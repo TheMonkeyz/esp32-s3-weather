@@ -109,6 +109,8 @@ jobs:
           mkdir -p cjson
           curl -fsSL -o cjson/cJSON.c https://raw.githubusercontent.com/DaveGamble/cJSON/v1.7.19/cJSON.c
           curl -fsSL -o cjson/cJSON.h https://raw.githubusercontent.com/DaveGamble/cJSON/v1.7.19/cJSON.h
+      - name: espforge (the components at the tag in main/idf_component.yml)
+        run: python3 tools/fetch_forge.py
       - name: Host tests
         run: make -C tests/host CJSON="$PWD/cjson"
       - name: Harness unit tests
@@ -142,6 +144,9 @@ jobs:
           mkdir -p cjson
           curl -fsSL -o cjson/cJSON.c https://raw.githubusercontent.com/DaveGamble/cJSON/v1.7.19/cJSON.c
           curl -fsSL -o cjson/cJSON.h https://raw.githubusercontent.com/DaveGamble/cJSON/v1.7.19/cJSON.h
+      - name: espforge (when that firmware takes its infrastructure from it)
+        run: |
+          if grep -q '^ *forge_core:' main/idf_component.yml; then python3 tools/fetch_forge.py; else echo "no espforge components"; fi
       - name: Emscripten 6.0.11 (the version the emulator was tested with)
         run: |
           git clone -q --depth 1 https://github.com/emscripten-core/emsdk.git "$HOME/emsdk"

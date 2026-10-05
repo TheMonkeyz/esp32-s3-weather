@@ -1,6 +1,6 @@
 # Diagnostics and performance
 
-The firmware always logs `diag:` lines (`main/diag.c`). They cost well under 1% CPU and add no visible
+The firmware always logs `diag:` lines (espforge's forge_core `diag.c`, plus this display's `diag: display` line from `main/console.c`). They cost well under 1% CPU and add no visible
 behaviour, so they stay on in normal builds.
 
 ## How to run it again
@@ -26,7 +26,7 @@ after boot blocked the screen for 1.5 s and swallowed swipes.
 
 | Line | Content |
 |---|---|
-| `diag: reset reason …, flash …, PSRAM …` | once at boot; also app partition size and NVS entries used/free |
+| `diag: boot reset=… flash_mb=… psram_kb=…` | once at boot (after 4 s); also app partition size and NVS entries used/free; `diag: coredump: last crash …` after a crash (before v1.14.0: `reset reason …`, `last crash (core dump)`) |
 | `diag: mark <stage> internal N KB free (largest N), DMA N KB, PSRAM N KB` | heap after each boot stage (`diag_mark()` calls in `main.c`) |
 | `diag: bench render-only full screen: blank … weather … hourly … radar …` | on request (`bench`), when the weather screen is idle (otherwise "postponed"; the harness asks again; its last step repaints the weather screen, which flashed over the hourly view once): time to render each whole screen, not sent to the panel (invisible to the user; blocks the UI ~1.5 s) |
 | `diag: bench weather incl. panel transfer` | same for the weather screen repainted *with* the SPI transfer; minus the render-only time = cost of the panel |

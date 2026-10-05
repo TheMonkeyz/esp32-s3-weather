@@ -33,6 +33,16 @@ idf.py -B build\v55 -D SDKCONFIG=build\v55\sdkconfig build
   settings back afterwards.
 - After changing `sdkconfig.defaults`, delete `build\v55\sdkconfig` and run `idf.py ... reconfigure`: an existing
   sdkconfig keeps its old values (an option that exists as "not set" ignores the new default).
+- **espforge's components** (since v1.14.0) come from `main/idf_component.yml`'s tag into `managed_components/` on
+  the first build. If it stops on "'git init --bare' failed ... unable to get current working directory", set
+  `$env:IDF_COMPONENT_CACHE_PATH = 'C:\Users\lmathieu\.espressif\cm_cache'` (a folder that exists) first. Host tests
+  and the emulator read the same `managed_components/` (or `python tools/fetch_forge.py` without a build).
+  **Testing an espforge change with the display before it is released:** `python tools/forge_local.py` builds
+  `build\forge` against `..\espforge` (a temporary `override_path` in the manifest, restored after; the log says
+  "Using component placed at ...espforge..."), then `harness.py --flash build/forge/weather_amoled.bin`. Run it to
+  the end, its output to a file: a pipeline that stops early (`| Select-Object -First`) kills it before it puts the
+  manifest back (the next run restores the backup it left). `-DEXTRA_COMPONENT_DIRS` does not work for this: the
+  managed copy wins.
 - **Keep the PC and CI on the same ESP-IDF.** Until v1.9.0 CI used v5.4.2 while the PC had v5.5.4, so test builds
   didn't match releases (Easy Connect's failure event differs between them). Change both together.
 - **Bootloader:** the flash helper writes whatever is in `firmware\bootloader.bin` with the app. Since v1.11.1 that is
@@ -128,7 +138,7 @@ python tools/snapshot.py <ip> weather --key <key>   # the key: see §1 (else $WE
   snapshot endpoint now covers most of what it was used for, with the real fonts and data.
 - **Core dump partition with junk in it** (v1.13.0, not in the harness): with the user's OK and the flash helper
   stopped, `esptool --port COM5 write_flash 0xa20000 junk.bin` (a few KB of random bytes). Next boot: ESP-IDF's own
-  `E (…) Incorrect size of core dump image` once, then `diag: core dump partition held no valid dump …, erased`; the
+  `E (…) Incorrect size of core dump image` once, then `diag: coredump: partition held no valid dump …, erased`; the
   boot after has neither. A blank partition (what an erase leaves) is not "invalid": no line.
 
 ### Easy Connect: the phone's side
@@ -251,7 +261,7 @@ run the **main checkout's** `tools/harness/harness.py --flash <absolute path to 
 
 How it works:
 
-- **Test console** (`main/testcon.c`, USB only): `ping`, `screen`, `page` (place and day shown), `tap X Y`,
+- **Test console** (espforge's forge_core `testcon.c` with this display's commands in `main/console.c`, USB only): `ping`, `screen`, `page` (place and day shown), `tap X Y`,
   `press X Y [ms]`, `swipe left|right|up|down`, `drag X1 Y1 X2 Y2 [ms]`, `wake`, `presence`, `wifi
   status|offline|offline-boot|online`, `portal windows-quiet`, `fps [reset]` (frames and animation fps since the
   reset; the worst gap between frames under 250 ms apart, with when it ended and between which frames, e.g.

@@ -14,7 +14,7 @@
 #include "web.h"
 #include "alerts.h"
 #include "ota.h"
-#include "svc.h"
+#include "services.h"
 #include "esp_timer.h"
 #include "esp_ota_ops.h"
 #include "esp_wifi.h"
@@ -1863,7 +1863,7 @@ static void status_refresh(void)       // display lock held
 
     for (int i = 0; i < SVC_COUNT; i++) {
         svc_info_t s;
-        svc_get(i, &s);
+        svc_get(services_row(i), &s);
         uint32_t c;
         d[0] = 0;
         if (i == SVC_UPDATES && o.latest[0]) { snprintf(b, sizeof(b), tr(T_SVC_OFFERS), o.latest); join(d, sizeof(d), b); }
@@ -1936,9 +1936,9 @@ static void status_create(void)
     lv_obj_set_scroll_dir(box, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(box, LV_SCROLLBAR_MODE_OFF);
     lv_obj_add_flag(box, LV_OBJ_FLAG_EVENT_BUBBLE | LV_OBJ_FLAG_GESTURE_BUBBLE);
-    for (int i = 0; i < SVC_COUNT; i++) {
+    for (int i = 0; i < SVC_COUNT; i++) {             // (the update site's row exists: ota_start ran before)
         svc_info_t s;
-        svc_get(i, &s);
+        svc_get(services_row(i), &s);
         lv_obj_t *row = lv_obj_create(box);
         lv_obj_remove_style_all(row);
         lv_obj_set_size(row, 280, 42);

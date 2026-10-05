@@ -5,7 +5,7 @@
 #include "esp_http_client.h"
 #include "esp_timer.h"
 #include "esp_crt_bundle.h"
-#include "svc.h"
+#include "services.h"
 #include "i18n.h"
 
 fake_http_t fake_http = { .status = 200 };
@@ -50,8 +50,9 @@ esp_err_t esp_http_client_cleanup(esp_http_client_handle_t c) { free(c); return 
 esp_err_t esp_http_client_set_url(esp_http_client_handle_t c, const char *url) { c->cfg.url = url; return ESP_OK; }
 esp_err_t esp_http_client_set_user_data(esp_http_client_handle_t c, void *d) { c->cfg.user_data = d; return ESP_OK; }
 
-void svc_http(svc_id_t id, esp_err_t err, int status, int64_t t0) {}
-void svc_ok(svc_id_t id, int64_t t0) {}
-void svc_fail(svc_id_t id, const char *why, int64_t t0) {}
-__attribute__((weak)) const char *tr(tid_t id) { return "(text)"; }   // test_i18n has the real ones
+void svc_http(int id, esp_err_t err, int status, int64_t t0) {}
+void svc_ok(int id, int64_t t0) {}
+void svc_fail(int id, const char *why, int64_t t0) {}
+void svc_fail_why(int id, svc_why_t code, int64_t t0) {}
+__attribute__((weak)) const char *i18n_text(int id) { return "(text)"; }   // test_i18n has the real ones (forge_core)
 __attribute__((weak)) const char *tr_weather(int code) { return "(weather)"; }

@@ -20,7 +20,7 @@
 #include "png_rows.h"
 #include "net.h"
 #include "config.h"
-#include "svc.h"
+#include "services.h"
 #include "i18n.h"
 #include "esp_timer.h"
 
@@ -107,8 +107,8 @@ static bool http_fetch(esp_http_client_handle_t *hp, const char *url, dl_t *d)
     int64_t t0 = esp_timer_get_time();
     esp_err_t err = esp_http_client_perform(*hp);
     int st = esp_http_client_get_status_code(*hp);
-    svc_id_t id = strstr(url, "openstreetmap") ? SVC_TILES : SVC_RADAR;
-    if (err == ESP_OK && st == 200 && d->len == 0) svc_fail(id, tr(T_ERR_EMPTY), t0);
+    int id = strstr(url, "openstreetmap") ? SVC_TILES : SVC_RADAR;
+    if (err == ESP_OK && st == 200 && d->len == 0) svc_fail_why(id, SVC_WHY_EMPTY, t0);
     else svc_http(id, err, st, t0);
     if (err != ESP_OK) {                       // drop the connection, start fresh next time
         esp_http_client_cleanup(*hp);

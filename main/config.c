@@ -19,11 +19,6 @@ static portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
 // the size matched: the first field added to location_t would have dropped every extra place. Those blobs are read
 // once and rewritten as typed keys.
 
-bool nvs_check(esp_err_t err, const char *what)
-{
-    if (err != ESP_OK) ESP_LOGE(TAG, "NVS %s: %s", what, esp_err_to_name(err));
-    return err == ESP_OK;
-}
 static location_t places[MAX_PLACES];
 static int nplaces = 1, active;
 static bool loaded, place_saved;             // place_saved: NVS has a place (someone chose one)

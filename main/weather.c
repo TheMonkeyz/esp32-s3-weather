@@ -11,7 +11,7 @@
 #include "esp_timer.h"
 #include "config.h"
 #include "i18n.h"
-#include "svc.h"
+#include "services.h"
 #include "esp_timer.h"
 #include <math.h>
 
@@ -275,7 +275,7 @@ bool air_fetch(air_t *a)
         ESP_LOGI(TAG, "Air: US AQI %d, PM2.5 %.1f, pollen %.0f/%.0f/%.0f/%.0f", a->us_aqi, a->pm25,
                  a->pollen[0], a->pollen[1], a->pollen[2], a->pollen[3]);
     } else {
-        if (err == ESP_OK && status == 200) svc_fail(SVC_AIR, tr(T_ERR_BAD_REPLY), t0);
+        if (err == ESP_OK && status == 200) svc_fail_why(SVC_AIR, SVC_WHY_BAD_REPLY, t0);
         ESP_LOGW(TAG, "Air quality failed: %s, status %d", esp_err_to_name(err), status);
     }
     cJSON_Delete(root);
