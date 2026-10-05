@@ -81,7 +81,7 @@ if have gh && gh auth status >/dev/null 2>&1; then
   [ "$perm" = true ] && pass "can push to TheMonkeyz/esp32-s3-weather" \
     || fail "no push access to TheMonkeyz/esp32-s3-weather yet: accept the collaborator invitation (email / github.com/notifications)"
 fi
-bad=$(git ls-files --eol 2>/dev/null | awk '$1=="i/lf" && $2=="w/crlf" {print $NF}' | head -3)
+bad=$(git ls-files --eol 2>/dev/null | awk '$1=="i/lf" && $2=="w/crlf" && $NF !~ /\.bat$/ {print $NF}' | head -3)   # .bat: CRLF on purpose
 [ -z "$bad" ] && pass "line endings: LF" || fail "files checked out with CRLF ($bad): git config core.autocrlf false; git checkout -- ."
 [ -d managed_components/lvgl__lvgl ] && pass "managed_components fetched (a firmware build ran)" \
   || info "managed_components/ missing: the first firmware build fetches LVGL (the emulator needs it)"

@@ -7,7 +7,9 @@ Where it disagrees with CLAUDE.md or docs/TESTING.md, **this file wins on a Mac*
 **Status (October 4, 2026):** prepared on Windows. **Nobody has run it on a real Mac yet.** GitHub's macOS runner
 (`.github/workflows/macos.yml`, Apple Silicon) runs the setup script on a fresh machine, then builds the firmware, runs
 the host tests, the harness's unit tests, the settings page tests and builds the emulator, on every push to a branch
-other than main. What no runner can check: the board on USB, the serial log and the harness against a real display.
+other than main. First green run on October 5 (macOS 15.7, arm64, 8 min): setup, build, 1,283 host checks with Apple's
+clang, the flash helper's 16 tests, 30 page tests, the emulator. What no runner can check: the board on USB, the
+serial log and the harness against a real display.
 Section 5 lists those untried pieces, most likely to break first.
 
 | | On the Mac | Checked by |
