@@ -5,6 +5,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from harness import BAD, compare, propose  # noqa: E402
+from board import kv  # noqa: E402
 
 BASE = {
     'render_ms.weather': {'max': 50, 'ref': 45, 'note': 'kept'},
@@ -56,6 +57,15 @@ class Compare(unittest.TestCase):
         self.assertIn('min', out['drag_fps.x'])
         self.assertEqual(BASE['render_ms.weather']['ref'], 45)  # the input is not changed
 
+
+
+class ConsoleReplies(unittest.TestCase):
+    def test_kv_skips_words_without_a_value(self):
+        # fps grew "gap_max_kind=move>lvgl" (v1.12.3); a word without '=' crashed dict() before
+        self.assertEqual(kv('frames=3 gap_max_kind=move>lvgl note'), {'frames': '3', 'gap_max_kind': 'move>lvgl'})
+
+    def test_kv_keeps_values_with_equals(self):
+        self.assertEqual(kv('ap_pass=a=b'), {'ap_pass': 'a=b'})
 
 if __name__ == '__main__':
     unittest.main()

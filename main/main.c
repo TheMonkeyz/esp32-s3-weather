@@ -24,6 +24,7 @@
 #include "i18n.h"
 #include "testcon.h"
 #include "sound.h"
+#include "textfit.h"
 #include "cJSON.h"
 #include "esp_heap_caps.h"
 
@@ -164,8 +165,10 @@ static bool fetch_place(int i)
 // display just keeps trying the saved network; a long-press still opens setup (the owner's choice, October 2026:
 // a setup network left open for hours is a way in for anyone nearby).
 #define AUTO_SETUP_S (15 * 60)
-static void offline_setup(const char *ssid)
+static void offline_setup(const char *saved)
 {
+    char ssid[NET_SSID_MAX + 1];
+    textfit(saved, ssid, sizeof(ssid));                     // shown on screen: without characters the fonts lack
     char note[160], body[160], still[160];        // (Inuktitut's note overflowed 96 bytes for long network names)
     snprintf(note, sizeof(note), tr(T_CANT_REACH), ssid);
     snprintf(body, sizeof(body), tr(T_CONNECTING), ssid);
@@ -238,8 +241,9 @@ void app_main(void)
         portal();
     }
 
-    char body[160];
-    snprintf(body, sizeof(body), tr(T_CONNECTING), ssid);
+    char body[160], fitted[sizeof(ssid)];
+    textfit(ssid, fitted, sizeof(fitted));                    // on screen: without characters the fonts lack (emoji)
+    snprintf(body, sizeof(body), tr(T_CONNECTING), fitted);
     ui_message("Wi-Fi", body);
     net_begin(ssid, pass);
     web_start(on_location_changed);   // up early, so a long-press can offer the setup page right away

@@ -26,6 +26,11 @@ OLD_SETUP_PASS = 'meteo1234'   # firmware before v1.12.0; since then each displa
 READY = r'test: console ready|ota: Running '
 
 
+def kv(line):
+    """'a=1 b=x' -> {'a': '1', 'b': 'x'} (console replies); words without '=' are skipped (espforge's harness)."""
+    return dict(x.split('=', 1) for x in line.split() if '=' in x)
+
+
 class Fail(Exception):
     """A check failed: the message says what was expected and what happened."""
 
@@ -118,7 +123,8 @@ class Board:
 
     def start_log(self, seconds, flash_bin=None):
         """Restart the board (or flash firmware first) and log for `seconds`. Waits until logging."""
-        if self.helper_status() not in ('idle', ''):
+        # flash_failed is not "busy": the helper waits for the next request (it refused to start until one ran)
+        if self.helper_status() not in ('idle', 'flash_failed', ''):
             raise Fail(f'flash helper busy ({self.helper_status()})')
         self.before = None if flash_bin else self.version_before_restart()
         # serial_live.txt goes too: "logging" shows ~2 s before monitor.ps1 recreates it, and the old one would be
@@ -148,10 +154,15 @@ class Board:
             req = 'flash.request'
         else:
             req = 'reboot.request'
-        with open(p(req), 'w') as f:
+        # Written whole, then renamed: the helper polls every 2 s and once read a request still empty (60 s of log
+        # instead of the 2400 asked)
+        with open(p(req + '.tmp'), 'w') as f:
             f.write(str(seconds))
+        os.replace(p(req + '.tmp'), p(req))
         end = time.time() + 240
         while self.helper_status() != 'logging':
+            if self.helper_status() == 'flash_failed' and os.path.exists(p('flash.done')):
+                raise Fail(f'the flash helper failed: {open(p("flash.done")).read().strip()} (see flash_log.txt)')
             if time.time() > end:
                 raise Fail('the flash helper did not start logging (is start_flash_helper.bat running?)')
             time.sleep(1)
@@ -196,11 +207,11 @@ class Board:
 
     def wifi(self):
         line = self.cmd('wifi status', r'test: wifi (.*)').group(1)
-        return dict(kv.split('=', 1) for kv in line.split())
+        return kv(line)
 
     def heap(self):
         line = self.cmd('heap', r'test: heap (.*)').group(1)
-        return {k: int(v) for k, v in (kv.split('=') for kv in line.split())}
+        return {k: int(v) for k, v in kv(line).items() if v.lstrip('-').isdigit()}
 
     def wait_screen(self, name, timeout, step=1.0):
         end = time.time() + timeout

@@ -178,6 +178,11 @@ order, and ~11 ms on the bus.
     goes through `finger()`, which keeps that rule (and "up stays up until a press"): since v1.12.0 also the
     PSRAM-busy drag (it waited for a clean "up" forever, holding the display lock) and the zoom (a failed read kept
     the swipe that started it "on", so a second swipe during the zoom was ignored).
+  - While a release is being confirmed (those 60 ms, or read errors) the page goes on at the finger's last speed, at
+    most 80 ms worth (v1.13.1, from espforge): it used to stand still, then snap, at the end of every swipe. The drag
+    line's part after " | " says what a real finger did: the longest gap between frames, reads held by an error or an
+    unconfirmed "up" (and the longest run of them), how long the finger itself stood still, samples, speed. The
+    harness reads only the part before " | ".
   - Safety caps: a pure wait for the lift gives up after 3 s, a loop following the finger (drag, list scroll) after
     20 s (a slow scroll while reading is legitimate); then the move ends as if the finger had lifted and LVGL takes
     the touch over. Both log a warning, which the harness reports.
@@ -332,6 +337,10 @@ order, and ~11 ms on the bus.
   `fallback` font of every TinyTTF font (`mkfont()`), drawn 5/4 larger. Dates use English order with the
   Inuktitut names. Syllabic words run 1.2 to 2.8 times wider than English: check every screen with snapshots
   after any change.
+- **Text from outside** (network names, place names typed on a phone) goes through `textfit()` (`textfit.c`, twin of
+  espforge's, v1.13.1): characters neither font has (emoji) are left out, "…" when nothing is left. TinyTTF draws a
+  box for a missing glyph and never says so; textfit reads both TTFs' character maps (`textfit_init` + `textfit_add`
+  in `ui_init`). Applied before formatting, never to the app's own texts. Host test: `tests/host/test_textfit.c`.
 
 ## Settings screen (`ui.c`, `cfg_*`)
 

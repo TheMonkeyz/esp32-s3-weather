@@ -10,6 +10,12 @@ their own `## vX.Y.Z-rc.N` section. Those are shown only to Beta users, while th
 list everything again. (Three tags have no section: v1.3.0-rc.1; and v1.12.0-rc.1 and v1.12.1-rc.2, whose builds failed and were published
 as v1.12.0-rc.2 and v1.12.1-rc.3.)
 
+## v1.13.1-rc.1 - 2026-10-04
+- Network and place names with emoji no longer show empty boxes: the display leaves out the characters it can't draw.
+- The Easy Connect page shows a faint code right away while the real one is being made, then fades it in, instead of an empty spot.
+- Swipes end more smoothly: the screen keeps moving with your finger's speed while the display makes sure you've let go, instead of stopping for an instant and then jumping.
+- Behind the scenes: the display's log says more about each swipe, and the test tools are sturdier.
+
 ## v1.13.0-rc.1 - 2026-10-04
 - Wi-Fi Easy Connect works with phones that failed before (a Pixel 8 Pro failed every time): the display now stays on the right radio channel until the phone has finished, online and offline.
 - The Easy Connect page appears as soon as you swipe to it; the screen no longer freezes for two seconds while the display looks for your network.

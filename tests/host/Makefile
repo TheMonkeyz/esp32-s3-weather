@@ -8,7 +8,7 @@ OUT := build
 CFLAGS := -std=gnu11 -D_DEFAULT_SOURCE -g -O1 -Wall -Wno-unused-function -fsanitize=address,undefined \
           -fno-sanitize-recover=undefined -Ishim -I$(MAIN) -I$(CJSON) -include shim/host.h
 COMMON := fake.c $(CJSON)/cJSON.c
-TESTS := weather alerts utf8 i18n version png
+TESTS := weather alerts utf8 i18n version png textfit
 
 all: $(TESTS:%=$(OUT)/test_%)
 	@set -e; for t in $(TESTS); do ./$(OUT)/test_$$t; done
@@ -38,3 +38,5 @@ $(OUT)/test_i18n: test_i18n.c $(MAIN)/i18n.c $(MAIN)/i18n_strings.h | $(OUT)
 	$(CC) $(CFLAGS) -o $@ test_i18n.c fake.c $(CJSON)/cJSON.c -lm
 $(OUT)/test_version: test_version.c $(MAIN)/version.c $(MAIN)/sound.h | $(OUT)
 	$(CC) $(CFLAGS) -o $@ test_version.c $(MAIN)/version.c
+$(OUT)/test_textfit: test_textfit.c $(MAIN)/textfit.c $(MAIN)/textfit.h $(MAIN)/montserrat.ttf $(MAIN)/syllabics.ttf | $(OUT)
+	$(CC) $(CFLAGS) -o $@ test_textfit.c $(MAIN)/textfit.c

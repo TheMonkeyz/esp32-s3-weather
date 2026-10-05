@@ -23,6 +23,7 @@
 #include "i18n.h"
 #include "sound.h"
 #include "presence.h"
+#include "textfit.h"
 #include "esp_system.h"
 #include "esp_log.h"
 #include "esp_attr.h"
@@ -1190,7 +1191,10 @@ static void radio_do(const radio_req_t *r)
     case RADIO_DPP:
         if (!net_dpp_start(su_dpp_uri, su_dpp_done)) {
             display_lock(-1);
-            if (su_page == 1) lv_label_set_text(su_body, tr(T_WIFI_DPP_NONE));
+            if (su_page == 1) {
+                lv_label_set_text(su_body, tr(T_WIFI_DPP_NONE));
+                lv_obj_add_flag(su_qr, LV_OBJ_FLAG_HIDDEN);   // no code is coming: no placeholder either
+            }
             display_unlock();
         }
         break;
@@ -1230,13 +1234,41 @@ static void su_dots(void)
     }
 }
 
+/* Easy Connect's code exists 0.1-2.5 s after its page shows (a channel scan first). Until then the page shows a
+ * placeholder code of the same size and density, faint and grey ("loading"), so nothing pops in; the real code
+ * replaces it and fades up (espforge, the user found the pop-in janky; its LESSONS L170). LVGL 9.2 has no blur: low
+ * opacity and grey modules stand in for it. As long as a real DPP URI (~100 characters): the same module count. Plain
+ * text, not a DPP URI: a phone that scans the faint placeholder gets a harmless message, not a broken link. */
+#define QR_FAINT LV_OPA_30
+static const char QR_PLACEHOLDER[] =
+    "Wait a moment: the Easy Connect code is being made. Scan again once it is bright, not faint........";
+
+static void qr_opa(void *obj, int32_t v) { lv_obj_set_style_opa(obj, v, 0); }
+
+static void qr_show(const char *text, bool faint)    // the one QR code object of both pages
+{
+    lv_anim_delete(su_qr, qr_opa);
+    lv_qrcode_set_dark_color(su_qr, faint ? lv_color_hex(0x606060) : lv_color_black());
+    lv_qrcode_update(su_qr, text, strlen(text));
+    lv_obj_set_style_opa(su_qr, faint ? QR_FAINT : LV_OPA_COVER, 0);
+    lv_obj_remove_flag(su_qr, LV_OBJ_FLAG_HIDDEN);
+}
+
 // Easy Connect callbacks (system event task: take the display lock)
 static void su_dpp_uri(const char *uri)
 {
     display_lock(-1);
     if (su_page == 1 && lv_screen_active() == scr_setup) {
-        lv_qrcode_update(su_qr, uri, strlen(uri));
-        lv_obj_remove_flag(su_qr, LV_OBJ_FLAG_HIDDEN);
+        qr_show(uri, false);
+        lv_obj_set_style_opa(su_qr, QR_FAINT, 0);
+        lv_anim_t a;                                     // faint placeholder -> the real code (a small square: cheap)
+        lv_anim_init(&a);
+        lv_anim_set_var(&a, su_qr);
+        lv_anim_set_values(&a, QR_FAINT, LV_OPA_COVER);
+        lv_anim_set_time(&a, 300);
+        lv_anim_set_exec_cb(&a, qr_opa);
+        lv_anim_set_path_cb(&a, lv_anim_path_ease_out);
+        lv_anim_start(&a);
     }
     display_unlock();
 }
@@ -1246,7 +1278,9 @@ static void su_dpp_done(bool ok, const char *ssid)
     display_lock(-1);
     if (ok) {
         lv_label_set_text(su_title, tr(T_WIFI_RECEIVED));
-        lv_label_set_text_fmt(su_body, tr(T_WIFI_GOT), ssid);
+        char name[NET_SSID_MAX + 1];
+        textfit(ssid, name, sizeof(name));                  // a network name may hold emoji: the fonts have none
+        lv_label_set_text_fmt(su_body, tr(T_WIFI_GOT), name);
         lv_obj_add_flag(su_qr, LV_OBJ_FLAG_HIDDEN);
     } else {
         lv_label_set_text(su_body, tr(T_WIFI_DPP_FAIL));
@@ -1261,13 +1295,12 @@ static void su_show_page(int page)
     if (page == 0) {
         lv_label_set_text(su_title, tr(T_WIFI_SETUP));
         snprintf(su_ap_qr, sizeof(su_ap_qr), "WIFI:T:WPA;S:" SETUP_AP_SSID ";P:%s;;", net_setup_ap_pass());
-        lv_qrcode_update(su_qr, su_ap_qr, strlen(su_ap_qr));
-        lv_obj_remove_flag(su_qr, LV_OBJ_FLAG_HIDDEN);
+        qr_show(su_ap_qr, false);
         lv_label_set_text_fmt(su_body, tr(T_WIFI_JOIN), SETUP_AP_SSID, net_setup_ap_pass());
         su_radio(RADIO_AP);
     } else {
         lv_label_set_text(su_title, tr(T_WIFI_DPP_TITLE));
-        lv_obj_add_flag(su_qr, LV_OBJ_FLAG_HIDDEN);          // until the code is generated
+        qr_show(QR_PLACEHOLDER, true);                       // until the code is generated
         lv_label_set_text(su_body, tr(T_WIFI_DPP_HOW));
         su_radio(RADIO_DPP);                                 // the setup network stays up (net.c holds it there)
     }
@@ -2582,6 +2615,10 @@ static void cfg_create(void)
 
 void ui_init(void)
 {
+    // Text from outside (network and place names) keeps only what the fonts draw: Montserrat, then the syllabics
+    // chained behind it (mkfont)
+    textfit_init(ttf_start, ttf_end - ttf_start);
+    textfit_add(syl_start, syl_end - syl_start);
     su_q = xQueueCreate(4, sizeof(radio_req_t));
     xTaskCreatePinnedToCore(su_radio_task, "setup_radio", 4096, NULL, 3, NULL, 0);   // internal RAM: NVS writes
     display_lock(-1);
@@ -2611,7 +2648,9 @@ void ui_init(void)
     lv_obj_add_flag(al_pill, LV_OBJ_FLAG_HIDDEN);
     location_t loc;
     config_get_location(&loc);
-    lv_label_set_text(pp[0].city, loc.name);
+    char city[sizeof(loc.name)];
+    textfit(loc.name, city, sizeof(city));                  // typed on a phone: may hold emoji (boxes otherwise)
+    lv_label_set_text(pp[0].city, city);
     for (int i = 1; i < MAX_PLACES; i++) lv_obj_add_flag(pager_page(place_pager, i), LV_OBJ_FLAG_HIDDEN);
 
     page_dots(scr_main, 2);
@@ -2826,7 +2865,9 @@ void ui_place(int i, const char *name, const weather_t *w)
     p->drawn = true;
     slide_cache_dirty(pager_page(place_pager, i));  // this page's picture; the place shown's other screens: below
     strlcpy(p->name, name, sizeof(p->name));
-    lv_label_set_text(p->city, name);
+    char city[sizeof(p->name)];
+    textfit(name, city, sizeof(city));                      // typed on a phone: may hold emoji (boxes otherwise)
+    lv_label_set_text(p->city, city);
     if (!w) {                                                  // no forecast yet for this place
         p->has_wx = false;
         lv_label_set_text(p->temp, "-");
@@ -2995,8 +3036,14 @@ lv_draw_buf_t *ui_snapshot(const char *screen)
         su_page = p1;
         su_dots();                                   // sizes the page dots
         lv_label_set_text(su_title, tr(p1 ? T_WIFI_DPP_TITLE : T_WIFI_SETUP));
-        if (p1) lv_label_set_text(su_body, tr(T_WIFI_DPP_HOW));
-        else lv_label_set_text_fmt(su_body, tr(T_WIFI_JOIN), SETUP_AP_SSID, net_setup_ap_pass());
+        if (p1) {
+            lv_label_set_text(su_body, tr(T_WIFI_DPP_HOW));
+            qr_show(QR_PLACEHOLDER, true);           // what the page shows until its code exists
+        } else {
+            snprintf(su_ap_qr, sizeof(su_ap_qr), "WIFI:T:WPA;S:" SETUP_AP_SSID ";P:%s;;", net_setup_ap_pass());
+            qr_show(su_ap_qr, false);
+            lv_label_set_text_fmt(su_body, tr(T_WIFI_JOIN), SETUP_AP_SSID, net_setup_ap_pass());
+        }
     }
     if (s == scr_status) status_refresh();
     if (s == scr_cfg) cfg_refresh();

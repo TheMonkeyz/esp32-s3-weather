@@ -16,6 +16,12 @@ function Say($msg, $color = "Gray") {
 function Status($s) { Set-Content -Path "flash.status" -Value $s -Encoding ASCII }
 
 Say "Flash helper running in $PSScriptRoot" "Cyan"
+# Requests left from before this start: whoever wrote them has given up waiting (the harness waits ~4 min), and a
+# flash nobody watches is a surprise. Drop them (espforge: a restarted helper once flashed one left an hour earlier;
+# its LESSONS L157).
+foreach ($old in @("flash.request", "reboot.request", "stop.request", "serial.send")) {
+  if (Test-Path $old) { Remove-Item $old -Force; Say "Ignored a $old left from before this start" "Yellow" }
+}
 Say "Waiting for flash.request / reboot.request ..." "Cyan"
 Status "idle"
 

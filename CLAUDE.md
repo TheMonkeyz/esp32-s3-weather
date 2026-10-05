@@ -41,7 +41,7 @@ October 4): first port fixes both ways; then this project takes forge_core, forg
 git submodule, and keeps its own display, touch, `slide.c` and app code.
 
 - **Twin files** (same code in both, until the submodule): `net.c`, `web.c`, `ota.c`, `diag.c`, `testcon.c`, `svc.c`,
-  `i18n.c`, `tlscert.c`, `version.c`, `png_rows.c`, `http_once.h`, `utf8.h`, `lvgl_mem.c`, `pager.c`, `imu.c`,
+  `i18n.c`, `tlscert.c`, `version.c`, `png_rows.c`, `textfit.c`, `http_once.h`, `utf8.h`, `lvgl_mem.c`, `pager.c`, `imu.c`,
   `display.c`, `touch.c`, `components/dns_server`; the harness's `board.py` / `harness.py`, the flash helper.
   `slide.c` is not a twin: espforge's is a trimmed fork; port ideas, not the file.
 - **A fix in a twin file** gets ported to espforge in the same session, or a task chip for it, and a lesson there.

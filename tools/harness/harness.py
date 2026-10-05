@@ -23,6 +23,13 @@ import traceback
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from board import Board, Fail, Log, PCWifi, ROOT  # noqa: E402
 from suites import SUITES  # noqa: E402
+# A network name with emoji (a phone shared one over Easy Connect) crashed print() on the Windows console's code page
+# (espforge LESSONS L169)
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding='utf-8', errors='replace')
+    except (AttributeError, ValueError):
+        pass
 
 ORDER = ['smoke', 'boot', 'navigation', 'web', 'perf', 'presence', 'firstrun', 'wifi_runtime', 'wifi_setup']
 BASELINE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'baseline.json')
@@ -179,6 +186,14 @@ def main():
             board.start_log(opts.minutes * 60, opts.flash and os.path.join(ROOT, opts.flash))
             log.wait(r'diag: mark first weather', 90, 'start-up')   # Wi-Fi up and the first forecast shown
             time.sleep(5)
+        else:
+            # A window opened moments ago (another run, a restart) may still be at start-up: a ping then went
+            # unanswered (espforge's harness). The last boot in the window must have reached its first forecast.
+            lines = log.lines()
+            boots = [i for i, l in enumerate(lines) if 'rst:0x' in l or 'diag: mark start' in l]
+            if boots and not any('diag: mark first weather' in l for l in lines[boots[-1]:]):
+                print('  the board is still starting: waiting for its first forecast', flush=True)
+                log.wait(r'diag: mark first weather', 120, 'start-up', start=boots[-1])
         version = board.cmd('ping', r'test: pong (\S+)', timeout=10).group(1)
         before = getattr(board, 'before', None)
         if before and version != before:
@@ -211,7 +226,10 @@ def main():
     # Log lines that aren't failures but must not go unseen (fallback paths and safety caps in slide.c)
     watch = [(r'slide: drag: PSRAM busy', 'a drag fell back to no animation (PSRAM busy)'),
              (r'slide: (drag|scroll): finger (still )?down', 'a touch loop hit its safety cap'),
-             (r'display: raw frame: a band transfer did not finish', 'a raw frame band timed out')]
+             (r'display: raw frame: a band transfer did not finish', 'a raw frame band timed out'),
+             (r'Task watchdog got triggered', 'task watchdog warnings'),
+             (r'test: error .*busy', 'a console command found the display busy'),
+             (r'station config not set', 'a Wi-Fi station config was refused')]
     for s in [x for x in ORDER if x in suites]:
         for fn in SUITES[s]:
             name = f'{s}.{fn.__name__}'

@@ -561,6 +561,11 @@ static void drag_run(void *unused)
     if (fi == 0) f.prev = bs[0] ? bs[0]->data : NULL; else f.next = bs[1] ? bs[1]->data : NULL;
     int64_t t_prev = esp_timer_get_time(), t_last = t_prev, t_first = 0;
     int pos_prev = 0, pos_last = 0, errs = 0;
+    // For the log line: what a real finger does (the harness's synthetic drags never hold): reads held by a bus error /
+    // an unconfirmed "up", the longest run of held reads, the longest gap between two frames, the longest the finger
+    // stood still (espforge LESSONS L163: two tries with the user's finger located both stalls this way)
+    int held_err = 0, held_up = 0, still_raw = 0;
+    int64_t hold_since = 0, hold_max = 0, frame_at = 0, gap_max = 0, still_since = 0, still_max = 0;
     slide_phase = 12;
     for (;;) {
         int nx, ny, r = finger(&nx, &ny, &errs);
@@ -569,6 +574,22 @@ static void drag_run(void *unused)
         if (esp_timer_get_time() - t0 > FINGER_FOLLOW_US) { ESP_LOGW(TAG, "drag: finger down for 20 s, ending it"); break; }
         if (r > 0) { x = nx; y = ny; samples++; }
         raw = drag.vertical ? y - drag.y0 : x - drag.x0;     // > 0: towards prev (it comes in from the left / top)
+        int64_t tnow = esp_timer_get_time();
+        if (raw != still_raw || !still_since) { still_since = tnow; still_raw = raw; }     // the finger itself
+        else if (tnow - still_since > still_max) still_max = tnow - still_since;
+        // Held (a read error, or an "up" not confirmed yet: up to UP_HOLD_US): the page goes on at the finger's last
+        // speed instead of standing still, at most 80 ms worth. It stood still ~60 ms, then snapped, at the end of
+        // every swipe (espforge LESSONS L162: "finger still max" 74 -> 15 ms there).
+        if (r < 0) {
+            if (r == -1) held_err++; else held_up++;
+            if (!hold_since) hold_since = tnow;
+            if (tnow - hold_since > hold_max) hold_max = tnow - hold_since;
+            if (t_last > t_prev) {
+                int64_t ahead = tnow - t_last;
+                if (ahead > 80000) ahead = 80000;
+                raw = pos_last + (int)((pos_last - pos_prev) * (float)ahead / (t_last - t_prev));
+            }
+        } else hold_since = 0;
         int side = raw > 0 ? -1 : raw < 0 ? 1 : 0, i = side < 0 ? 0 : 1;
         if (side && !tried[i]) {                             // the neighbour on this side, the first time it's needed
             tried[i] = true;
@@ -592,7 +613,10 @@ static void drag_run(void *unused)
         // point, and a flick measured 0 px/ms: the first day swipe to Monday snapped back, v1.12.1-fix.26)
         if (r > 0 && touch_fresh() && now - t_last > 8000) { t_prev = t_last; pos_prev = pos_last; t_last = now; pos_last = raw; }
         show(&f, off);
-        if (!frames++) t_first = esp_timer_get_time();
+        int64_t done = esp_timer_get_time();
+        if (frame_at && done - frame_at > gap_max) gap_max = done - frame_at;
+        frame_at = done;
+        if (!frames++) t_first = done;
     }
     // Finger up: on to the neighbour if dragged past a third or flicked towards it, else back
     float vel = t_last > t_prev ? (float)(pos_last - pos_prev) / ((t_last - t_prev) / 1000.0f) : 0;   // px/ms
@@ -625,9 +649,13 @@ static void drag_run(void *unused)
     // Frame rate from the first frame (the time before it, rendering pictures, is the "first frame after" figure).
     // No frame while the finger was down: it lifted while the pictures were being rendered (a jump, not a drag).
     int64_t ts = t_first ? t_first : t0;
-    if (t_first) ESP_LOGI(TAG, "drag: first frame after %lld ms (%d pictures rendered), %d frames in %lld ms (%.0f fps), %s",
+    // (the part after " | " is for people reading the log; the harness reads the part before it)
+    if (t_first) ESP_LOGI(TAG, "drag: first frame after %lld ms (%d pictures rendered), %d frames in %lld ms (%.0f fps), %s"
+                          " | gap max %lld ms, held reads %d err %d up (longest %lld ms), finger still max %lld ms, "
+                          "samples %d, %.2f px/ms",
                           (t_first - t0) / 1000, rendered, frames, (t1 - ts) / 1000, frames * 1e6f / (t1 - ts),
-                          go || blind ? (side < 0 ? "to prev" : "to next") : "back");
+                          go || blind ? (side < 0 ? "to prev" : "to next") : "back", gap_max / 1000, held_err, held_up,
+                          hold_max / 1000, still_max / 1000, samples, vel);
     else ESP_LOGW(TAG, "drag: finger up before the first frame (%d pictures rendered in %lld ms), %s", rendered,
                   (t1 - t0) / 1000, go || blind ? (side < 0 ? "to prev" : "to next") : "back");
     drag.queued = false;
