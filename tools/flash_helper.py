@@ -208,7 +208,8 @@ class Keys:
 
 def open_port(port, url=False, wait=10.0):
     """The port opened with DTR and RTS low (on the ESP32-S3's USB they reset the chip / select download mode).
-    Retries for `wait` s: after a reset the USB device re-enumerates. None if it never opens."""
+    Retries for `wait` s: after a reset the USB device re-enumerates, and may come back under another name (macOS
+    numbers usbmodem ports by USB location): then the board is found again by its vendor id. None if it never opens."""
     import serial
     end = time.time() + wait
     while True:
@@ -225,6 +226,11 @@ def open_port(port, url=False, wait=10.0):
             if time.time() > end:
                 return None
             time.sleep(0.5)
+            if not url and not os.path.exists(port):    # (COM names never "exist": the lookup finds the same one)
+                ports = board_ports()
+                if ports and ports[0][0] != port:
+                    say(f'(the board came back as {ports[0][0]}, was {port})', quiet=True)
+                    port = ports[0][0]
 
 
 def monitor(port, seconds, url=False, echo=True):

@@ -50,7 +50,8 @@ idf.py -B build\v55 -D SDKCONFIG=build\v55\sdkconfig build
 ## 2. Flash and log (flash helper)
 
 The user starts `start_flash_helper.bat` once (restart it after changing `flash_helper.ps1`; `monitor.ps1` is
-reloaded on every run). Then:
+reloaded on every run). On macOS / Linux: `python tools/flash_helper.py` (same files and protocol, docs/MACOS.md).
+Then:
 
 1. Copy the build to a **new, unique name** and compare checksums. A reused path has delivered a stale file twice.
    ```bash

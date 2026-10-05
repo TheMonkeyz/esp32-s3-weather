@@ -1,7 +1,8 @@
 # Notes for AI-assisted sessions on this project
 
 Read `README.md`, `docs/HISTORY.md` (how the project grew, how the work is done now, what is still open) and
-`docs/ARCHITECTURE.md` first. This file collects the practical lessons, September 29 to October 2, 2026: what worked,
+`docs/ARCHITECTURE.md` first. **On a Mac, read `docs/MACOS.md` first**: it replaces this file's Windows setup (COM5,
+PowerShell, WSL, `C:\` paths) and sets a designer's scope (her branch only: no tags, releases or `main`). This file collects the practical lessons, September 29 to October 2, 2026: what worked,
 what cost time, and how to avoid repeating it.
 
 **The loop, in short** (details in docs/HISTORY.md, "How the work is done now"): test build labelled above the

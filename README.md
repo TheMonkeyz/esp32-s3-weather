@@ -368,6 +368,12 @@ weather alerts and lightning cover Canada (lightning up to about 250 km beyond).
 Built with **ESP-IDF v5.5.4** (the version CI uses) and **LVGL 9.2.2**. How the pieces fit together:
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). How changes are tested on the board: [docs/TESTING.md](docs/TESTING.md).
 
+### On a Mac
+
+[docs/MACOS.md](docs/MACOS.md): `tools/mac/setup.sh` installs everything (ESP-IDF v5.5.4, the page tests, the
+emulator), `tools/mac/doctor.sh` checks it, and `tools/flash_helper.py` is the flash helper in Python (same files as
+below, so the harness works unchanged).
+
 ### Flashing on Windows
 
 The prebuilt binaries go in `firmware/` (they're ignored by git, so you get them from a build). The flashing tool is
@@ -545,6 +551,7 @@ tests/host/           host unit tests of firmware C code (gcc, Linux or WSL: mak
 flash.bat             Windows: flash firmware\*.bin over USB, then log (COM port auto-detected)
 monitor.ps1           serial log to serial_log.txt / serial_live.txt (used by the two below)
 flash_helper.ps1      flash.request = flash + log, reboot.request = restart + log (no flashing)
+tools/flash_helper.py the same helper for macOS / Linux (docs/MACOS.md); tools/mac/ = Mac setup and doctor
 start_flash_helper.bat  starts flash_helper.ps1 (the harness and AI sessions drive the board through it)
 CLAUDE.md       notes for AI-assisted development sessions
 ```

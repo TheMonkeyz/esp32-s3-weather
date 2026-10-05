@@ -89,6 +89,39 @@ class Monitor(unittest.TestCase):
 
 
 @unittest.skipIf(fh is None, 'pyserial missing (run from an ESP-IDF shell)')
+class Reopen(unittest.TestCase):
+    """After a restart the board's USB may come back under another name (macOS numbers usbmodem ports by location)."""
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp()
+        self.old = fh.ROOT, fh.board_ports, serial.Serial
+        fh.ROOT = self.root
+
+        class FakeSerial:
+            def open(s):
+                if s.port != '/dev/cu.usbmodem1201':
+                    raise serial.SerialException('no such port')
+        serial.Serial = FakeSerial
+
+    def tearDown(self):
+        fh.ROOT, fh.board_ports, serial.Serial = self.old
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    def test_board_found_again_under_a_new_name(self):
+        fh.board_ports = lambda: [('/dev/cu.usbmodem1201', 'USB JTAG/serial debug unit')]
+        s = fh.open_port('/dev/cu.usbmodem1101', wait=3)
+        self.assertIsNotNone(s, 'the board was not found under its new name')
+        self.assertEqual(s.port, '/dev/cu.usbmodem1201')
+        self.assertFalse(s.dtr or s.rts, 'DTR / RTS must be low (they reset the chip)')
+
+    def test_gives_up_when_the_board_stays_away(self):
+        fh.board_ports = lambda: []
+        t0 = time.time()
+        self.assertIsNone(fh.open_port('/dev/cu.usbmodem1101', wait=1))
+        self.assertLess(time.time() - t0, 3)
+
+
+@unittest.skipIf(fh is None, 'pyserial missing (run from an ESP-IDF shell)')
 class Requests(unittest.TestCase):
     def setUp(self):
         self.root = tempfile.mkdtemp()
