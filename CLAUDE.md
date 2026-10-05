@@ -275,6 +275,11 @@ Windows build gets both from `main/idf_component.yml`. `components/dns_server` *
     expect; the harness's `alert_layout` checks it with sample names (console `alert sample`). Its first run caught
     a measuring slip: `lv_obj_get_y()` is the last layout's position until the next one (it said 80 after
     `lv_obj_set_y(111)`); compare with `lv_obj_get_style_y()`, or `lv_obj_update_layout()` before reading.
+25. **A strip rendered alone misses what reaches into it from outside (v1.14.1, October 5):** LVGL skips a label
+    whose box misses the clip, but Inuktitut's syllabics (fallback font, 5/4 larger) reach past their box: after a
+    Settings scroll in Inuktitut, `pictest` found one row off (faint glyph tips missing). `render_rows()` draws an
+    8-row margin around each strip (scroll strip, cache strips, pictest bands). Check new layouts with pictest in
+    every language (harness `scroll_other_languages`), not only English.
 
 - Internal RAM ran out silently (10 KB free, 0 KB min ever) because LVGL's small allocations went to internal RAM
   first. Fixed with `lvgl_mem.c` (LVGL heap in PSRAM). Font kerning cost 71% of render time; fonts now use

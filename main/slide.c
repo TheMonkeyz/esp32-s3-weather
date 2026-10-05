@@ -174,9 +174,17 @@ bool slide_picture(lv_obj_t *scr, lv_draw_buf_t *dst) { return slide_picture_row
 // Rows y0..y1 of a screen into dst (a whole-screen RGB565 buffer): lv_snapshot_take_to_draw_buf() clipped to those
 // rows, so a picture can be rendered a strip at a time (a whole one blocks LVGL for 60-180 ms: a quick swipe that
 // started and ended meanwhile was never seen).
+// LVGL skips a label whose box misses the rows drawn, but Inuktitut's syllabics (the fallback font, drawn 5/4 larger)
+// reach a few rows above and below the box: rows y0..y1 alone lost their faint tips (pictest after a Settings scroll
+// in Inuktitut). So up to ROW_MARGIN more rows on each side are cleared and drawn too, as far as dst has room
+// (rows top..top + h - 1); they are drawn as they are now, so a whole-screen dst keeps them right.
+#define ROW_MARGIN 8
 static bool render_rows(lv_obj_t *scr, lv_draw_buf_t *dst, int top, int y0, int y1)
 {
     lv_obj_update_layout(scr);
+    int last = top + (int)dst->header.h - 1;
+    y0 = LV_MAX(LV_MAX(y0 - ROW_MARGIN, top), 0);
+    y1 = LV_MIN(LV_MIN(y1 + ROW_MARGIN, last), DISP_H - 1);
     lv_area_t rows = {0, y0, DISP_W - 1, y1}, in_buf = {0, y0 - top, DISP_W - 1, y1 - top};
     lv_draw_buf_clear(dst, &in_buf);
     lv_layer_t layer;
@@ -776,7 +784,7 @@ static void scroll_move_fill(int x0, int w, int y0, int n, void *dst, void *user
     for (int i = 0; i < n; i++) {
         int y = s->d < 0 ? y0 + n - 1 - i : y0 + i;
         if (y >= r->y1 && y <= r->y2) {
-            const uint8_t *src = y >= s->in0 && y <= s->in1 ? s->strip->data + (y - s->in0) * s->strip->header.stride
+            const uint8_t *src = y >= s->in0 && y <= s->in1 ? s->strip->data + (y - s->in0 + ROW_MARGIN) * s->strip->header.stride
                                                             : pic + (y + s->d) * st;
             memcpy(pic + y * st + r->x1 * 2, src + r->x1 * 2, lw);
         }
@@ -796,12 +804,12 @@ static void scroll_step(scroller_t *s, int want)
     lv_obj_scroll_by_raw(s->list, 0, lv_obj_get_scroll_y(s->list) - want);
     const lv_area_t *r = &s->r;
     int64_t t0 = esp_timer_get_time(), t1 = t0, t2;
-    if (abs(d) < h && s->strip && abs(d) <= (int)s->strip->header.h) {
+    if (abs(d) < h && s->strip && abs(d) <= (int)s->strip->header.h - 2 * ROW_MARGIN) {
         // The rows coming in (at the bottom when the content goes up), rendered into the strip; then one pass
         s->d = d;
         s->in0 = d > 0 ? r->y2 - d + 1 : r->y1;
         s->in1 = d > 0 ? r->y2 : r->y1 - d - 1;
-        render_rows(s->scr, s->strip, s->in0, s->in0, s->in1);
+        render_rows(s->scr, s->strip, s->in0 - ROW_MARGIN, s->in0, s->in1);   // the margin rows around them too
         t2 = esp_timer_get_time();
         display_raw_area(r->x1, r->y1, r->x2, r->y2, d < 0, scroll_move_fill, s);
     } else {                                             // a jump (or no strip): the whole list, then send
@@ -832,7 +840,7 @@ static void scroll_run(void *unused)
     slide_phase = 21;
     if (e < 0 || cache[e].dirty || !lv_obj_is_valid(s.list)) { scroll.queued = false; slide_phase = 0; return; }
     s.pic = cache[e].buf;
-    s.strip = lv_draw_buf_create(DISP_W, 96, LV_COLOR_FORMAT_RGB565, 0);   // 87 KB; NULL: the slower path
+    s.strip = lv_draw_buf_create(DISP_W, 96 + 2 * ROW_MARGIN, LV_COLOR_FORMAT_RGB565, 0);   // 102 KB; NULL: slower path
     int64_t t0 = esp_timer_get_time();
     // LVGL lets go of the touch (the row pressed under the finger, its own scroll if it had begun) and draws that now:
     // to the panel and, through flushed(), into the picture
@@ -1032,7 +1040,7 @@ static int picture_check(int *first)
     int e = find(key_of(lv_screen_active()));
     if (e < 0 || !cache[e].buf) return -1;
     if (cache[e].dirty) return -3;
-    lv_draw_buf_t *strip = lv_draw_buf_create(DISP_W, 32, LV_COLOR_FORMAT_RGB565, 0);
+    lv_draw_buf_t *strip = lv_draw_buf_create(DISP_W, 32 + 2 * ROW_MARGIN, LV_COLOR_FORMAT_RGB565, 0);
     if (!strip) return -2;
     lv_display_t *disp = lv_display_get_default();
     uint32_t inv0 = disp->inv_p;
@@ -1040,9 +1048,9 @@ static int picture_check(int *first)
     int bad = 0;
     for (int y0 = 0; y0 < DISP_H; y0 += 32) {
         int y1 = y0 + 31 > DISP_H - 1 ? DISP_H - 1 : y0 + 31;
-        render_rows(lv_screen_active(), strip, y0, y0, y1);
+        render_rows(lv_screen_active(), strip, y0 - ROW_MARGIN, y0, y1);
         for (int y = y0; y <= y1; y++) {
-            if (!memcmp(strip->data + (y - y0) * strip->header.stride, cache[e].buf->data + y * cache[e].buf->header.stride,
+            if (!memcmp(strip->data + (y - y0 + ROW_MARGIN) * strip->header.stride, cache[e].buf->data + y * cache[e].buf->header.stride,
                         DISP_W * 2)) continue;
             if (*first < 0) *first = y;
             bad++;

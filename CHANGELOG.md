@@ -10,6 +10,9 @@ their own `## vX.Y.Z-rc.N` section. Those are shown only to Beta users, while th
 list everything again. (Three tags have no section: v1.3.0-rc.1; and v1.12.0-rc.1 and v1.12.1-rc.2, whose builds failed and were published
 as v1.12.0-rc.2 and v1.12.1-rc.3.)
 
+## v1.14.1-rc.1 - 2026-10-05
+- In Inuktitut, scrolling the Settings list no longer leaves the tips of some syllabics faint or missing.
+
 ## v1.14.0-rc.1 - 2026-10-05
 - Behind the scenes: the display's Wi-Fi setup, settings page, updates and diagnostics now come from espforge, the open-source framework this display was the start of. Nothing changes on the display or the settings page; your settings, network and language are kept.
 - A little more memory left free for the display's own work.
