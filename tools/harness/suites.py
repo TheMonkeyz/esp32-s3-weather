@@ -207,16 +207,17 @@ def settings_page_tests(ctx):
     """Playwright suite against the mock display (tools/webtest)."""
     wt = os.path.join(ROOT, 'tools', 'webtest')
     env = dict(os.environ)
-    env['PATH'] = r'C:\Program Files\nodejs;' + env.get('PATH', '')
+    if os.name == 'nt':                               # (on macOS a "C:\…;" entry broke the first real PATH entry)
+        env['PATH'] = r'C:\Program Files\nodejs' + os.pathsep + env.get('PATH', '')
     # Microsoft Store Python virtualises AppData\Local for its child processes, so Playwright can't see the browsers
     # in AppData\Local\ms-playwright. Use a copy next to the tests (git-ignored), see docs/TESTING.md.
     browsers = os.path.join(wt, '.browsers')
     if os.path.isdir(browsers):
         env['PLAYWRIGHT_BROWSERS_PATH'] = browsers
     import shutil
-    npm = shutil.which('npm') or r'C:\Program Files\nodejs\npm.cmd'
+    npm = shutil.which('npm', path=env['PATH']) or r'C:\Program Files\nodejs\npm.cmd'
     if not os.path.exists(npm):
-        raise Fail('Node.js (npm) not found')
+        raise Fail('Node.js (npm) not found (macOS: brew install node, then cd tools/webtest && npm ci)')
     r = subprocess.run([npm, 'test'], cwd=wt, env=env, capture_output=True, text=True, errors='replace', timeout=600)
     out = r.stdout + r.stderr
     m = re.search(r'(\d+) passed', out)

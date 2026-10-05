@@ -1,8 +1,12 @@
 # Host unit tests: firmware C files built with gcc against small shims of the ESP-IDF headers (shim/) and a scripted
 # HTTP client (fake.c), with AddressSanitizer. Linux or WSL:   make -C tests/host
-# IDF_PATH: an ESP-IDF checkout (for cJSON); on the Windows PC through WSL it is /mnt/c/Espressif/esp-idf.
+# IDF_PATH: an ESP-IDF checkout (for cJSON); on the Windows PC through WSL it is /mnt/c/Espressif/esp-idf. On macOS
+# ESP-IDF's export.sh sets it (docs/MACOS.md); Apple's clang builds these as gcc does.
 IDF_PATH ?= /mnt/c/Espressif/esp-idf
-CJSON := $(IDF_PATH)/components/json/cJSON
+CJSON ?= $(IDF_PATH)/components/json/cJSON
+ifeq ($(wildcard $(CJSON)/cJSON.c),)
+$(error no cJSON at $(CJSON): set IDF_PATH (source ESP-IDF's export.sh) or CJSON=<folder with cJSON.c>)
+endif
 MAIN := ../../main
 OUT := build
 CFLAGS := -std=gnu11 -D_DEFAULT_SOURCE -g -O1 -Wall -Wno-unused-function -fsanitize=address,undefined \

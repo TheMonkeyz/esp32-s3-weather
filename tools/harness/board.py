@@ -164,7 +164,8 @@ class Board:
             if self.helper_status() == 'flash_failed' and os.path.exists(p('flash.done')):
                 raise Fail(f'the flash helper failed: {open(p("flash.done")).read().strip()} (see flash_log.txt)')
             if time.time() > end:
-                raise Fail('the flash helper did not start logging (is start_flash_helper.bat running?)')
+                raise Fail('the flash helper did not start logging (is it running? Windows: start_flash_helper.bat; '
+                           'macOS / Linux: python tools/flash_helper.py, docs/MACOS.md)')
             time.sleep(1)
         self.log.pos = 0
         self._key = None                               # other firmware now (a flash): ask again
@@ -328,7 +329,11 @@ class PCWifi:
     def available(self):
         """True when the PC has a Wi-Fi card. netsh answers in the Windows display language and this class reads its
         English words (Name, State, SSID, Channel, connected): in another language it stops with a clear message
-        rather than misread it (French Windows: "Nom", "État", "Canal", "connecté")."""
+        rather than misread it (French Windows: "Nom", "État", "Canal", "connecté").
+        False off Windows: netsh only exists there, and a MacBook has no Ethernet to stay online while its Wi-Fi joins
+        the setup network (docs/MACOS.md)."""
+        if os.name != 'nt':
+            return False
         return english_netsh(self.netsh('show', 'interfaces'))
 
     def scan(self):
@@ -372,6 +377,8 @@ class PCWifi:
         return '192.168.4.' in out
 
     def leave(self):
+        if os.name != 'nt':
+            return
         self.netsh('disconnect', f'interface={self.iface}')
         self.netsh('delete', 'profile', f'name={SETUP_SSID}', f'interface={self.iface}')
 

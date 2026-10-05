@@ -8,8 +8,9 @@
     python tools/harness/harness.py perf --update-baseline   # accept the measured numbers as the new reference
     python tools/harness/harness.py --ota v1.11.1-rc.1   # install a published release with the display's updater, test it
 
-Needs the flash helper (start_flash_helper.bat) and firmware with the test console (main/testcon.c). The
-wifi_setup suite joins the PC's Wi-Fi card to the display's setup network (Ethernet keeps the PC online).
+Needs the flash helper (Windows: start_flash_helper.bat; macOS / Linux: python tools/flash_helper.py, see
+docs/MACOS.md) and firmware with the test console (main/testcon.c). The wifi_setup suite joins the PC's Wi-Fi card to
+the display's setup network (Ethernet keeps the PC online): Windows only, left out of the default run elsewhere.
 Exit code 0 = all passed. Report: tools/harness/reports/<date-time>/report.md (+ screenshots, results.json).
 """
 import argparse
@@ -162,6 +163,11 @@ def main():
     if opts.ota and not opts.expect:
         opts.expect = opts.ota
     suites = opts.suites or ORDER
+    if not opts.suites and os.name != 'nt':
+        # wifi_setup joins the computer's Wi-Fi to the display's setup network (netsh, Ethernet keeping the PC online):
+        # Windows only. A MacBook would lose the display and the internet meanwhile (docs/MACOS.md)
+        suites = [s for s in suites if s != 'wifi_setup']
+        print('(wifi_setup left out: it needs the Windows PC, see docs/MACOS.md)', flush=True)
     for s in suites:
         if s not in SUITES:
             ap.error(f'unknown suite {s}')

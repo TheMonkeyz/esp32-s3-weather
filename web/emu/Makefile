@@ -4,6 +4,14 @@
 LVGL ?= ../../managed_components/lvgl__lvgl
 IDF_PATH ?= /mnt/c/Espressif/esp-idf
 CJSON ?= $(IDF_PATH)/components/json/cJSON
+ifeq ($(filter clean,$(MAKECMDGOALS)),)
+ifeq ($(wildcard $(CJSON)/cJSON.c),)
+$(error no cJSON at $(CJSON): set IDF_PATH (source ESP-IDF's export.sh) or CJSON=<folder with cJSON.c>)
+endif
+ifeq ($(wildcard $(LVGL)/lvgl.h),)
+$(error no LVGL at $(LVGL): build the firmware once (idf.py fetches it into managed_components) or LVGL=<lvgl checkout>)
+endif
+endif
 MAIN := ../../main
 OUT := build
 VERSION ?= $(shell git describe --tags --always 2>/dev/null || echo dev)
