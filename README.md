@@ -446,7 +446,7 @@ git push origin v1.1.0
 
 - Tags are lightweight. Among pre-releases only `-rc.N` is ordered (by N); other suffixes count below every rc of
   the same version. **Never rename the repository or the account:** every display looks for its updates at the
-  Pages address built in (`OTA_SITE` in `main/ota.h`).
+  Pages address built in (`CONFIG_FORGE_OTA_SITE` in `sdkconfig.defaults`).
 - Protect the tags: a repository ruleset on `v*` that only the owner may create or move (a tag is a release, and
   the displays install what it builds).
 
@@ -505,29 +505,27 @@ main/
   ui.c          weather screen, hourly view, message/QR screens, settings overlay, swipe handling
   slide.c       moves between screens, places and days, and list scrolls, drawn from pictures (follow the finger, ~60 fps)
   pager.c       full-screen pages (places, days)
-  png_rows.c    row-by-row PNG decoding with the ROM's inflate (radar frames, lightning, map tiles)
   radar.c       radar screen: basemap tiles + flash cache, GeoMet frames, animation
   weather.c     Open-Meteo fetch/parse, WMO code -> text/icon
   alerts.c      Environment Canada weather alerts (MSC GeoMet OGC API)
-  net.c         Wi-Fi station, setup access point + captive portal (DNS, DHCP option 114), credentials in NVS
-  web.c         settings server: HTTPS on the home network, plain-HTTP captive portal on the setup AP, JSON API
+  routes.c      the settings page's app routes (places, units, presence, sound) and the snapshot hook
   config.c      saved location (NVS) and local-time helper (UTC offset from Open-Meteo)
   presence.c    microphones (ES7210 over I2S) -> presence state machine -> screen brightness
   imu.c         QMI8658 motion sensor (wake on pick-up)
   sound.c       alert beeps through the speaker (ES8311, shares I2S with the microphones)
-  ota.c         updates over Wi-Fi: download, checks, rollback
-  i18n.c        display language; i18n_strings.h = every display text in English, French and Inuktitut
-  svc.c         health of the external services (last result per service) + checks run from the status page
-  diag.c        "diag:" log lines: heap, frame timing, lock contention, CPU/stack per task, render bench
-  testcon.c     test console on USB (simulated touches, Wi-Fi test switches) for tools/harness
+  i18n.c        the display's texts (i18n_strings.h: English, French, Inuktitut) and the Inuktitut language
+  services.c    the outside services (forecast, air, alerts, radar, tiles) for the status page, their texts
+  console.c     the display's test console commands (simulated touches, fps, pictest...), render bench, "diag: display"
   lvgl_mem.c    LVGL's allocator, in PSRAM (keeps internal RAM for Wi-Fi, DMA and stacks)
   web/index.html  settings page (embedded)
-  tlscert.c     per-device TLS certificate: generated on first boot, stored in NVS (see Security)
   montserrat.ttf  font, rendered at runtime with LVGL TinyTTF (supports accents like "é"); montserrat-OFL.txt = its license
   syllabics.ttf   Noto Sans Canadian Aboriginal, subset to the syllabics (Inuktitut); syllabics-OFL.txt = its license
 partitions.csv  nvs, phy, ota_0 + ota_1 (3 MB each), otadata, mapcache (4 MB: one 512 KB basemap slot per zoom level)
 sdkconfig.defaults
-components/dns_server/  captive-portal DNS (from the ESP-IDF captive_portal example, CC0)
+main/idf_component.yml  LVGL, the audio codec, and espforge's components at a release tag (since v1.14.0):
+                forge_core (diagnostics, test console, language core, text fit, PNG rows), forge_net (Wi-Fi, setup
+                network and captive portal, Easy Connect, the HTTPS settings server, service health, the per-device
+                certificate), forge_ota (updates over Wi-Fi, rollback), dns_server: github.com/TheMonkeyz/espforge
 docs/ARCHITECTURE.md  how the pieces fit together, memory budget, known issues
 docs/DIAGNOSTICS.md   how to measure memory/CPU/render speed, reference numbers, findings
 docs/TESTING.md       how changes are tested on the board: test builds, flash helper, logs, screenshots

@@ -7,7 +7,7 @@
 #include "esp_err.h"
 #include "net.h"
 #include "ota.h"
-#include "svc.h"
+#include "services.h"
 #include "esp_codec_dev.h"
 #include "presence.h"
 #include "web.h"
@@ -53,42 +53,61 @@ void ota_check_now(void) {}
 bool ota_install(void) { return false; }
 void ota_get_notes(char *out, size_t size) { if (size) out[0] = 0; }
 void ota_restart_when_safe(void) {}
+void ota_set_err_text(const char *(*fn)(ota_err_t err)) { (void)fn; }
 
-/* ---------- service statuses ---------- */
-static svc_info_t svc[SVC_COUNT] = {
-    [SVC_FORECAST] = { "Open-Meteo", "Forecast API v1" },
-    [SVC_AIR]      = { "Open-Meteo air", "Air quality API v1" },
-    [SVC_ALERTS]   = { "EC alerts", "OGC API" },
-    [SVC_RADAR]    = { "EC GeoMet radar", "WMS 1.3.0" },
-    [SVC_TILES]    = { "OpenStreetMap", "tiles" },
-    [SVC_UPDATES]  = { "GitHub Pages", "updates" },
-    [SVC_NTP]      = { "Browser clock", "" },
-};
-void svc_http(svc_id_t id, esp_err_t err, int status, int64_t t0)
+/* ---------- service statuses (forge_net's svc.h, recorded as the firmware does for the status page) ---------- */
+static svc_info_t svc[SVC_MAX];
+static int nsvc;
+static const char *(*why_text)(svc_why_t, int);
+int svc_add(const char *name, const char *api, svc_probe_url_t probe)
+{
+    (void)probe;
+    if (nsvc >= SVC_MAX) return -1;
+    svc[nsvc] = (svc_info_t){ .name = name, .api = api };
+    return nsvc++;
+}
+int svc_count(void) { return nsvc; }
+// The firmware's NTP row is the browser's clock here (emu_main adds it under this name)
+int svc_find(const char *name)
+{
+    if (name && !strcmp(name, SVC_NAME_NTP)) name = "Browser clock";
+    for (int i = 0; i < nsvc; i++) if (name && !strcmp(svc[i].name, name)) return i;
+    return -1;
+}
+void svc_set_why_text(const char *(*fn)(svc_why_t, int)) { why_text = fn; }
+void svc_http(int id, esp_err_t err, int status, int64_t t0)
 {
     if (err == ESP_OK && status == 200) svc_ok(id, t0);
-    else {
-        char why[40];
-        snprintf(why, sizeof(why), status > 0 ? "HTTP %d" : "Can't connect", status);
-        svc_fail(id, why, t0);
-    }
+    else if (status > 0) { char why[40]; snprintf(why, sizeof(why), "HTTP %d", status); svc_fail(id, why, t0); }
+    else svc_fail_why(id, SVC_WHY_CONNECT, t0);
 }
-void svc_ok(svc_id_t id, int64_t t0)
+void svc_fail_why(int id, svc_why_t code, int64_t t0)
 {
+    const char *t = why_text ? why_text(code, 0) : NULL;
+    svc_fail(id, t ? t : "error", t0);
+}
+void svc_ok(int id, int64_t t0)
+{
+    if (id < 0 || id >= nsvc) return;
     svc[id].last_try = svc[id].last_ok = esp_timer_get_time();
     svc[id].ms = (int)((svc[id].last_try - t0) / 1000);
     svc[id].ok = true;
     svc[id].fails = 0;
 }
-void svc_fail(svc_id_t id, const char *why, int64_t t0)
+void svc_fail(int id, const char *why, int64_t t0)
 {
+    if (id < 0 || id >= nsvc) return;
     svc[id].last_try = esp_timer_get_time();
     svc[id].ms = (int)((svc[id].last_try - t0) / 1000);
     svc[id].ok = false;
     svc[id].fails++;
     snprintf(svc[id].why, sizeof(svc[id].why), "%s", why);
 }
-void svc_get(svc_id_t id, svc_info_t *out) { *out = svc[id]; }
+void svc_get(int id, svc_info_t *out)
+{
+    static const svc_info_t none = { "", "" };
+    *out = id >= 0 && id < nsvc ? svc[id] : none;
+}
 const char *svc_user_agent(void) { return "esp32-s3-weather emulator"; }   // (not sent: see emu_http.c)
 void svc_probe_stale(void) {}
 
@@ -113,3 +132,6 @@ bool presence_screen_off(void) { return false; }
 const void *presence_audio_data_if(void) { static const audio_codec_data_if_t i2s; return &i2s; }
 
 const char *web_key(void) { return "browser"; }
+
+// forge_core's NVS check (config.c's saves): emu_nvs.c never fails
+bool nvs_check(esp_err_t err, const char *what) { (void)what; return err == ESP_OK; }

@@ -1,3 +1,22 @@
 dependencies:
   lvgl/lvgl: "9.2.2"
   espressif/esp_codec_dev: "1.5.11"   # pinned: "~1.5.2" floated to whatever 1.5.x was newest at build time
+  # espforge's infrastructure (Wi-Fi setup, web server, updates, diagnostics, console, languages), at a release tag:
+  # this display only takes espforge versions that passed their own tests. To build against an unreleased espforge
+  # checkout, see tools/forge_local.py (CLAUDE.md, "Shared with espforge"). Bump the four tags together.
+  forge_core:
+    git: https://github.com/TheMonkeyz/espforge.git
+    path: components/forge_core
+    version: v0.2.0-rc.2
+  forge_net:
+    git: https://github.com/TheMonkeyz/espforge.git
+    path: components/forge_net
+    version: v0.2.0-rc.2
+  forge_ota:
+    git: https://github.com/TheMonkeyz/espforge.git
+    path: components/forge_ota
+    version: v0.2.0-rc.2
+  dns_server:
+    git: https://github.com/TheMonkeyz/espforge.git
+    path: components/dns_server
+    version: v0.2.0-rc.2

@@ -36,17 +36,28 @@ release candidate and tests it with `harness.py --ota` → a stable release only
 ## Shared with espforge
 
 [espforge](https://github.com/TheMonkeyz/espforge) (`C:\Users\lmathieu\ESPDEV\espforge`) is this project's framework,
-extracted on October 4 (its `docs/LESSONS.md` L1-L176 generalize the bugs below, plus newer ones). The two drifted
-within hours: Easy Connect was fixed there while this display still failed with the user's phone. Plan (chosen
-October 4): first port fixes both ways; then this project takes forge_core, forge_net and forge_ota from espforge as a
-git submodule, and keeps its own display, touch, `slide.c` and app code.
+extracted on October 4 (its `docs/LESSONS.md` L1-L184 generalize the bugs below, plus newer ones). The two drifted
+within hours (Easy Connect was fixed there while this display still failed with the user's phone), so since v1.14.0
+the display **takes its infrastructure from espforge**: forge_core (diag, test console, i18n core, NVS helpers,
+version, png_rows, textfit, http_once, utf8), forge_net (Wi-Fi, setup network, Easy Connect, web server, svc,
+certificate), forge_ota (updates) and dns_server, **at a release tag** (the user's choice, October 4).
 
-- **Twin files** (same code in both, until the submodule): `net.c`, `web.c`, `ota.c`, `diag.c`, `testcon.c`, `svc.c`,
-  `i18n.c`, `tlscert.c`, `version.c`, `png_rows.c`, `textfit.c`, `http_once.h`, `utf8.h`, `lvgl_mem.c`, `pager.c`, `imu.c`,
-  `display.c`, `touch.c`, `components/dns_server`; the harness's `board.py` / `harness.py`, the flash helper.
-  `slide.c` is not a twin: espforge's is a trimmed fork; port ideas, not the file.
-- **A fix in a twin file** gets ported to espforge in the same session, or a task chip for it, and a lesson there.
-  Before debugging Wi-Fi setup, OTA or the tools here, read espforge's LESSONS for that topic.
+- **Where:** `main/idf_component.yml` pins the four at the same espforge tag; ESP-IDF's component manager fetches them
+  into `managed_components/` (git-ignored, like `dependencies.lock`). If `idf.py` stops on "'git init --bare' failed
+  ... unable to get current working directory", set `IDF_COMPONENT_CACHE_PATH` to a folder that exists (this PC:
+  `C:\Users\lmathieu\.espressif\cm_cache`). Builds outside idf.py (host tests, the emulator, CI) use
+  managed_components, or `python tools/fetch_forge.py` (clones the pinned tag into `.espforge/`).
+- **What stays here:** display, touch, `slide.c` (larger than espforge's trimmed fork: port ideas, not the file), pager,
+  lvgl_mem, imu, presence, sound, ui, radar, weather, alerts, config, and the app's glue: `routes.c` (the settings
+  page's app routes), `console.c` (the display's console commands, "where", "diag: display"), `services.c` (the five
+  outside services, their probe URLs, the reasons' texts), `i18n.c` (the texts, Inuktitut's descriptor). Kconfig
+  `CONFIG_FORGE_*` in `sdkconfig.defaults` keep the display's names (Weather-Setup, the certificate, the User-Agent,
+  the update site).
+- **A fix to shared code** is made in espforge: test it with this app first (`python tools/forge_local.py`: a build
+  against the espforge checkout, nothing committed), release an espforge rc, then bump the four tags here. Before
+  debugging Wi-Fi setup, OTA or the tools, read espforge's LESSONS for that topic.
+- **Still twins** (same code in both, nothing shares them yet): `lvgl_mem.c`, `pager.c`, `imu.c`, `display.c`,
+  `touch.c`, the harness's `board.py` / `harness.py`, the flash helper. A fix in one gets ported or a task chip.
 
 ## Cloud build recipe (when no local IDF)
 

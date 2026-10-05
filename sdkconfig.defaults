@@ -56,3 +56,11 @@ CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
 CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH=y
 CONFIG_ESP_COREDUMP_DATA_FORMAT_ELF=y
 CONFIG_ESP_COREDUMP_CHECKSUM_CRC32=y
+# espforge (forge_net, forge_ota): the names this display has always used, and its update site
+CONFIG_FORGE_SETUP_SSID="Weather-Setup"
+CONFIG_FORGE_TLS_NAME="Weather Display"
+CONFIG_FORGE_REPO="TheMonkeyz/esp32-s3-weather"
+CONFIG_FORGE_PRODUCT="esp32-s3-weather"
+CONFIG_FORGE_UA_COMMENT="open-source weather display"
+CONFIG_FORGE_PORTAL_NAME="Weather display"
+CONFIG_FORGE_OTA_SITE="https://themonkeyz.github.io/esp32-s3-weather/"

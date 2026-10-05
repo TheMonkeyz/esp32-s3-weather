@@ -2,11 +2,17 @@
 #   make            # in WSL, after `source ~/emsdk/emsdk_env.sh`: build/emu.js + build/emu.wasm, then open index.html
 # LVGL: the firmware's own copy (ESP-IDF's component manager puts it in managed_components); cJSON: ESP-IDF's.
 LVGL ?= ../../managed_components/lvgl__lvgl
+# espforge's components (i18n core, png_rows, textfit; the headers of net, web, ota, svc): the firmware's copy at the tag
+# in main/idf_component.yml (managed_components after an idf.py build), else tools/fetch_forge.py's .espforge
+FORGE ?= $(if $(wildcard ../../managed_components/forge_core/CMakeLists.txt),../../managed_components,../../.espforge/components)
 IDF_PATH ?= /mnt/c/Espressif/esp-idf
 CJSON ?= $(IDF_PATH)/components/json/cJSON
 ifeq ($(filter clean,$(MAKECMDGOALS)),)
 ifeq ($(wildcard $(CJSON)/cJSON.c),)
 $(error no cJSON at $(CJSON): set IDF_PATH (source ESP-IDF's export.sh) or CJSON=<folder with cJSON.c>)
+endif
+ifeq ($(wildcard $(FORGE)/forge_core/i18n.c),)
+$(error no espforge components at $(FORGE): build the firmware once, or python tools/fetch_forge.py, or FORGE=<espforge>/components)
 endif
 ifeq ($(wildcard $(LVGL)/lvgl.h),)
 $(error no LVGL at $(LVGL): build the firmware once (idf.py fetches it into managed_components) or LVGL=<lvgl checkout>)
@@ -16,19 +22,21 @@ MAIN := ../../main
 OUT := build
 VERSION ?= $(shell git describe --tags --always 2>/dev/null || echo dev)
 
-FIRMWARE := ui.c slide.c pager.c config.c i18n.c weather.c alerts.c radar.c png_rows.c sound.c textfit.c
+FIRMWARE := ui.c slide.c pager.c config.c i18n.c weather.c alerts.c radar.c sound.c services.c
+FORGE_SRC := i18n.c png_rows.c textfit.c
 EMU := emu_main.c emu_display.c emu_touch.c emu_http.c emu_nvs.c emu_stubs.c emu_tasks.c emu_partition.c emu_audio.c
 LV_SRC := $(shell find $(LVGL)/src -name '*.c')
 
 MINIZ := $(OUT)/miniz
-CFLAGS := -O2 -DEMU_BUILD '-DEMU_VERSION="$(VERSION)"' -I. -Ishim -I$(MAIN) -I$(LVGL) -I$(LVGL)/src -I$(CJSON) -I$(MINIZ) \
+CFLAGS := -O2 -DEMU_BUILD '-DEMU_VERSION="$(VERSION)"' -I. -Ishim -I$(MAIN) -I$(FORGE)/forge_core/include \
+          -I$(FORGE)/forge_net/include -I$(FORGE)/forge_ota/include -I$(LVGL) -I$(LVGL)/src -I$(CJSON) -I$(MINIZ) \
           -include string.h -include stdint.h '-DLV_CONF_KCONFIG_EXTERNAL_INCLUDE="lv_kconfig.h"' \
           -DLV_LVGL_H_INCLUDE_SIMPLE -Wno-unused-parameter
 LDFLAGS := -sASYNCIFY -sASYNCIFY_STACK_SIZE=65536 -sALLOW_MEMORY_GROWTH -sSTACK_SIZE=262144 -sENVIRONMENT=web \
            -sEXPORTED_FUNCTIONS=_main,_emu_fb,_emu_fb_dirty,_emu_touch,_emu_brightness,_malloc,_free \
            -sEXPORTED_RUNTIME_METHODS=HEAPU8,HEAPU16 -sMODULARIZE -sEXPORT_NAME=WeatherEmu
 
-OBJ := $(patsubst %.c,$(OUT)/fw/%.o,$(FIRMWARE)) $(patsubst %.c,$(OUT)/emu/%.o,$(EMU)) \
+OBJ := $(patsubst %.c,$(OUT)/fw/%.o,$(FIRMWARE)) $(patsubst %.c,$(OUT)/forge/%.o,$(FORGE_SRC)) $(patsubst %.c,$(OUT)/emu/%.o,$(EMU)) \
        $(patsubst $(LVGL)/%.c,$(OUT)/lvgl/%.o,$(LV_SRC)) $(OUT)/cjson/cJSON.o $(OUT)/emu/fonts.o $(OUT)/miniz/miniz.o
 
 all: $(OUT)/emu.js $(OUT)/index.html
@@ -41,6 +49,9 @@ $(OUT)/index.html: index.html
 	cp $< $@
 
 $(OUT)/fw/%.o: $(MAIN)/%.c lv_kconfig.h | $(MINIZ)/miniz.h
+	@mkdir -p $(dir $@)
+	emcc $(CFLAGS) -c $< -o $@
+$(OUT)/forge/%.o: $(FORGE)/forge_core/%.c lv_kconfig.h | $(MINIZ)/miniz.h
 	@mkdir -p $(dir $@)
 	emcc $(CFLAGS) -c $< -o $@
 $(OUT)/emu/%.o: %.c lv_kconfig.h

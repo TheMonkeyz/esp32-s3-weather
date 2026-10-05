@@ -13,7 +13,7 @@
 #include "esp_heap_caps.h"
 #include "cJSON.h"
 #include "esp_timer.h"
-#include "svc.h"
+#include "services.h"
 #include "i18n.h"
 #include "utf8.h"
 
@@ -166,7 +166,7 @@ bool alerts_fetch(double lat, double lon, alerts_t *out)
     if (!cJSON_IsArray(features)) {
         cJSON_Delete(root);
         ESP_LOGW(TAG, "unexpected response");
-        svc_fail(SVC_ALERTS, tr(T_ERR_BAD_REPLY), t0);
+        svc_fail_why(SVC_ALERTS, SVC_WHY_BAD_REPLY, t0);
         return false;
     }
 
