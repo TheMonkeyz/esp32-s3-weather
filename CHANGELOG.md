@@ -10,6 +10,10 @@ their own `## vX.Y.Z-rc.N` section. Those are shown only to Beta users, while th
 list everything again. (Three tags have no section: v1.3.0-rc.1; and v1.12.0-rc.1 and v1.12.1-rc.2, whose builds failed and were published
 as v1.12.0-rc.2 and v1.12.1-rc.3.)
 
+## v1.14.1-rc.2 - 2026-10-05
+- When Wi-Fi Easy Connect doesn't work (some phones on a 5 GHz network say "Couldn't add device"), the display now says what to do: swipe right and join its setup network, which works with any phone.
+- In Inuktitut, scrolling the Settings list no longer leaves the tips of some syllabics faint or missing.
+
 ## v1.14.1-rc.1 - 2026-10-05
 - In Inuktitut, scrolling the Settings list no longer leaves the tips of some syllabics faint or missing.
 
