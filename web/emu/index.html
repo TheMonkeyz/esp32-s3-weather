@@ -40,6 +40,18 @@ canvas:active{cursor:grabbing}
 .how b{color:var(--text);font-weight:500;min-width:8.5em}
 .note{color:var(--dim);font-size:14px;margin-top:22px}
 .lead{margin:14px 0 0;color:var(--body)}
+.ctl{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin-top:6px}
+.ctl label,.ctl button{font:500 14px/1 var(--font);color:var(--text);background:#0b0f14;border:1px solid var(--line2);
+  border-radius:999px;padding:9px 14px;display:inline-flex;align-items:center;gap:8px;cursor:pointer}
+.ctl button:hover,.ctl label:hover{border-color:#3b4a5c}
+.ctl input{accent-color:var(--accent);margin:0}
+.ctlnote{color:var(--dim);font-size:13px;margin:10px auto 0;text-align:center;max-width:440px;min-height:1.6em}
+.settings{padding-bottom:64px}
+.settings h2{color:var(--text);font-weight:500;font-size:clamp(22px,3vw,28px);margin:0}
+.settings .note{max-width:640px}
+.phone{margin:24px auto 0;max-width:430px;border:1px solid var(--line2);border-radius:28px;padding:10px;background:#05070a;
+  box-shadow:0 30px 60px -30px #000}
+.phone iframe{display:block;width:100%;height:900px;border:0;border-radius:20px;background:#fff}
 @media (max-width:860px){.stage{grid-template-columns:1fr;gap:28px;justify-items:center}.info{max-width:520px}}
 @media (max-width:600px){.wrap{padding:0 16px}}
 </style>
@@ -54,6 +66,12 @@ canvas:active{cursor:grabbing}
     <div class="device"><div class="bezel"><canvas id="screen" width="466" height="466"
       aria-label="The display's screen. Drag, tap or press and hold on it."></canvas></div></div>
     <p class="status" id="status">Starting…</p>
+    <div class="ctl">
+      <label><input type="checkbox" id="mic"> Use my microphone</label>
+      <button type="button" id="pickup">Pick it up</button>
+    </div>
+    <p class="ctlnote" id="ctlnote">With the microphone on, the display dims when the room is quiet and wakes when it
+      hears you, as on the real one. The sound stays in your browser.</p>
   </div>
   <div class="info">
     <h1>Try it in your browser</h1>
@@ -63,19 +81,44 @@ canvas:active{cursor:grabbing}
       <li><b>Drag sideways</b> the other screens</li>
       <li><b>Drag up or down</b> your places</li>
       <li><b>Tap a day</b> its forecast hour by hour</li>
-      <li><b>Press and hold</b> the display's settings (units, language)</li>
+      <li><b>Press and hold</b> the display's settings (units, language, brightness)</li>
     </ul>
-    <p class="note">Places and settings you choose stay in this browser. The radar, sounds and the dimming need the
-      real display.</p>
+    <p class="note">Places and settings you choose stay in this browser. The radar, the alert sounds, the brightness
+      and the dimming work here too (the dimming with your microphone; on a phone, moving it wakes the display as
+      picking it up does). Wi-Fi setup and updates need the real display.</p>
   </div>
 </main>
+<section class="wrap settings">
+  <h2>Its settings page</h2>
+  <p class="note">The page the display serves to your phone, here talking to the display above: change a place, the
+    units or the language and watch the screen follow. For the dimming, turn the microphone on, then choose
+    <b>Testing</b> under Timing: it dims after 10 s of quiet and turns off after 30.</p>
+  <div class="phone"><iframe id="settings" src="settings.html?test" title="The display's settings page"
+    allow="geolocation"></iframe></div>
+</section>
 <script src="emu.js"></script>
 <script>
+// The settings page below (settings.html, emu-settings.js) sends its /api/ requests here; the emulator serves them
+// between frames (emu_web.c reads Module.emuApiQ and answers through Module.emuApiWait)
+const apiQ = [], apiWait = {};
+let apiId = 0;
+window.emuApi = (method, path, body) => new Promise(done => {
+  const id = ++apiId;
+  apiWait[id] = done;
+  apiQ.push({ id, method, path, body });
+});
+addEventListener('message', e => {
+  if (e.origin === location.origin && e.data && e.data.emuSettingsHeight)
+    document.getElementById('settings').style.height = Math.max(400, e.data.emuSettingsHeight) + 'px';
+});
 (async () => {
   const canvas = document.getElementById('screen'), ctx = canvas.getContext('2d');
   const status = document.getElementById('status');
   const img = ctx.createImageData(466, 466), rgba = new Uint32Array(img.data.buffer);
   const M = await WeatherEmu({ print: t => console.log(t), printErr: t => console.log(t) });
+  M.emuApiQ = apiQ;
+  M.emuApiWait = apiWait;
+  M.emuMic = { on: false };
   status.textContent = '';
   const fb = M._emu_fb() >> 1;                       // RGB565 framebuffer, in 16-bit words
   // RGB565 -> RGBA (little-endian Uint32: A B G R), whenever the firmware drew something
@@ -89,8 +132,11 @@ canvas:active{cursor:grabbing}
       }
       ctx.putImageData(img, 0, 0);
     }
+    const level = M._emu_brightness();
+    if (level !== shown) { shown = level; canvas.style.filter = level >= 255 ? '' : `brightness(${(level / 255).toFixed(3)})`; }
     requestAnimationFrame(draw);
   };
+  let shown = 255;
   requestAnimationFrame(draw);
   // The finger: pointer events in the canvas's own 466x466 pixels
   const at = e => {
@@ -109,6 +155,72 @@ canvas:active{cursor:grabbing}
   canvas.addEventListener('pointerup', up);
   canvas.addEventListener('pointercancel', up);
   canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+  // The microphones (emu_audio.c reads Module.emuMic): the browser's, as 16 kHz samples, only while the switch is on
+  const mic = document.getElementById('mic'), note = document.getElementById('ctlnote');
+  const say = t => { note.textContent = t; };
+  async function micOn() {
+    const stream = await navigator.mediaDevices.getUserMedia(
+      { audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+    const ac = new (window.AudioContext || window.webkitAudioContext)();
+    const src = ac.createMediaStreamSource(stream), proc = ac.createScriptProcessor(2048, 1, 1);
+    const m = { on: true, q: [], n: 0, off: 0, stream, ac }, step = ac.sampleRate / 16000;
+    let pos = 0;
+    proc.onaudioprocess = e => {
+      const x = e.inputBuffer.getChannelData(0), out = new Int16Array(Math.ceil(x.length / step) + 1);
+      let n = 0;
+      for (; pos < x.length; pos += step) out[n++] = Math.max(-32768, Math.min(32767, x[pos | 0] * 32767));
+      pos -= x.length;
+      m.q.push(out.subarray(0, n));
+      m.n += n;
+      while (m.n > 16000 && m.q.length > 1) { const c = m.q.shift(); m.n -= c.length - m.off; m.off = 0; }   // 1 s at most
+    };
+    src.connect(proc);
+    proc.connect(ac.destination);                     // (a ScriptProcessor only runs connected; it outputs silence)
+    M.emuMic = m;
+    M._emu_mic(1);
+  }
+  function micOff() {
+    const m = M.emuMic;
+    if (m.stream) m.stream.getTracks().forEach(t => t.stop());
+    if (m.ac) m.ac.close();
+    M.emuMic = { on: false };
+    M._emu_mic(0);
+  }
+  mic.addEventListener('change', async () => {
+    if (!mic.checked) { micOff(); say('Microphone off: the display stays bright.'); return; }
+    askMotion();
+    try {
+      await micOn();
+      say('Listening: it dims when the room is quiet (Timing in the settings below), and wakes when it hears you.');
+    } catch (e) {
+      mic.checked = false;
+      say('The browser did not give the microphone (' + (e.name || e) + ').');
+    }
+  });
+
+  // The motion sensor (emu_imu.c reads Module.emuAccel, in g): a phone's accelerometer
+  const G = 9.80665;
+  addEventListener('devicemotion', e => {
+    const a = e.accelerationIncludingGravity;
+    if (a && a.x != null && !lifting) M.emuAccel = [a.x / G, a.y / G, a.z / G];
+  });
+  let motionAsked = false;
+  function askMotion() {                              // iPhone: motion needs a permission, asked in a tap
+    if (motionAsked || typeof DeviceMotionEvent === 'undefined' || !DeviceMotionEvent.requestPermission) return;
+    motionAsked = true;
+    DeviceMotionEvent.requestPermission().catch(() => {});
+  }
+  // "Pick it up": tilted for a moment, then put back, as a hand lifting the display (presence.c wakes above 0.10 g)
+  let lifting = false;
+  document.getElementById('pickup').addEventListener('click', () => {
+    askMotion();
+    const rest = M.emuAccel || [0, 0, 1];
+    lifting = true;
+    M.emuAccel = [rest[0] + 0.35, rest[1] + 0.1, rest[2] - 0.1];
+    setTimeout(() => { M.emuAccel = rest; lifting = false; }, 700);
+    say('Picked up: a dimmed or dark display wakes, as when you lift it.');
+  });
 })().catch(e => { document.getElementById('status').textContent = 'The emulator could not start: ' + e; });
 </script>
 </body>

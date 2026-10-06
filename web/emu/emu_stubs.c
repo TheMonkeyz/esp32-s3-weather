@@ -1,5 +1,7 @@
-// What the screens ask of the rest of the firmware, answered for the browser: online, no setup network, no updates,
-// no microphones (the speaker is sound.c with emu_audio.c). The service statuses are recorded as the firmware's are (svc_http), for the status page.
+// What the screens ask of the rest of the firmware, answered for the browser: online, no setup network, no updates
+// (Restart reloads the page). The microphones and the motion sensor are presence.c itself with emu_audio.c and
+// emu_imu.c; the speaker is sound.c with emu_audio.c. The service statuses are recorded as the firmware's are
+// (svc_http), for the status page.
 #include <stdio.h>
 #include <string.h>
 #include <emscripten.h>
@@ -8,11 +10,10 @@
 #include "net.h"
 #include "ota.h"
 #include "services.h"
-#include "esp_codec_dev.h"
-#include "presence.h"
 #include "web.h"
 #include "alerts.h"
 #include "display.h"
+#include "esp_system.h"
 
 const char *esp_err_to_name(esp_err_t e)
 {
@@ -41,18 +42,21 @@ bool net_dpp_start(net_dpp_uri_cb_t on_uri, net_dpp_done_cb_t on_done) { (void)o
 void net_dpp_stop(void) {}
 bool net_dpp_active(void) { return false; }
 
-/* ---------- updates: none in the browser ---------- */
+/* ---------- updates: none in the browser (the settings page's channel picker is remembered) ---------- */
+static char channel[8] = "stable";
 void ota_get_status(ota_status_t *out)
 {
     memset(out, 0, sizeof(*out));
     out->state = OTA_UP_TO_DATE;
     snprintf(out->current, sizeof(out->current), "%s", EMU_VERSION);
-    snprintf(out->channel, sizeof(out->channel), "stable");
+    snprintf(out->channel, sizeof(out->channel), "%s", channel);
 }
 void ota_check_now(void) {}
 bool ota_install(void) { return false; }
+void ota_set_channel(const char *ch) { if (ch && (!strcmp(ch, "stable") || !strcmp(ch, "beta"))) snprintf(channel, sizeof(channel), "%s", ch); }
+bool ota_pending_verify(void) { return false; }
 void ota_get_notes(char *out, size_t size) { if (size) out[0] = 0; }
-void ota_restart_when_safe(void) {}
+void ota_restart_when_safe(void) { esp_restart(); }   // Settings > Restart: the page reloads (settings are already saved)
 void ota_set_err_text(const char *(*fn)(ota_err_t err)) { (void)fn; }
 
 /* ---------- service statuses (forge_net's svc.h, recorded as the firmware does for the status page) ---------- */
@@ -110,26 +114,6 @@ void svc_get(int id, svc_info_t *out)
 }
 const char *svc_user_agent(void) { return "esp32-s3-weather emulator"; }   // (not sent: see emu_http.c)
 void svc_probe_stale(void) {}
-
-/* ---------- speaker and microphones: none ---------- */
-static presence_cfg_t pres = { .enabled = false, .margin_db = 6, .wake_s = 1, .dim_s = 600, .off_s = 1800,
-                               .bright_pct = 80, .dim_pct = 15, .baseline_db = -60 };
-void presence_get_config(presence_cfg_t *out) { *out = pres; }
-bool presence_set_config(const presence_cfg_t *in) { pres = *in; display_brightness(pres.bright_pct * 255 / 100); return true; }
-void presence_get_status(presence_status_t *st)
-{
-    memset(st, 0, sizeof(*st));
-    st->state = PRESENCE_ACTIVE;
-    st->brightness = pres.bright_pct;
-}
-bool presence_motion_wake(void) { return false; }
-void presence_set_motion(bool on, float threshold_g) { (void)on; (void)threshold_g; }
-void presence_preview_brightness(int pct) { display_brightness(pct * 255 / 100); }
-void presence_wake(void) {}
-bool presence_touch(void) { return false; }
-bool presence_screen_off(void) { return false; }
-// sound.c waits for the microphones' I2S bus before opening the speaker: "there"
-const void *presence_audio_data_if(void) { static const audio_codec_data_if_t i2s; return &i2s; }
 
 const char *web_key(void) { return "browser"; }
 
