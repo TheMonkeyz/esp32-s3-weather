@@ -156,6 +156,8 @@ jobs:
           source "$HOME/emsdk/emsdk_env.sh"
           make -C web/emu -j4 LVGL="$PWD/lvgl" CJSON="$PWD/cjson"
           mkdir -p emu && cp web/emu/build/index.html web/emu/build/emu.js web/emu/build/emu.wasm emu/
+          # the settings page under the emulator (since v1.14.3; an older release's build has none)
+          for f in settings.html emu-settings.js; do [ -f "web/emu/build/$f" ] && cp "web/emu/build/$f" emu/ || true; done
           ls -l emu
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
         with:

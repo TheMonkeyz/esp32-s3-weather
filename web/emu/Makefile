@@ -22,9 +22,11 @@ MAIN := ../../main
 OUT := build
 VERSION ?= $(shell git describe --tags --always 2>/dev/null || echo dev)
 
-FIRMWARE := ui.c slide.c pager.c config.c i18n.c weather.c alerts.c radar.c sound.c services.c
+FIRMWARE := ui.c slide.c pager.c config.c i18n.c weather.c alerts.c radar.c sound.c services.c presence.c routes.c
 FORGE_SRC := i18n.c png_rows.c textfit.c
-EMU := emu_main.c emu_display.c emu_touch.c emu_http.c emu_nvs.c emu_stubs.c emu_tasks.c emu_partition.c emu_audio.c
+FORGE_OTA_SRC := ota_web.c
+EMU := emu_main.c emu_display.c emu_touch.c emu_http.c emu_nvs.c emu_stubs.c emu_tasks.c emu_partition.c emu_audio.c \
+       emu_web.c emu_imu.c
 LV_SRC := $(shell find $(LVGL)/src -name '*.c')
 
 MINIZ := $(OUT)/miniz
@@ -33,13 +35,14 @@ CFLAGS := -O2 -DEMU_BUILD '-DEMU_VERSION="$(VERSION)"' -I. -Ishim -I$(MAIN) -I$(
           -include string.h -include stdint.h '-DLV_CONF_KCONFIG_EXTERNAL_INCLUDE="lv_kconfig.h"' \
           -DLV_LVGL_H_INCLUDE_SIMPLE -Wno-unused-parameter
 LDFLAGS := -sASYNCIFY -sASYNCIFY_STACK_SIZE=65536 -sALLOW_MEMORY_GROWTH -sSTACK_SIZE=262144 -sENVIRONMENT=web \
-           -sEXPORTED_FUNCTIONS=_main,_emu_fb,_emu_fb_dirty,_emu_touch,_emu_brightness,_malloc,_free \
+           -sEXPORTED_FUNCTIONS=_main,_emu_fb,_emu_fb_dirty,_emu_touch,_emu_brightness,_emu_mic,_malloc,_free \
            -sEXPORTED_RUNTIME_METHODS=HEAPU8,HEAPU16 -sMODULARIZE -sEXPORT_NAME=WeatherEmu
 
-OBJ := $(patsubst %.c,$(OUT)/fw/%.o,$(FIRMWARE)) $(patsubst %.c,$(OUT)/forge/%.o,$(FORGE_SRC)) $(patsubst %.c,$(OUT)/emu/%.o,$(EMU)) \
+OBJ := $(patsubst %.c,$(OUT)/fw/%.o,$(FIRMWARE)) $(patsubst %.c,$(OUT)/forge/%.o,$(FORGE_SRC)) \
+       $(patsubst %.c,$(OUT)/forge_ota/%.o,$(FORGE_OTA_SRC)) $(patsubst %.c,$(OUT)/emu/%.o,$(EMU)) \
        $(patsubst $(LVGL)/%.c,$(OUT)/lvgl/%.o,$(LV_SRC)) $(OUT)/cjson/cJSON.o $(OUT)/emu/fonts.o $(OUT)/miniz/miniz.o
 
-all: $(OUT)/emu.js $(OUT)/index.html
+all: $(OUT)/emu.js $(OUT)/index.html $(OUT)/settings.html $(OUT)/emu-settings.js
 
 $(OUT)/emu.js: $(OBJ)
 	emcc $(CFLAGS) $(LDFLAGS) $(OBJ) -o $@
@@ -48,10 +51,21 @@ $(OUT)/emu.js: $(OBJ)
 $(OUT)/index.html: index.html
 	cp $< $@
 
+# The display's own settings page under the emulator: unchanged, with emu-settings.js first in its <head> (its requests
+# to /api/ go to the emulator, emu_web.c)
+$(OUT)/settings.html: $(MAIN)/web/index.html
+	sed '0,/<head>/s|<head>|<head><script src="emu-settings.js"></script>|' $< > $@
+	@grep -q 'emu-settings.js' $@ || (echo "settings.html: no <head> to put emu-settings.js in" && rm -f $@ && false)
+$(OUT)/emu-settings.js: emu-settings.js
+	cp $< $@
+
 $(OUT)/fw/%.o: $(MAIN)/%.c lv_kconfig.h | $(MINIZ)/miniz.h
 	@mkdir -p $(dir $@)
 	emcc $(CFLAGS) -c $< -o $@
 $(OUT)/forge/%.o: $(FORGE)/forge_core/%.c lv_kconfig.h | $(MINIZ)/miniz.h
+	@mkdir -p $(dir $@)
+	emcc $(CFLAGS) -c $< -o $@
+$(OUT)/forge_ota/%.o: $(FORGE)/forge_ota/%.c lv_kconfig.h
 	@mkdir -p $(dir $@)
 	emcc $(CFLAGS) -c $< -o $@
 $(OUT)/emu/%.o: %.c lv_kconfig.h

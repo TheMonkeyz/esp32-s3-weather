@@ -15,7 +15,7 @@ Two steps, used by CI (.github/workflows/firmware.yml) and for local previews:
         release notes from CHANGELOG.md, which the display shows before installing an update (and the
         page shows for the selected version). fonts/ gets the display's font (main/montserrat.ttf) and
         its license, so the page matches the display. With --emu web/emu/build, try/ gets the display in the
-        browser (web/emu: emu.js, emu.wasm, index.html) and channels.json says so ("try"): the page links to it.
+        browser (web/emu: emu.js, emu.wasm, index.html, and settings.html with emu-settings.js) and channels.json says so ("try"): the page links to it.
 
 The images stay separate parts on purpose: a single merged image would also overwrite the NVS
 partition (Wi-Fi credentials, location, settings, the TLS certificate) with 0xFF on every update.
@@ -168,6 +168,9 @@ def cmd_site(a):
         os.makedirs(os.path.join(a.out, "try"), exist_ok=True)
         for name in ("index.html", "emu.js", "emu.wasm"):
             shutil.copy2(os.path.join(a.emu, name), os.path.join(a.out, "try", name))
+        for name in ("settings.html", "emu-settings.js"):        # the settings page under it (since v1.14.3)
+            if os.path.exists(os.path.join(a.emu, name)):
+                shutil.copy2(os.path.join(a.emu, name), os.path.join(a.out, "try", name))
         channels["try"] = "try/"
         print(f"  try/: the display in the browser ({os.path.getsize(os.path.join(a.emu, 'emu.wasm')) // 1024} KB)")
     with open(os.path.join(a.out, "channels.json"), "w") as f:

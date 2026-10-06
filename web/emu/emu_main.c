@@ -1,6 +1,8 @@
 // The display in the browser: LVGL and the firmware's own screens (ui.c, slide.c, pager.c), its forecast, air-quality
-// and alerts code (weather.c, alerts.c) and its settings (config.c, i18n.c), with the hardware replaced by the page
-// (emu_display.c, emu_touch.c, emu_http.c, emu_nvs.c, emu_stubs.c). This loop does what main.c does once Wi-Fi is up.
+// and alerts code (weather.c, alerts.c), its settings (config.c, i18n.c), dimming and wake on pick-up (presence.c)
+// and the settings page's routes (routes.c, served by emu_web.c), with the hardware replaced by the page
+// (emu_display.c, emu_touch.c, emu_http.c, emu_nvs.c, emu_audio.c, emu_imu.c, emu_stubs.c). This loop does what
+// main.c does once Wi-Fi is up.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -18,6 +20,9 @@
 #include "sound.h"
 #include "radar.h"
 #include "nvs.h"
+#include "presence.h"
+#include "routes.h"
+#include "ota.h"
 
 #define REFRESH_US (10 * 60 * 1000000LL)          // as the display: every 10 min
 #define ALERT_MAP_W 300                            // the region map on the alert screen (as main.c)
@@ -69,6 +74,8 @@ static bool extras_now = true;
 static char map_key[80], map_failed[80];          // the region map shown / failed (as main.c)
 static alerts_seen_t seen;                         // alerts already heard for the place shown (as main.c)
 static location_t shown;                           // the place the radar is for (as main.c)
+static int64_t due[MAX_PLACES];                    // next forecast per place
+static volatile bool places_changed;               // the settings page added, moved, chose or deleted a place
 
 static bool cached(int i, const location_t *loc)
 {
@@ -111,13 +118,31 @@ static void place_select(int i)                    // the pager settled on place
 
 static void data_refresh(void) { extras_now = true; }
 
+// routes.c, after the settings page changed a place (main.c's location callback): fetch again, follow on screen
+static void on_location_changed(void) { places_changed = true; }
+
+void emu_web_poll(void);                           // emu_web.c: the settings page's requests
+void ota_web_routes(void);                         // forge_ota's /api/update (ota.c registers it on the display)
+
+// The page's "Use my microphone" switch (index.html): dimming when the room is quiet runs while the browser's
+// microphone is on; without it the room would only ever be "quiet" and the screen would dim for good.
+EMSCRIPTEN_KEEPALIVE void emu_mic(int on)
+{
+    presence_cfg_t c;
+    presence_get_config(&c);
+    if ((bool)on == c.enabled) return;
+    c.enabled = on;
+    presence_set_config(&c);
+}
+
 static uint32_t tick(void) { return (uint32_t)emscripten_get_now(); }
 
 static void run_lvgl(int ms)                       // LVGL for a while, giving the browser its turn
 {
     int64_t end = esp_timer_get_time() + ms * 1000LL;
     do {
-        emu_tasks_run();                           // the radar task (radar.c), until its next wait
+        emu_tasks_run();                           // the tasks (radar, presence, sound), until their next wait
+        emu_web_poll();                            // the settings page's requests, as the display's web server
         uint32_t wait = lv_timer_handler();
         emscripten_sleep(wait > 15 ? 15 : wait < 1 ? 1 : wait);
     } while (esp_timer_get_time() < end);
@@ -136,14 +161,25 @@ int main(void)
     place_from_address();
     ui_init();
     config_get_location(&shown);                   // the radar starts on the place shown
+    presence_start();                              // presence.c: brightness, dimming, wake on pick-up (emu_imu.c)
+    emu_mic(0);                                    // the microphone starts off: so does dimming (see emu_mic)
     sound_start();                                 // sound.c: alert sounds through Web Audio (emu_audio.c)
+    routes_init(on_location_changed);              // the settings page's routes (emu_web.c serves them)
+    ota_web_routes();
     ui_message(tr(T_WEATHER), tr(T_FETCHING));
     ui_on_place_select(place_select);
     ui_on_data_refresh(data_refresh);
     run_lvgl(50);
-    int64_t due[MAX_PLACES] = { 0 };
     bool shown_once = false;
     for (;;) {
+        if (places_changed) {                      // a place changed on the settings page: as main.c does
+            places_changed = false;
+            memset(due, 0, sizeof(due));
+            memset(have, 0, sizeof(have));
+            if (config_active_place() >= config_place_count()) config_select_place(0);
+            show_place(true);
+            place_select(config_active_place());
+        }
         int a = config_active_place(), n = config_place_count();
         int64_t now = esp_timer_get_time();
         for (int k = 0; k < n; k++) {               // the place shown first

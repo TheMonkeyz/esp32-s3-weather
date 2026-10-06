@@ -1,5 +1,6 @@
 #pragma once
-// Browser emulator: the speaker (ES8311 through esp_codec_dev) is Web Audio (web/emu/emu_audio.c)
+// Browser emulator: the speaker (ES8311 through esp_codec_dev) is Web Audio, the microphones (ES7210) the browser's
+// microphone when the page has it (web/emu/emu_audio.c)
 #include <stdbool.h>
 #include <stdint.h>
 typedef struct emu_codec *esp_codec_dev_handle_t;
@@ -21,3 +22,5 @@ int esp_codec_dev_open(esp_codec_dev_handle_t h, esp_codec_dev_sample_info_t *fs
 int esp_codec_dev_set_out_vol(esp_codec_dev_handle_t h, int volume);
 int esp_codec_dev_write(esp_codec_dev_handle_t h, void *data, int len);
 int esp_codec_dev_close(esp_codec_dev_handle_t h);
+int esp_codec_dev_set_in_gain(esp_codec_dev_handle_t h, float db);
+int esp_codec_dev_read(esp_codec_dev_handle_t h, void *data, int len);

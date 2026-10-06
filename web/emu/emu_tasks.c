@@ -11,7 +11,7 @@
 #include "freertos/task.h"
 #include "esp_timer.h"
 
-#define MAX_TASKS 4
+#define MAX_TASKS 6
 #define C_STACK (256 * 1024)
 #define ASYNC_STACK (64 * 1024)
 
