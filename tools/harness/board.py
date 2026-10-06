@@ -310,6 +310,7 @@ class Board:
             bmp = r.read()
         ms = (time.time() - t0) * 1000
         open(out, 'wb').write(snapshot.bmp_to_png(bmp))
+        self.last_bmp = bmp                          # for checks on the pixels (suites.text_rows)
         return ms
 
 

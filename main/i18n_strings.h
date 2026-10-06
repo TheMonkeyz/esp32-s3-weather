@@ -321,9 +321,9 @@ X(T_WIFI_RECEIVED,  "Wi-Fi received",              "Wi-Fi reçu",
                     "Wi-Fi ᐱᔭᐅᔪᖅ")
 X(T_WIFI_GOT,       "Got \"%s\" from your phone.\nRestarting...", "« %s » reçu du téléphone.\nRedémarrage...",
                     "\"%s\" ᐅᖄᓚᐅᑎᕋᓛᕐᒥᑦ.\nᐃᑭᑎᒃᑲᓐᓂᕐᑐᖅ...")
-X(T_WIFI_DPP_FAIL,  "That didn't work. Scan again,\nor swipe right for other phones.",
-                    "Échec. Balayez le code de nouveau,\nou glissez à droite (autres téléphones).",
-                    "ᑕᒻᒪᖅᑐᖅ. ᐊᔾᔨᓕᐅᒃᑲᓐᓂᕐᓕ,\nᐅᕝᕙᓘᓐᓃᑦ ᓂᕈᓗᓪᓕ ᑕᓕᖅᐱᒧᑦ.")
+X(T_WIFI_DPP_FAIL,  "That didn't work. Swipe right\nand join the setup network.",
+                    "Échec. Glissez à droite et\njoignez le réseau de configuration.",
+                    "ᑕᒻᒪᖅᑐᖅ.\nᓂᕈᓗᓪᓕ ᑕᓕᖅᐱᒧᑦ.")
 X(T_WIFI_SETUP,     "Wi-Fi setup",                 "Configuration Wi-Fi",
                     "Wi-Fi ᐋᖅᑭᔅᓯᒪᐅᑎᑦ")
 X(T_WIFI_JOIN,      "Scan to join %s\n(password %s).\nAndroid? Swipe left to skip\nthe password",

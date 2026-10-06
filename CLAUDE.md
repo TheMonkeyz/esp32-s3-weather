@@ -178,6 +178,12 @@ Windows build gets both from `main/idf_component.yml`. `components/dns_server` *
     (f) The radio work of a setup page (a 1.6-2.6 s scan) ran in the swipe's handler and froze the screen; Easy
     Connect stopped before its listen started crashed (assert). A task does it now (`su_radio_task`), and
     `net_dpp_stop()` waits for the listen: never call it under the display lock (`su_dpp_uri` takes it).
+    (g) **October 5: the Pixel on 5 GHz failed again, every time, with every firmware** (the Oct 4 one too); on
+    2.4 GHz it worked. The display answered in 235 ms and its answer was ACKed; the phone's kernel log (`adb
+    bugreport`, with the user's OK, deleted after) showed its Wi-Fi driver receiving the answer and not passing it on.
+    Not fixable here (a resend patch and faster crypto changed nothing): the failure text now says to swipe right and
+    join the setup network, which works on any band. espforge LESSONS L188: A/B the old firmware first (L172), then
+    read the phone's kernel log; a harness failure the same evening was the forecast service (HTTP 503).
 21. **Frame rate (v1.11.0, October 2):** LVGL 9.2 can't redraw a full screen in less than ~65–85 ms, and profiling
     found no single hot spot (docs/TESTING.md §8). Moves between screens, places and days are now pictures sent
     straight to the panel by `slide.c` (ARCHITECTURE "Moves"). What it took, in order of cost:

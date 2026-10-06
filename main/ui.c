@@ -1611,6 +1611,20 @@ bool ui_alert_sample(const char *which, int *title_h, int *lines, int *box_y)
     return false;
 }
 
+// Test console "setup fail": the Easy Connect page as after a failed attempt (su_dpp_done's text, in the language
+// set), with its line count and bottom edge. Only on that page (the setup screen, page 1).
+bool ui_setup_fail_sample(int *lines, int *bottom)
+{
+    if (lv_screen_active() != scr_setup || su_page != 1) return false;
+    lv_label_set_text(su_body, tr(T_WIFI_DPP_FAIL));
+    lv_obj_update_layout(su_body);
+    *lines = lv_obj_get_height(su_body) / lv_font_get_line_height(lv_obj_get_style_text_font(su_body, 0));
+    lv_area_t a;
+    lv_obj_get_coords(su_body, &a);
+    *bottom = a.y2;
+    return true;
+}
+
 /* ---------- Extras page (swipe right from the weather screen) ----------
  * Sun arc (sunrise -> sunset, the sun at the current time), UV index, moon phase, air quality, pollen. */
 
@@ -3019,7 +3033,7 @@ lv_draw_buf_t *ui_snapshot(const char *screen)
     }
     // Text-fit checks of screens a test can't open safely: "settings1".."settings3" (the list scrolled down by
     // one screen each), "phone" (the settings-page QR), "setup0" / "setup1" (Wi-Fi setup pages, texts only:
-    // no access point or Easy Connect is started).
+    // no access point or Easy Connect is started), "setup1fail" (Easy Connect's page after a failed attempt).
     int cfg_down = !strncmp(screen, "settings", 8) && screen[8] ? atoi(screen + 8) : 0;
     bool phone = !strcmp(screen, "phone"), setup = !strncmp(screen, "setup", 5);
     bool ov_hidden = lv_obj_has_flag(overlay, LV_OBJ_FLAG_HIDDEN);
@@ -3037,7 +3051,7 @@ lv_draw_buf_t *ui_snapshot(const char *screen)
         su_dots();                                   // sizes the page dots
         lv_label_set_text(su_title, tr(p1 ? T_WIFI_DPP_TITLE : T_WIFI_SETUP));
         if (p1) {
-            lv_label_set_text(su_body, tr(T_WIFI_DPP_HOW));
+            lv_label_set_text(su_body, tr(strcmp(screen + 6, "fail") ? T_WIFI_DPP_HOW : T_WIFI_DPP_FAIL));
             qr_show(QR_PLACEHOLDER, true);           // what the page shows until its code exists
         } else {
             snprintf(su_ap_qr, sizeof(su_ap_qr), "WIFI:T:WPA;S:" SETUP_AP_SSID ";P:%s;;", net_setup_ap_pass());

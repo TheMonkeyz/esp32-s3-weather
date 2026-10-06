@@ -135,6 +135,54 @@ def every_screen(ctx):
     ctx.note('screens: ' + ', '.join(sorted(ctx.snapped)) + ' (+ settings1..3, phone, setup0/1, update)')
 
 
+def text_rows(bmp, y0, y1, level=128):
+    """Bands of rows y0..y1 of a snapshot (24-bit BMP) holding bright pixels (text), as (top, bottom), and the number
+    of bright pixels outside the round panel (text the circle cuts off)."""
+    import struct
+    off, = struct.unpack_from('<I', bmp, 10)
+    w, h = struct.unpack_from('<ii', bmp, 18)
+    top_down, h = h < 0, abs(h)
+    row = (w * 3 + 3) & ~3
+    bands, outside, r2 = [], 0, (w / 2) ** 2
+    for y in range(y0, y1 + 1):
+        src = off + (y if top_down else h - 1 - y) * row
+        line = bmp[src:src + w * 3]
+        cy = y + 0.5 - h / 2
+        lit = False
+        for x in range(w):
+            if max(line[3 * x:3 * x + 3]) < level:
+                continue
+            if (x + 0.5 - w / 2) ** 2 + cy * cy > r2:
+                outside += 1
+            lit = True
+        if lit and bands and bands[-1][1] == y - 1:
+            bands[-1][1] = y
+        elif lit:
+            bands.append([y, y])
+    return [tuple(b) for b in bands], outside
+
+
+@test('navigation')
+def easy_connect_fail_text(ctx):
+    """After a failed Easy Connect attempt the page says to swipe right and join the setup network (a Pixel 8 Pro on
+    5 GHz drops the display's answer, October 5: scanning again doesn't help). In every language: two lines, inside
+    the round panel (snapshot "setup1fail", the page rendered off-display; the language is put back)."""
+    b = ctx.board
+    was = b.api('/api/config')['units']['lang']
+    try:
+        for lang in ('en', 'fr', 'iu'):
+            b.api('/api/units', {'lang': lang})
+            time.sleep(1.5)
+            b.snap('setup1fail', ctx.out(f'setup1fail_{lang}.png'))
+            bands, outside = text_rows(b.last_bmp, 290, 430)
+            check(len(bands) == 2, f'Easy Connect failure text in {lang}: {len(bands)} lines {bands}, expected 2')
+            check(outside == 0, f'Easy Connect failure text in {lang}: {outside} pixels outside the round panel')
+        ctx.note('Easy Connect failure text: 2 lines inside the panel in en, fr, iu (setup1fail_*.png)')
+    finally:
+        b.api('/api/units', {'lang': was})
+        time.sleep(1.5)
+
+
 @test('navigation')
 def scroll_other_languages(ctx):
     """Settings scrolled in French and Inuktitut: the picture still equals the screen. Inuktitut's syllabics (a
@@ -696,6 +744,9 @@ def setup_pages_quick(ctx):
         check(shown < 0.6, f'the Easy Connect page took {shown:.2f} s after the swipe (the radio work blocks the screen)')
         ctx.log.wait(r'Easy Connect: setup AP held on channel \d+', 10, 'the setup network held on the channel', start=at)
         check(b.wifi()['ap'] == '1', 'the setup network is down on the Easy Connect page')
+        m = b.cmd('setup fail', r'test: setup fail lines=(\d+) bottom=(\d+)')   # the real page after a failure
+        check(m.group(1) == '2' and int(m.group(2)) < 440,
+              f'Easy Connect failure text: {m.group(1)} lines, bottom at y={m.group(2)} (expected 2 lines above the dots)')
         for i in range(3):                           # back within ~0.3 s: before Easy Connect's listen started
             at = len(ctx.log.lines())
             b.cmd('swipe right')

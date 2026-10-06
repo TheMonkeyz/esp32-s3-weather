@@ -5,7 +5,8 @@
     python tools/snapshot.py <ip> weather out.png
 
 Screens: weather, extras, status, radar, update, alert, hourly0..hourly6, settings, settings1..settings3 (scrolled
-down), phone (settings QR), setup0 / setup1 (Wi-Fi setup texts), current (the one shown). The device renders the screen
+down), phone (settings QR), setup0 / setup1 (Wi-Fi setup texts), setup1fail (Easy Connect after a failed
+attempt), current (the one shown). The device renders the screen
 off-display, so the board isn't disturbed. Pixels outside the round panel are tinted red, so anything the
 circle would cut off stands out (--square to skip). Needs the PC on the same network; the certificate is
 self-signed. Standard library only.
