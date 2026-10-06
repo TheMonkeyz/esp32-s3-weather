@@ -10,6 +10,15 @@ their own `## vX.Y.Z-rc.N` section. Those are shown only to Beta users, while th
 list everything again. (Three tags have no section: v1.3.0-rc.1; and v1.12.0-rc.1 and v1.12.1-rc.2, whose builds failed and were published
 as v1.12.0-rc.2 and v1.12.1-rc.3.)
 
+## v1.14.1 - 2026-10-05
+- Wi-Fi Easy Connect works with more phones (a Pixel 8 Pro failed every time): the display now stays on the right radio channel until the phone has finished, online and offline.
+- When Easy Connect still doesn't work (some phones on a 5 GHz network say "Couldn't add device"), the display says what to do: swipe right and join its setup network, which works with any phone.
+- The Easy Connect page appears as soon as you swipe to it, with a faint code right away while the real one is being made; switching quickly between the two Wi-Fi setup pages can no longer restart the display.
+- Swipes end more smoothly: the screen keeps moving with your finger's speed while the display makes sure you've let go, instead of stopping for an instant and then jumping.
+- Network and place names with emoji no longer show empty boxes: the display leaves out the characters it can't draw.
+- In Inuktitut, scrolling the Settings list no longer leaves the tips of some syllabics faint or missing.
+- Behind the scenes: the display's Wi-Fi setup, settings page, updates and diagnostics now come from espforge, the open-source framework this display was the start of; your settings, network and language are kept. A little more memory is left free, and crash reports and start-up details are more reliable.
+
 ## v1.14.1-rc.2 - 2026-10-05
 - When Wi-Fi Easy Connect doesn't work (some phones on a 5 GHz network say "Couldn't add device"), the display now says what to do: swipe right and join its setup network, which works with any phone.
 - In Inuktitut, scrolling the Settings list no longer leaves the tips of some syllabics faint or missing.
