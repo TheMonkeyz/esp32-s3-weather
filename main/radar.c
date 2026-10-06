@@ -157,19 +157,19 @@ static void view_origin(int z, double lat_deg, double lon_deg, double *x, double
     *y = floor((1.0 - log(tan(lat) + 1.0 / cos(lat)) / M_PI) / 2.0 * n) - H / 2;
 }
 
-bool radar_basemap_read(int z, uint16_t *dst, double *ox, double *oy)
+// Only the window's rows, straight from flash: the alert map read the whole 434 KB map into PSRAM to keep a 117 KB crop
+// (with its other buffers, PSRAM's low point fell to 11-190 KB with an alert, October 5)
+bool radar_basemap_crop(int z, double ox, double oy, int x0, int y0, int w, int h, uint16_t *dst)
 {
-    location_t loc;
-    config_get_location(&loc);
-    view_origin(z, loc.lat, loc.lon, ox, oy);
     const esp_partition_t *p = cache_part();
-    if (!p || z < ZOOM_MIN || z > ZOOM_MAX || !cache_mux) return false;
+    if (!p || z < ZOOM_MIN || z > ZOOM_MAX || !cache_mux || x0 < 0 || y0 < 0 || x0 + w > W || y0 + h > H) return false;
     size_t base = (size_t)(z - ZOOM_MIN) * SLOT_SIZE;
-    cache_hdr_t h;
+    cache_hdr_t hd;
     xSemaphoreTake(cache_mux, portMAX_DELAY);
-    bool ok = esp_partition_read(p, base, &h, sizeof(h)) == ESP_OK && h.magic == CACHE_MAGIC && h.zoom == z &&
-              h.x == (int)*ox && h.y == (int)*oy &&
-              esp_partition_read(p, base + sizeof(h), dst, W * H * 2) == ESP_OK;
+    bool ok = esp_partition_read(p, base, &hd, sizeof(hd)) == ESP_OK && hd.magic == CACHE_MAGIC && hd.zoom == z &&
+              hd.x == (int)ox && hd.y == (int)oy;
+    for (int y = 0; ok && y < h; y++)
+        ok = esp_partition_read(p, base + sizeof(hd) + ((size_t)(y0 + y) * W + x0) * 2, dst + y * w, w * 2) == ESP_OK;
     xSemaphoreGive(cache_mux);
     return ok;
 }

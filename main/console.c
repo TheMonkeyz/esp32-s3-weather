@@ -196,9 +196,21 @@ static void cmd_pictest(int argc, char **argv)          // the picture of the sc
     ESP_LOGI(TAG, "ok pictest (result: \"slide: pictest\" line)");
 }
 
-static void cmd_alert(int argc, char **argv)            // the alert screen's layout
+static void (*alert_at_cb)(bool on, double lat, double lon);
+void console_on_alert_at(void (*fn)(bool on, double lat, double lon)) { alert_at_cb = fn; }
+
+static void cmd_alert(int argc, char **argv)            // the alert screen's layout; alerts from another point
 {
-    if (argc != 3 || strcmp(argv[1], "sample")) { ESP_LOGW(TAG, "error alert sample en|fr|max|off"); return; }
+    if (argc >= 3 && !strcmp(argv[1], "at") && alert_at_cb) {
+        bool off = argc == 3 && !strcmp(argv[2], "off");
+        if (!off && argc != 4) { ESP_LOGW(TAG, "error alert at LAT LON|off"); return; }
+        double lat = off ? 0 : atof(argv[2]), lon = off ? 0 : atof(argv[3]);
+        alert_at_cb(!off, lat, lon);
+        if (off) ESP_LOGI(TAG, "ok alert at off");
+        else ESP_LOGI(TAG, "ok alert at %.4f %.4f (the first place's alerts, until 'alert at off' or a restart)", lat, lon);
+        return;
+    }
+    if (argc != 3 || strcmp(argv[1], "sample")) { ESP_LOGW(TAG, "error alert sample en|fr|max|off, alert at LAT LON|off"); return; }
     if (!display_lock(2000)) { ESP_LOGW(TAG, "error alert: display busy for 2 s (send 'where')"); return; }
     int th, lines, by;
     bool ok = ui_alert_sample(argv[2], &th, &lines, &by);
@@ -225,6 +237,28 @@ static void cmd_dirty(int argc, char **argv)            // as new data does: hid
     lv_obj_invalidate(lv_screen_active());
     display_unlock();
     ESP_LOGI(TAG, "ok dirty");
+}
+
+// "memlow start", then "memlow stop": the lowest free PSRAM and internal RAM in between (ESP-IDF's local minimum; the
+// since-boot minimums are then put back, as the lower of the two). Meanwhile "heap" and the diag lines' "min ever"
+// are the window's. The harness's alert test reads PSRAM's low point over the test alone.
+static void cmd_memlow(int argc, char **argv)
+{
+    static bool on;
+    if (argc == 2 && !strcmp(argv[1], "start")) {
+        if (on) heap_caps_monitor_local_minimum_free_size_stop();
+        on = heap_caps_monitor_local_minimum_free_size_start() == ESP_OK;
+        if (on) ESP_LOGI(TAG, "ok memlow start");
+        else ESP_LOGW(TAG, "error memlow: could not start");
+        return;
+    }
+    if (argc != 2 || strcmp(argv[1], "stop")) { ESP_LOGW(TAG, "error memlow start|stop"); return; }
+    if (!on) { ESP_LOGW(TAG, "error memlow: not started"); return; }
+    unsigned psram = heap_caps_get_minimum_free_size(MALLOC_CAP_SPIRAM) / 1024;
+    unsigned internal = heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL) / 1024;
+    heap_caps_monitor_local_minimum_free_size_stop();
+    on = false;
+    ESP_LOGI(TAG, "memlow psram_min=%u internal_min=%u", psram, internal);
 }
 
 static void cmd_hint(int argc, char **argv)             // first-run hint, places kept
@@ -355,8 +389,9 @@ void console_init(void)
     testcon_register("profile", "profile", cmd_profile);
 #endif
     testcon_register("pictest", "pictest", cmd_pictest);
-    testcon_register("alert", "alert sample en|fr|max|off", cmd_alert);
+    testcon_register("alert", "alert sample en|fr|max|off, alert at LAT LON|off", cmd_alert);
     testcon_register("setup", "setup fail", cmd_setup);
+    testcon_register("memlow", "memlow start|stop", cmd_memlow);
     testcon_register("dirty", "dirty", cmd_dirty);
     testcon_register("hint", "hint next-boot", cmd_hint);
     testcon_register("bench", "bench", cmd_bench);

@@ -286,6 +286,18 @@ Windows build gets both from `main/idf_component.yml`. `components/dns_server` *
     Settings scroll in Inuktitut, `pictest` found one row off (faint glyph tips missing). `render_rows()` draws an
     8-row margin around each strip (scroll strip, cache strips, pictest bands). Check new layouts with pictest in
     every language (harness `scroll_other_languages`), not only English.
+26. **An alert at home failed the gates that passed that morning (v1.14.2, October 5):** with a frost advisory, PSRAM's
+    low point fell to 11-190 KB (floor 300; twice the map itself failed for lack of memory) and the drag back to the
+    first place took 124-155 ms. Two causes, both read in the log. (a) `alerts_map()` took all its buffers at once
+    (the reply's 160 KB, 96 KB of points, a 434 KB copy of the whole cached map to crop 117 KB: ~830 KB), and every
+    return to the place downloaded and drew it again. Now one step at a time (134 KB, host-tested with ASan's byte
+    count) and the map is kept across switches. Size a buffer from what it holds, free it before the next step. (b)
+    `ui_alerts()` marked every picture out of date (21(f) the other way), and the "none" sent at each switch made both
+    places' pictures stale; it marks the pill's rows and the alert screen now. Test with a real alert any day: console
+    `alert at LAT LON` (harness `perf.alert_active`); `memlow start|stop` gives one step's low points. Internal RAM
+    fell too (23 KB, floor 25): its low point is a place switch, ~27 KB with or without an alert (the radar's
+    downloads and the alerts and air fetches at once; `memlow`, 2 rounds each), right at the floors; before v1.14.2
+    the map's download at each return added one more TLS connection to that moment.
 
 - Internal RAM ran out silently (10 KB free, 0 KB min ever) because LVGL's small allocations went to internal RAM
   first. Fixed with `lvgl_mem.c` (LVGL heap in PSRAM). Font kerning cost 71% of render time; fonts now use
@@ -366,8 +378,9 @@ Windows build gets both from `main/idf_component.yml`. `components/dns_server` *
   2`); the fake ids' region maps give HTTP 404 (expected). Then restore quiet hours, `git checkout main/main.c`, and
   flash a clean build.
 - **The alert screen with a real alert** (October 4): no fakes needed. Find a place under a long-named alert with
-  the Environment Canada API, open the emulator there (`?place=`), or point a throwaway build's `alerts_fetch()` and
-  `alerts_map()` at it: real texts in both languages and the real map (docs/TESTING.md §4).
+  the Environment Canada API, open the emulator there (`?place=`), or, since v1.14.2, send the board's console
+  `alert at LAT LON` (the first place's alerts and map from that point, RAM only, silent; `alert at off`): real texts
+  in both languages and the real map (docs/TESTING.md §4). The harness's `perf.alert_active` does it every run.
 - **Lightning on the radar** (October 1): GeoMet `Lightning_2.5km_Density`, see ARCHITECTURE "Radar". There was no
   lightning in Canada while it was built: test with fake marks at fixed **lat/lon** in a throwaway build (fixed
   screen positions don't follow zooms, which looked like a bug). Check `diag: heap` against a baseline build after

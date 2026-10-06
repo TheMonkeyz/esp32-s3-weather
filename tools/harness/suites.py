@@ -625,6 +625,109 @@ def swipes(ctx):
     b.wait_screen('weather', 6)
 
 
+EC_ALERTS = 'https://api.weather.gc.ca/collections/weather-alerts/items'
+
+
+def alert_point():
+    """A point under an alert in force somewhere in Canada, from Environment Canada's API (from the PC): (lat, lon,
+    name, area), or None. A vertex of the region's shape: the display asks for the alerts of a 0.01-degree box around
+    its point, which the server intersects with the regions, so a point on the edge finds the region."""
+    import datetime
+    import json
+    import urllib.request
+    try:
+        now = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%S')
+        lst = json.load(urllib.request.urlopen(f'{EC_ALERTS}?f=json&lang=en&skipGeometry=true&limit=100', timeout=20))
+        for f in lst.get('features', [])[:10]:
+            p = f.get('properties', {})
+            if p.get('status_en') in ('ended', 'cancelled') or (p.get('expiration_datetime') or '9') < now:
+                continue
+            raw = urllib.request.urlopen(f'{EC_ALERTS}/{f["id"]}?f=json', timeout=20).read()
+            if len(raw) > 150 * 1024:                       # (the display takes shapes up to 160 KB)
+                continue
+            g = json.loads(raw)['geometry']
+            ring = g['coordinates'][0] if g['type'] == 'Polygon' else g['coordinates'][0][0]
+            lon, lat = ring[0][:2]
+            return lat, lon, p.get('alert_name_en', '?'), p.get('feature_name_en', '?')
+    except Exception as e:                                  # (no internet on the PC: the test is skipped)
+        print(f'    Environment Canada alerts: {e}', flush=True)
+    return None
+
+
+def place_now(b):
+    return dict(kv.split('=') for kv in b.cmd('page', r'test: page (.*)').group(1).split())
+
+
+@test('perf')
+def alert_active(ctx):
+    """An alert on the first place (console "alert at": its alerts looked up at a point under a real alert, RAM only):
+    PSRAM's low point while it arrives, its region map is drawn and the weather and alert screens are snapshot
+    (`memlow`), and place drags with it. October 5, a frost advisory at home: alerts_map took ~830 KB of PSRAM at once
+    and again at every return to the place (low point 11-190 KB, floor 300), and the switch marked every picture out of
+    date, so the drag back waited 124-142 ms for its picture."""
+    b = ctx.board
+    if 'alert at' not in b.cmd('help', r'test: commands: (.*)').group(1):
+        ctx.skip('*alert', 'firmware without the console commands "alert at" and "memlow" (v1.14.1 and older)')
+        return
+    pt = alert_point()
+    if not pt:
+        ctx.skip('*alert', 'no alert in force in Canada, or Environment Canada unreachable from the PC')
+        return
+    lat, lon, name, area = pt
+    b.cmd('wake')
+    go_weather(ctx)
+    while int(place_now(b)['place']) > 0:                   # the first place: the one the test point stands for
+        b.cmd('drag 233 100 233 380 300')
+        time.sleep(1.5)
+    places = int(place_now(b)['places'])
+    since = len(ctx.log.lines())
+    b.cmd('memlow start', r'test: ok memlow start')
+    low = None
+    try:
+        at = len(ctx.log.lines())
+        b.cmd(f'alert at {lat:.5f} {lon:.5f}', r'test: ok alert at')
+        m = ctx.log.wait(r'alerts: (\d+) alert\(s\)|alerts: no alerts', 30, 'the alerts at the test point', start=at)
+        if not m.group(1):
+            ctx.skip('*alert', f'"{name}" ({area}) no longer in force at {lat:.4f},{lon:.4f}')
+            return
+        m = ctx.log.wait(r'app: alert map (drawn|failed)', 45, 'the region map of the test alert', start=at)
+        check(m.group(1) == 'drawn', f'the region map of "{name}" ({area}) failed: see the "alerts:" lines')
+        time.sleep(3)                                       # the pictures (slide.c) settle
+        for scr in ('weather', 'alert'):
+            b.snap(scr, ctx.out(f'alert_active_{scr}.png'))
+        if places > 1:
+            if time.localtime().tm_sec > 48:                # not across a minute change (see swipes)
+                time.sleep(64 - time.localtime().tm_sec)
+            measure(ctx, 'drag_place_alert', ['drag 233 380 233 120 400'], settle=1.5)
+            check(place_now(b)['place'] == '1', 'the place drag from the alert\'s place did not change the place')
+            back = len(ctx.log.lines())
+            measure(ctx, 'drag_place_back_alert', ['drag 233 120 233 380 400'], settle=1.5)
+            check(place_now(b)['place'] == '0', 'the drag back to the alert\'s place did not change the place')
+            ctx.log.wait(r'alerts: \d+ alert\(s\)', 20, 'the alerts again on the way back', start=back)
+            time.sleep(2)
+            again = ctx.log.count(r'alerts: region shape', start=back)
+            check(again == 0, 'back on the alert\'s place, its region map was downloaded and drawn again (it is kept)')
+        else:
+            ctx.skip('*.drag_place*_alert', 'one place on the display: no place drag')
+        m = b.cmd('memlow stop', r'test: memlow psram_min=(\d+) internal_min=(\d+)')
+        low = int(m.group(1))
+        ctx.metric('psram_min_kb.alert', low)
+        ctx.note(f'alert "{name}" ({area}) at {lat:.4f},{lon:.4f}: region map drawn, then snapshots'
+                 f'{" and place drags" if places > 1 else ""}; PSRAM low point {low} KB, internal {m.group(2)} KB '
+                 f'(alert_active_*.png)')
+    finally:
+        if low is None:
+            try:
+                b.cmd('memlow stop', r'test: memlow')
+            except Fail:
+                pass
+        at = len(ctx.log.lines())
+        b.cmd('alert at off', r'test: ok alert at off')
+        if place_now(b)['place'] == '0':                     # the first place's own alerts again
+            ctx.log.wait(r'alerts: (\d+ alert\(s\)|no alerts)', 30, 'the first place\'s own alerts back', start=at)
+        radar_settled(ctx, since)
+
+
 # ---------------------------------------------------------------- start-up lines
 
 @test('boot')

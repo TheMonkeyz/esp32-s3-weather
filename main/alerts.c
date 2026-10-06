@@ -19,16 +19,34 @@
 
 static const char *TAG = "alerts";
 
-typedef struct { char *buf; int len; int cap; } rx_t;
+// A reply in PSRAM, grown as it arrives up to `max` (a reply that doesn't fit stops growing: the parsers then fail on
+// it). Most replies are a few KB: 64 KB (the list) and 160 KB (a region's shape) taken up front were mostly unused.
+typedef struct { char *buf; int len; int cap; int max; } rx_t;
+
+static bool rx_init(rx_t *rx, int max)
+{
+    *rx = (rx_t){ .cap = 16 * 1024, .max = max };
+    rx->buf = heap_caps_malloc(rx->cap, MALLOC_CAP_SPIRAM);
+    if (rx->buf) rx->buf[0] = 0;
+    return rx->buf;
+}
 
 static esp_err_t http_evt(esp_http_client_event_t *e)
 {
     rx_t *rx = e->user_data;
-    if (e->event_id == HTTP_EVENT_ON_DATA && rx->len + e->data_len < rx->cap) {
+    if (e->event_id != HTTP_EVENT_ON_DATA) return ESP_OK;
+    if (rx->len + e->data_len >= rx->cap && rx->cap < rx->max) {
+        int cap = rx->cap;
+        while (cap <= rx->len + e->data_len && cap < rx->max) cap *= 2;
+        if (cap > rx->max) cap = rx->max;
+        char *b = heap_caps_realloc(rx->buf, cap, MALLOC_CAP_SPIRAM);
+        if (b) { rx->buf = b; rx->cap = cap; }
+    }
+    if (rx->len + e->data_len < rx->cap) {
         memcpy(rx->buf + rx->len, e->data, e->data_len);
         rx->len += e->data_len;
         rx->buf[rx->len] = 0;
-    }
+    } else rx->len = rx->cap;                                   // didn't fit: marked full (and the reply refused)
     return ESP_OK;
 }
 
@@ -144,9 +162,8 @@ bool alerts_fetch(double lat, double lon, alerts_t *out)
     snprintf(url, sizeof(url), "https://api.weather.gc.ca/collections/weather-alerts/items"
              "?f=json&lang=en&skipGeometry=true&limit=20&bbox=%.4f,%.4f,%.4f,%.4f",
              lon - d, lat - d, lon + d, lat + d);
-    rx_t rx = { .cap = 65536 };
-    rx.buf = heap_caps_calloc(1, rx.cap, MALLOC_CAP_SPIRAM);
-    if (!rx.buf) return false;
+    rx_t rx;
+    if (!rx_init(&rx, 65536)) return false;
     esp_http_client_config_t cfg = {
         .url = url, .event_handler = http_evt, .user_data = &rx,
         .crt_bundle_attach = esp_crt_bundle_attach, .timeout_ms = 15000, .buffer_size = 2048,
@@ -184,7 +201,8 @@ bool alerts_fetch(double lat, double lon, alerts_t *out)
 #include "display.h"
 
 #define MAX_PTS 6000
-typedef struct { float *x, *y; int n; int *ring_end; int nrings; } shape_t;   // world px at one zoom later
+// n positions (at most cap) in rings; x, y: crop pixels, later
+typedef struct { float *x, *y; int n, cap; int *ring_end; int nrings; } shape_t;
 
 // Pull every [lon, lat] position out of the "geometry" of a GeoJSON feature (Polygon or MultiPolygon)
 // without building a cJSON tree (a detailed region has thousands of points). Rings end where an array of
@@ -201,7 +219,7 @@ static bool parse_shape(const char *js, shape_t *sh, float *lon, float *lat)
         if (*p == '[') { depth++; nums = 0; had_pos = false; }
         else if (*p == ']') {
             if (nums == 2) {                 // closed a position
-                if (sh->n < MAX_PTS) { lon[sh->n] = v[0]; lat[sh->n] = v[1]; sh->n++; }
+                if (sh->n < sh->cap) { lon[sh->n] = v[0]; lat[sh->n] = v[1]; sh->n++; }
                 had_pos = true;
             } else if (had_pos) {            // closed a ring
                 if (sh->nrings < 64) sh->ring_end[sh->nrings++] = sh->n;
@@ -246,24 +264,35 @@ static void line(uint16_t *img, int w, int h, float x0, float y0, float x1, floa
 
 static int cmp_float(const void *a, const void *b) { float d = *(float *)a - *(float *)b; return (d > 0) - (d < 0); }
 
+// The positions a reply can hold: each one closes with a ']' (rings and polygons too: an upper bound), at most MAX_PTS
+static int shape_cap(const char *js)
+{
+    int n = 0;
+    for (const char *p = js; *p && n < MAX_PTS; p++) n += *p == ']';
+    return n;
+}
+
+static void no_memory(const char *what)
+{
+    ESP_LOGW(TAG, "region map: no memory for %s (%u KB of PSRAM free, largest %u KB)", what,
+             (unsigned)(heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024),
+             (unsigned)(heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM) / 1024));
+}
+
+// The shape first, then the picture, each with only what it needs. Up to v1.14.1 every buffer was taken at once (160 KB
+// for the reply, 96 KB of points, a 434 KB copy of the whole cached map to crop 117 KB from it): ~830 KB of PSRAM on top
+// of the picture cache, and PSRAM's low point fell to 11-190 KB with a frost advisory at home (October 5).
 uint16_t *alerts_map(const alert_t *a, double lat, double lon, int w, int h)
 {
     if (!a->id[0]) return NULL;
     char url[200];
     snprintf(url, sizeof(url), "https://api.weather.gc.ca/collections/weather-alerts/items/%s?f=json", a->id);
-    rx_t rx = { .cap = 160 * 1024 };      // a county is ~4 KB; MAX_PTS points fit (512 KB until v1.12.0)
-    rx.buf = heap_caps_calloc(1, rx.cap, MALLOC_CAP_SPIRAM);
-    float *plon = heap_caps_malloc(MAX_PTS * sizeof(float) * 4, MALLOC_CAP_SPIRAM);
+    rx_t rx;
     int ring_end[64];
     shape_t sh = { .ring_end = ring_end };
-    uint16_t *full = heap_caps_malloc(DISP_W * DISP_H * 2, MALLOC_CAP_SPIRAM);
-    uint16_t *img = heap_caps_malloc(w * h * 2, MALLOC_CAP_SPIRAM);
-    float *xs = heap_caps_malloc(MAX_PTS * sizeof(float), MALLOC_CAP_SPIRAM);
-    bool ok = rx.buf && plon && full && img && xs;
-    if (!ok) ESP_LOGW(TAG, "region map: no memory (%u KB of PSRAM free, largest %u KB)",
-                      (unsigned)(heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024),
-                      (unsigned)(heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM) / 1024));
-    float *plat = plon + MAX_PTS;
+    float *plon = NULL, *plat = NULL;
+    bool ok = rx_init(&rx, 160 * 1024);   // a county is ~4 KB, a coast ~12; MAX_PTS points fit (512 KB until v1.12.0)
+    if (!ok) no_memory("the shape");
     if (ok) {
         esp_http_client_config_t cfg = {
             .url = url, .event_handler = http_evt, .user_data = &rx,
@@ -273,12 +302,27 @@ uint16_t *alerts_map(const alert_t *a, double lat, double lon, int w, int h)
         int status;
         esp_err_t err = http_once(&cfg, &status);
         svc_http(SVC_ALERTS, err, status, t0);
-        ok = err == ESP_OK && status == 200 && rx.len < rx.cap - 1 && parse_shape(rx.buf, &sh, plon, plat);
+        ok = err == ESP_OK && status == 200 && rx.len < rx.cap - 1;
+        if (ok) {
+            sh.cap = shape_cap(rx.buf);
+            plon = heap_caps_malloc((sh.cap ? sh.cap : 1) * 2 * sizeof(float), MALLOC_CAP_SPIRAM);
+            if (plon) plat = plon + sh.cap; else no_memory("the points");
+            ok = plon && parse_shape(rx.buf, &sh, plon, plat);
+        }
         ESP_LOGI(TAG, "region shape: %d bytes, %d points, %d rings%s", rx.len, sh.n, sh.nrings, ok ? "" : " (failed)");
+    }
+    free(rx.buf);                                                // (the reply is no longer needed)
+    uint16_t *img = NULL;
+    float *xs = NULL;
+    int xs_cap = sh.n + 1;                                       // a scanline crosses each edge at most once
+    if (ok) {
+        img = heap_caps_malloc(w * h * 2, MALLOC_CAP_SPIRAM);
+        xs = heap_caps_malloc(xs_cap * sizeof(float), MALLOC_CAP_SPIRAM);
+        ok = img && xs;
+        if (!ok) no_memory("the picture");
     }
     if (ok) {
         // Biggest zoom where the region (plus a margin) fits in the crop, else the widest map
-        sh.x = plon + 2 * MAX_PTS; sh.y = plon + 3 * MAX_PTS;
         int z = RADAR_ZOOM_MAX;
         double lat_r = lat * M_PI / 180.0;
         for (; z >= RADAR_ZOOM_MIN; z--) {
@@ -293,23 +337,19 @@ uint16_t *alerts_map(const alert_t *a, double lat, double lon, int w, int h)
             if ((dx < w / 2 - 12 && dy < h / 2 - 12) || z == RADAR_ZOOM_MIN) break;
         }
         if (z > RADAR_ZOOM_MIN) z--;                             // one level out: the region plus its surroundings
-        double nz = 256.0 * (1 << z), ox, oy, mx, my;          // map origin for this location (as radar.c)
+        double nz = 256.0 * (1 << z), ox, oy;                    // map origin for this location (as radar.c)
         ox = floor((lon + 180.0) / 360.0 * nz) - DISP_W / 2;
         oy = floor((1.0 - log(tan(lat_r) + 1.0 / cos(lat_r)) / M_PI) / 2.0 * nz) - DISP_H / 2;
-        bool have_map = radar_basemap_read(z, full, &mx, &my) && mx == ox && my == oy;
         int cx0 = (DISP_W - w) / 2, cy0 = (DISP_H - h) / 2;      // crop of the centred map
-        if (have_map) {
-            for (int y = 0; y < h; y++)
-                for (int x = 0; x < w; x++) img[y * w + x] = full[(y + cy0) * DISP_W + x + cx0];
-        } else {
-            radar_osm_render(z, ox + cx0, oy + cy0, img, w, h);  // not cached (e.g. zoom 4-10 not all loaded yet)
-        }
+        bool have_map = radar_basemap_crop(z, ox, oy, cx0, cy0, w, h, img);
+        if (!have_map) radar_osm_render(z, ox + cx0, oy + cy0, img, w, h);   // not cached (e.g. not all loaded yet)
         double n = 256.0 * (1 << z);
-        for (int i = 0; i < sh.n; i++) {                         // to crop pixels
+        for (int i = 0; i < sh.n; i++) {                         // to crop pixels, in place
             double la = plat[i] * M_PI / 180.0;
-            sh.x[i] = (plon[i] + 180.0) / 360.0 * n - ox - cx0;
-            sh.y[i] = (1.0 - log(tan(la) + 1.0 / cos(la)) / M_PI) / 2.0 * n - oy - cy0;
+            plon[i] = (plon[i] + 180.0) / 360.0 * n - ox - cx0;
+            plat[i] = (1.0 - log(tan(la) + 1.0 / cos(la)) / M_PI) / 2.0 * n - oy - cy0;
         }
+        sh.x = plon; sh.y = plat;
         uint16_t col = a->colour == 'r' ? 0xFA69 : a->colour == 'o' ? 0xFC47 : a->colour == 'y' ? 0xFE47 : 0x8CB4;
         for (int y = 0; y < h; y++) {                            // even-odd scanline fill, 35 %
             int nx = 0, start = 0;
@@ -319,7 +359,7 @@ uint16_t *alerts_map(const alert_t *a, double lat, double lon, int w, int h)
                 for (int i = start; i < end; i++) {
                     int j = i + 1 < end ? i + 1 : start;
                     float y0 = sh.y[i], y1 = sh.y[j];
-                    if ((y0 <= fy) != (y1 <= fy) && nx < MAX_PTS)
+                    if ((y0 <= fy) != (y1 <= fy) && nx < xs_cap)
                         xs[nx++] = sh.x[i] + (fy - y0) / (y1 - y0) * (sh.x[j] - sh.x[i]);
                 }
                 start = end;
@@ -346,7 +386,7 @@ uint16_t *alerts_map(const alert_t *a, double lat, double lon, int w, int h)
             }
         ESP_LOGI(TAG, "region map at zoom %d%s", z, have_map ? "" : " (no cached basemap)");
     }
-    free(rx.buf); free(plon); free(full); free(xs);
+    free(plon); free(xs);
     if (!ok) { free(img); return NULL; }
     return img;
 }

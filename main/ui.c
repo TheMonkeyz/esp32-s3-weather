@@ -1493,11 +1493,27 @@ static void alert_create(void)
     lv_obj_add_event_cb(scr_alert, alert_gesture, LV_EVENT_GESTURE, NULL);
 }
 
+static void dirty_hidden_one(const void *key);
+
+// The rows of the alert pill and of the city name it replaces, on place i's page: out of date in its picture, unless
+// that page is shown (slide.c). Only those rows: ~40, rendered again at once, so a drag right after finds it ready.
+static void pill_rows_dirty(int i)
+{
+    lv_obj_t *page = pager_page(place_pager, i);
+    if (page == key_of(lv_screen_active())) return;
+    lv_area_t a, c, pa;
+    lv_obj_get_coords(al_pill, &a);                     // on scr_main: rows of the screen
+    lv_obj_get_coords(pp[i].city, &c);                  // on the page: rows within it (= on screen when it's shown)
+    lv_obj_get_coords(page, &pa);
+    slide_cache_dirty_rows(page, LV_MIN(a.y1, c.y1 - pa.y1) - 2, LV_MAX(a.y2, c.y2 - pa.y1) + 2);
+}
+
 void ui_alert_map(uint16_t *buf, int w, int h)
 {
     display_lock(-1);
     uint16_t *old = al_map_buf;
     al_map_buf = buf;
+    dirty_hidden_one(scr_alert);
     if (buf) {
         memset(&al_map_dsc, 0, sizeof(al_map_dsc));
         al_map_dsc.header.magic = LV_IMAGE_HEADER_MAGIC;
@@ -1516,7 +1532,21 @@ void ui_alert_map(uint16_t *buf, int w, int h)
         lv_obj_add_flag(al_attr, LV_OBJ_FLAG_HIDDEN);
     }
     display_unlock();
-    free(old);
+    if (old != buf) free(old);
+}
+
+// The map held, hidden while another place is shown and shown again on the way back (main.c keeps it: it was
+// downloaded and drawn again at every return to the place, ~830 KB of PSRAM each time until v1.14.1)
+void ui_alert_map_show(bool show)
+{
+    display_lock(-1);
+    show = show && al_map_buf;
+    if (lv_obj_has_flag(al_map, LV_OBJ_FLAG_HIDDEN) == show) {
+        set_hidden(al_map, !show);
+        set_hidden(al_attr, !show);
+        dirty_hidden_one(scr_alert);
+    }
+    display_unlock();
 }
 
 #define AL (i18n_lang() < ALERT_LANGS ? i18n_lang() : 0)    // alert texts exist in English and French
@@ -1540,7 +1570,11 @@ void ui_alerts(const alerts_t *al)
     // The same alerts again (each fetch, and "none" at every place switch): nothing to redraw, and the cached
     // pictures for drags (slide.c) stay valid. al == &alerts: redraw anyway (language or units changed).
     if (al != &alerts && alerts_same(al, &alerts)) { display_unlock(); return; }
-    slide_cache_dirty(NULL);                        // new content: the cached pictures are out of date
+    // New content, shown in two places: the pill (in place of the city name) on the place shown's page, and the alert
+    // screen. Until v1.14.1 every picture was marked: at a switch away from a place with an alert ("none" until the
+    // new place's are fetched) the drag back waited for both places' pictures (124-142 ms, October 5).
+    dirty_hidden_one(scr_alert);
+    pill_rows_dirty(cur_place);
     if (al != &alerts) alerts = *al;
     if (!alerts.n) {
         lv_obj_add_flag(al_map, LV_OBJ_FLAG_HIDDEN);
@@ -1589,7 +1623,7 @@ bool ui_alert_sample(const char *which, int *title_h, int *lines, int *box_y)
     if (!strcmp(which, "off")) {
         if (alerts.n) ui_alerts(&alerts);                   // (redraws from the alerts held)
         else {
-            slide_cache_dirty(NULL);
+            dirty_hidden_one(scr_alert);
             lv_label_set_text(al_title, ""); lv_label_set_text(al_sub, ""); lv_label_set_text(al_body, "");
         }
         *title_h = *lines = *box_y = 0;
@@ -1597,7 +1631,7 @@ bool ui_alert_sample(const char *which, int *title_h, int *lines, int *box_y)
     }
     for (int i = 0; i < (int)(sizeof(samples) / sizeof(samples[0])); i++) {
         if (strcmp(which, samples[i][0])) continue;
-        slide_cache_dirty(NULL);                            // a cached picture of the alert screen is out of date
+        dirty_hidden_one(scr_alert);                        // a cached picture of the alert screen is out of date
         lv_label_set_text(al_title, samples[i][1]);
         lv_label_set_text(al_sub, samples[i][2]);
         lv_label_set_text(al_body, "Sample text for the layout test (test console).");
@@ -2764,7 +2798,10 @@ void ui_places(int n, int active)
     bool moved = active != cur_place;
     for (int i = 0; i < MAX_PLACES; i++) {
         set_hidden(pager_page(place_pager, i), i >= n);
-        set_hidden(pp[i].city, alerts.n && i == active);       // the alert pill goes on the place shown
+        // The alert pill goes on the place shown, in place of its city name. The place left had it in its picture,
+        // and is drawn without it from now on (drag_paint): those rows are out of date
+        bool hide = alerts.n && i == active;
+        if (lv_obj_has_flag(pp[i].city, LV_OBJ_FLAG_HIDDEN) != hide) { set_hidden(pp[i].city, hide); pill_rows_dirty(i); }
     }
     n_places = n;
     cur_place = active;

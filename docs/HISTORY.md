@@ -164,3 +164,7 @@ an empty translation is not a missing one; a rule with a time window needs a tes
   picture (v1.12.1; it was 1.5 s). The picture cache has 5 slots: with 2 places, Settings and the hourly view's other days aren't
   kept ready.
 - Boards updated over the air keep a DIO bootloader (no QIO speed-up) until a USB or web-flasher install.
+- Internal RAM's low point is a place switch: ~27 KB there and back, with or without an alert (October 5, console
+  `memlow`, v1.14.2), at the harness's floors (25, 28 after the reconnect path). The radar's downloads for the new
+  place overlap the alerts and air-quality fetches (Wi-Fi and lwIP buffers and the HTTP clients' buffers are internal
+  RAM). Not yet looked at: which of them, and whether to space them out.

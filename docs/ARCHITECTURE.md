@@ -221,9 +221,12 @@ order, and ~11 ms on the bus.
   - For the screens not shown, the `ui_*` functions mark what they change: `ui_place` its page (and, for the place
     shown, extras and the hourly days via `place_current`), `ui_air` the extras page, `ui_ota` the update, status
     and Settings screens (the places only when the weather screen's update pill changes: every update check used to
-    mark everything), `ui_alerts`, `ui_units_changed` and a new place count everything (`slide_cache_dirty(NULL)`);
+    mark everything), `ui_alerts` the alert screen and the pill's rows on the place shown's page (`pill_rows_dirty`),
+    `ui_alert_map` the alert screen, `ui_units_changed` and a new place count everything (`slide_cache_dirty(NULL)`);
     the radar marks its own screen in `show_live()`. New code that changes a screen while it isn't shown must do the
-    same, or a drag shows stale content for a moment.
+    same, or a drag shows stale content for a moment. And no more than it changes: until v1.14.1 `ui_alerts` marked
+    every picture, so with an alert at home the "none" sent at each switch (below) made both places' pictures out of
+    date, and the drag back 2 s later waited 124-155 ms for one (October 5; harness `perf.alert_active`).
   - **Rows only** (`slide_cache_dirty_rows(key, y0, y1)`): a picture is out of date in a row range (`d0`..`d1`,
     widened by later marks), and only those rows are rendered again (`get()`, the idle strips). A range of one strip
     or less renders at once, without waiting for a quiet screen. The minute tick: `clock_tick` marks each other
@@ -247,7 +250,9 @@ order, and ~11 ms on the bus.
     renders its neighbour first (~0.12 s). Until v1.12.1 that lasted 1.5 s for a place drag and 1 s for a screen
     drag (0.8 s of quiet, then a strip per 30 ms); untouched, a place drag is now ready after ~0.6 s and a screen
     drag after ~0.3 s (console `dirty` + drags at fixed delays; harness `drag_place_after_data`). Other places' pictures never show the alert pill of
-    the place shown (`drag_paint` hides it): a switch clears the alerts until the new place's are fetched.
+    the place shown (`drag_paint` hides it): a switch clears the alerts until the new place's are fetched. So the
+    place left had the pill in its picture and is drawn without it from then on: `ui_places` marks those rows (the
+    pill and the city name, ~40: rendered again at once, as a clock's).
 - **List scrolls** (`slide_scroll()`, from `drag_read` for a vertical drag on a scrollable object other than the
   weather screen's places and the radar's zoom swipes: `slide_scroll_target()`): LVGL redrew all of a scrolling list
   for every frame (35–50 ms: 17–22 fps). Here each frame moves the list's rows within the picture of the screen shown
@@ -466,13 +471,24 @@ order, and ~11 ms on the bus.
   when/where and text in one scrolling column). The title wraps within 260 px (the round edge's width at y = 40) and
   `al_layout()` starts the column under its last line: up to v1.12.1 the column sat at a fixed y = 80, and a two-line
   title ("Wreckhouse wind warning", October 4) ran into "Until …" or hid its second line behind the map.
-- **Region map** (`alerts_map()`): `items/<id>?f=json` gives the shape (≈4 KB for a county). Coordinates are pulled
-  out with a small scanner instead of cJSON (thousands of points would mean thousands of small allocations). The zoom
-  is the closest level (4–10) where the region fits around the location in the 300×200 crop, then one level out for
-  context. Background: the radar's cached basemap for that zoom (`radar_basemap_read()`, under the new `cache_mux`),
-  or OSM tiles fetched directly (`radar_osm_render()`) when it isn't cached. Region filled at 35 % plus outline,
-  white dot at the location. Rebuilt only when the top alert changes. `ui_alert_map()` swaps the buffer under the
-  display lock.
+- **Region map** (`alerts_map()`): `items/<id>?f=json` gives the shape (≈4 KB for a county, 12.5 KB for Québec's
+  frost advisory region). Coordinates are pulled out with a small scanner instead of cJSON (thousands of points would
+  mean thousands of small allocations). The zoom is the closest level (4–10) where the region fits around the
+  location in the 300×200 crop, then one level out for context. Background: the crop's rows of the radar's cached
+  basemap for that zoom (`radar_basemap_crop()`, under `cache_mux`), or OSM tiles fetched directly
+  (`radar_osm_render()`) when it isn't cached. Region filled at 35 % plus outline, white dot at the location.
+  Rebuilt only when the top alert changes. `ui_alert_map()` swaps the buffer under the display lock.
+  - **Memory, one step at a time** (v1.14.2): the reply grows as it arrives (16 KB first, up to 160 KB; a reply that
+    doesn't fit is refused, it used to be cut and drawn), the points are sized from it (its `]` count), and it is
+    freed before the 117 KB picture is taken; the crop is read row by row from flash. Up to v1.14.1 every buffer was
+    taken at once: 160 KB for the reply, 96 KB of points, a 434 KB copy of the whole cached map to crop 117 KB from
+    it, ~830 KB (818 KB measured by the host test, 134 KB now). On top of the picture cache (PSRAM ~0.9-1 MB free
+    once it is full) that took PSRAM's low point to 11-190 KB with a frost advisory at home, and twice the map failed
+    for lack of memory (`region map: no memory (176 KB of PSRAM free, largest 92 KB)`).
+  - **Kept across place switches:** `main.c` keeps the map (`map_key` + the point it was drawn for) when another place
+    is shown, hidden (`ui_alert_map_show(false)`), and shows it again when the alerts fetched on the way back have
+    the same top alert: until v1.14.1 every return to the place downloaded and drew it again (4 times in 2 minutes
+    of harness drags). One map is held at most (117 KB); a place without alerts frees it only if it is its own.
 - Tested with a throw-away build using Athabasca, AB (frost advisory at the time). Large static buffers
   (`alerts_t`, `weather_t`, the alert text) use `EXT_RAM_BSS_ATTR` (`CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY`),
   which also freed ~15 KB of internal RAM.
@@ -824,6 +840,10 @@ by `GET /api/config` as `version`.
 - Wi-Fi test switches (`net_test_*` in `net.c`): a fake network name in the station config, never the saved
   credentials; `offline-boot` uses an `RTC_NOINIT` flag (one boot). `web_test_windows_quiet()` answers
   `/connecttest.txt` on the setup AP until restart.
+- `alert at LAT LON|off` (main.c's `alert_at`, RAM only): the first place's alerts and region map are looked up at
+  that point, handled like a switch (the alert found doesn't sound, the map held is dropped). `memlow start|stop`:
+  ESP-IDF's local heap minimum (`heap_caps_monitor_local_minimum_free_size_start/stop`), so a test reads the low
+  points of one step; the since-boot ones come back as the lower of both.
 - In every build on purpose: USB access can already reflash the board, and the harness tests what ships.
   See docs/TESTING.md §6.
 
@@ -834,7 +854,7 @@ by `GET /api/config` as `version`.
 | LVGL draw buffers | internal DMA | 2 × 30 KB |
 | Radar frame structs (46 × ~1 KB of palettes) | PSRAM (`EXT_RAM_BSS_ATTR`, since v1.12.0) | 48 KB |
 | cJSON parse trees (forecast ~10 KB of JSON) | PSRAM (`cJSON_InitHooks`, since v1.12.0) | transient, ~100 KB |
-| Alert region map (shape download, full basemap copy, crop) | PSRAM (transient, main task) | ~160 KB + 434 KB + 117 KB |
+| Alert region map (shape reply, points, crop) | PSRAM (main task; the crop is kept) | 16–160 KB + ~10 KB, then 117 KB (~830 KB at once until v1.14.1) |
 | LVGL heap (objects, styles, glyph cache) | PSRAM (`lvgl_mem.c`, `LV_USE_CUSTOM_MALLOC`) | ~40–50 KB |
 | Basemap + composed screen | PSRAM | 2 × 434 KB |
 | Hourly temperature graphs (7 canvases) | PSRAM (LVGL heap) | 7 × 76 KB |

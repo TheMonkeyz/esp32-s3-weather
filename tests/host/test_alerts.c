@@ -6,8 +6,39 @@
 #include "fake.h"
 #include "../../main/alerts.c"         // its static parsers too
 
-bool radar_basemap_read(int z, uint16_t *dst, double *ox, double *oy) { return false; }
+size_t __sanitizer_get_current_allocated_bytes(void);   // the bytes held (AddressSanitizer's allocator; its header
+                                                        // isn't installed with every gcc)
+
+// The region map's background: a pattern of the cached map's pixel positions, so the crop can be checked. Each call
+// records what alerts_map holds then (its buffers are all taken by this point).
+static size_t held_base, held_at_map;
+static struct { int z, x0, y0, w, h; } crop;
+static uint16_t pattern(int x, int y) { return (uint16_t)(y * 466 + x); }
+bool radar_basemap_crop(int z, double ox, double oy, int x0, int y0, int w, int h, uint16_t *dst)
+{
+    held_at_map = __sanitizer_get_current_allocated_bytes() - held_base;
+    crop.z = z; crop.x0 = x0; crop.y0 = y0; crop.w = w; crop.h = h;
+    for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) dst[y * w + x] = pattern(x0 + x, y0 + y);
+    return true;
+}
+bool radar_basemap_read(int z, uint16_t *dst, double *ox, double *oy)   // (up to v1.14.1: the whole map)
+{
+    held_at_map = __sanitizer_get_current_allocated_bytes() - held_base;
+    return false;
+}
 bool radar_osm_render(int z, double ox, double oy, uint16_t *dst, int w, int h) { return true; }
+
+// A region: a circle of n points around (lat, lon), as Environment Canada sends it
+static char *region(double lat, double lon, double r, int n)
+{
+    static char buf[200 * 1024];
+    int k = snprintf(buf, sizeof(buf), "{\"type\":\"Feature\",\"geometry\":{\"type\":\"Polygon\",\"coordinates\":[[");
+    for (int i = 0; i <= n && k < (int)sizeof(buf) - 64; i++)
+        k += snprintf(buf + k, sizeof(buf) - k, "%s[%.6f,%.6f]", i ? "," : "",
+                      lon + r * 1.4 * cos(2 * M_PI * i / n), lat + r * sin(2 * M_PI * i / n));
+    snprintf(buf + k, sizeof(buf) - k, "]]},\"properties\":{}}");
+    return buf;
+}
 
 static alerts_t al;
 
@@ -66,7 +97,7 @@ int main(void)
     alarm(2);
     static float pts[4 * MAX_PTS];
     int ring_end[64];
-    shape_t sh = { .ring_end = ring_end };
+    shape_t sh = { .ring_end = ring_end, .cap = MAX_PTS };
     CHECK(!parse_shape("{\"coordinates\":[[[-71.2,46.8],[-]]]}", &sh, pts, pts + MAX_PTS), "'-]' parsed");
     CHECK(parse_shape("{\"type\":\"Polygon\",\"coordinates\":[[[-71.2,46.8],[-71.1,46.8],[-71.1,46.9],[-71.2,46.8]]]}",
                       &sh, pts, pts + MAX_PTS) && sh.n == 4 && sh.nrings == 1 && pts[MAX_PTS + 2] > 46.89f,
@@ -103,5 +134,32 @@ int main(void)
     fake_http = (fake_http_t){ .no_client = true };
     alert_t a = { .id = "x" };
     CHECK(alerts_map(&a, 46.8, -71.2, 30, 20) == NULL, "map without a client");
+
+    // The region map as main.c asks for it (300 x 200), from a 1500-point region (~40 KB: more than the reply buffer's
+    // first 16 KB). What it holds when it draws: the picture and the points, not the reply, nor a copy of the whole
+    // cached map (up to v1.14.1: ~830 KB at once, and PSRAM's low point fell to 11-190 KB with an alert)
+    fake_http = (fake_http_t){ .body = region(46.8, -71.2, 0.3, 1500), .status = 200 };
+    CHECK(strlen(fake_http.body) > 32 * 1024, "the region reply is %zu bytes", strlen(fake_http.body));
+    held_base = __sanitizer_get_current_allocated_bytes();
+    held_at_map = 0;
+    uint16_t *m = alerts_map(&(alert_t){ .id = "x", .colour = 'y' }, 46.8, -71.2, 300, 200);
+    CHECK(m, "map drawn");
+    CHECK(held_at_map && held_at_map < 160 * 1024, "%zu KB held while drawing the map", held_at_map / 1024);
+    printf("alerts: %zu KB held while drawing the map\n", held_at_map / 1024);
+    if (m) {
+        CHECK(crop.x0 == 83 && crop.y0 == 133 && crop.w == 300 && crop.h == 200, "crop %d,%d %dx%d", crop.x0, crop.y0,
+              crop.w, crop.h);
+        CHECK(m[0] == pattern(83, 133) && m[300 * 200 - 1] == pattern(83 + 299, 133 + 199),
+              "the corners are the cached map's (%04x %04x)", m[0], m[300 * 200 - 1]);
+        CHECK(m[100 * 300 + 150] == 0xFFFF, "the location's dot at the centre");
+        int filled = 0;                                          // the region (yellow, 35 %) around the dot
+        for (int x = 160; x < 290; x++) filled += m[100 * 300 + x] != pattern(83 + x, 133 + 100);
+        CHECK(filled > 20, "region filled right of the dot: %d px", filled);
+        free(m);
+    }
+    // A reply over 160 KB: refused (not cut and drawn), nothing kept
+    fake_http.body = region(46.8, -71.2, 0.3, 7500);
+    CHECK(strlen(fake_http.body) > 160 * 1024, "the big reply is %zu bytes", strlen(fake_http.body));
+    CHECK(alerts_map(&(alert_t){ .id = "x", .colour = 'y' }, 46.8, -71.2, 300, 200) == NULL, "a reply over 160 KB");
     return check_done("alerts");
 }

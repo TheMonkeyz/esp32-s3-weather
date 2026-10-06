@@ -10,6 +10,11 @@ their own `## vX.Y.Z-rc.N` section. Those are shown only to Beta users, while th
 list everything again. (Three tags have no section: v1.3.0-rc.1; and v1.12.0-rc.1 and v1.12.1-rc.2, whose builds failed and were published
 as v1.12.0-rc.2 and v1.12.1-rc.3.)
 
+## v1.14.2-rc.1 - 2026-10-05
+- With a weather alert in effect, swiping back to the place that has the alert no longer pauses for a moment before the screen follows your finger.
+- With a weather alert in effect, the display keeps far more memory free: the alert's region map is drawn using much less, and it is no longer downloaded again each time you come back to that place. Before, the map could fail to appear.
+- Behind the scenes: a new automatic test with a real weather alert.
+
 ## v1.14.1 - 2026-10-05
 - Wi-Fi Easy Connect works with more phones (a Pixel 8 Pro failed every time): the display now stays on the right radio channel until the phone has finished, online and offline.
 - When Easy Connect still doesn't work (some phones on a 5 GHz network say "Couldn't add device"), the display says what to do: swipe right and join its setup network, which works with any phone.
