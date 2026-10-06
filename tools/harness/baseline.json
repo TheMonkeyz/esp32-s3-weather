@@ -212,6 +212,11 @@
   "max": 10,
   "ref": 1.4
  },
+ "radar_history_s": {
+  "max": 7.0,
+  "ref": 5.0,
+  "note": "the 14 past radar frames after opening the radar (radar.c pipe_load). 8.3 s one after the other on a quiet day (590 ms a frame: radar download 164 + decode 142, lightning download 95 + decode 135 ms, October 6); 7.4 s skipping empty lightning images alone; 4.5-5.6 s with downloads and decoding overlapped (v1.14.3). Rain makes the images larger (tens of KB): measure on a rainy day before tightening"
+ },
  "radar_zoom_fps": {
   "min": 28,
   "note": "slide.c zoom (LVGL: ~10 fps)",

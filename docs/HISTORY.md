@@ -171,5 +171,9 @@ an empty translation is not a missing one; a rule with a time window needs a tes
   `internal_min_kb.place_switch` (docs/DIAGNOSTICS.md §5). Left: the radar's downloads still overlap the alerts and
   air requests (holding the radar until they are done measured +3-5 KB, not done). OSM's 4-bit zoom-4 tile near home,
   which made that level download at every boot and return home, decodes since espforge v0.2.1-rc.1.
-- Radar frames take a while to load (15 of them, one connection): the owner asked whether they could load in
-  parallel (October 6). Each TLS download holds ~10-15 KB of internal RAM: measure where the time goes first.
+- Radar frames take a while to load: the owner asked whether they could load in parallel (October 6). Measured
+  first: 590 ms a frame on a quiet day, half of it decoding (GeoMet sends only RGBA PNGs, 868 KB each to inflate), on
+  one connection that was already reused; GeoMet itself answers in ~100 ms and handles parallel requests. So not more
+  connections: v1.14.3 overlaps the downloads with decoding (a decode task) and skips decoding empty lightning
+  images (ARCHITECTURE "Radar", loading time). Left: `png_rows` inflates through a 32 KB dictionary in PSRAM; in
+  internal RAM it would be faster, but internal RAM is the scarce one.

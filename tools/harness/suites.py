@@ -453,7 +453,18 @@ def radar_timing(ctx):
         ctx.log.wait(r'radar: Lightning ', 30, 'lightning fetched with the frames', start=at)
     except Fail:
         ctx.skip('radar_first_frame_s', 'no new radar frame within 30 s (all frames loaded on an earlier visit)')
-    time.sleep(8)                                    # history frames load while the radar is visible
+    # The 14 past frames load while the radar is visible (radar.c pipe_load: downloads and decoding overlap; 590 ms
+    # a frame one after the other on a quiet day, October 6)
+    try:
+        m = ctx.log.wait(r'radar: Past frames: (\d+) loaded in (\d+) ms', 40, 'the past frames loaded', start=at)
+        if int(m.group(1)) >= 10:
+            ctx.metric('radar_history_s', round(int(m.group(2)) / 1000, 1))
+            ctx.note(f'past frames: {m.group(1)} in {int(m.group(2)) / 1000:.1f} s')
+        else:
+            ctx.skip('radar_history_s', f'only {m.group(1)} past frames were missing (loaded on an earlier visit)')
+    except Fail:
+        ctx.skip('radar_history_s', 'no "Past frames" line within 40 s (firmware before v1.14.3, or all loaded earlier)')
+        time.sleep(8)
     b.cmd('tap 233 233')                             # play the last 3 h (3 fps by design: no fps metric)
     at = len(ctx.log.lines())
     time.sleep(10)

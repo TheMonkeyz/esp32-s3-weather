@@ -32,7 +32,8 @@ The panel's init sequence and pin map come from Waveshare's BSP
 |---|---|---|
 | `main` (app_main) | 0 / 1, 10 KB stack | Boot flow, then weather loop: fetch every 10 min; woken early by a location change. Also draws the alert region map (TLS tile downloads + inflate when the basemap isn't cached): `app: alert map … stack N B spare` |
 | `lvgl` | 1 / 4 | `lv_timer_handler()` loop under a recursive mutex (`display_lock()`) |
-| `radar` | 0 / 3, 10 KB stack | Basemap, latest radar frame, history frames; sleeps unless the radar screen is visible |
+| `radar` | 0 / 3, 10 KB stack | Basemap, latest radar frame, history frames' downloads; sleeps unless the radar screen is visible |
+| `radar_dec` | 0 / 2, 6 KB stack **in PSRAM** | Decodes the history frames `radar` downloaded (`pipe_load()`, see Radar), below `radar`: while a download waits on the network. The project's only task with its stack in PSRAM (`xTaskCreatePinnedToCoreWithCaps`): it must never write flash (the cache is off meanwhile), and doesn't: it decodes, sets the frame under the display lock and updates a label |
 | `presence` | 0 / 2 | Reads 100 ms of audio, computes the level, runs the dim/off state machine, fades brightness |
 | `diag` | 0 / 1 | Every 60 s logs heap, frame timing, CPU and stack per task |
 | `bench` | 1 / 4, one-shot, 10 KB stack (6 KB overflowed) | Times full-screen renders of each screen without showing them (UI blocked ~1.5 s); only on request (test console `bench`, the harness's `perf`). Until v1.11.0 it also ran by itself 45 s after boot and swallowed the swipes made meanwhile (`BENCH_AT_S` in `diag.c`, now 0) |
@@ -588,7 +589,7 @@ order, and ~11 ms on the bus.
 - **Frame storage:** each frame is palette-indexed (1 byte/px, index 0 = no echo, up to 255 RGBA colours), about 217 KB
   in PSRAM. `compose()` blends the frame over the basemap at alpha×0.86 into `out565`, which an `lv_image` displays,
   then draws the frame's lightning bolts on top.
-- **Lightning** (`fetch_lightning()`, called by `fetch_frame()` after each radar image): GeoMet layer
+- **Lightning** (`dl_lightning()` / `dec_lightning()`, after each radar image): GeoMet layer
   `Lightning_2.5km_Density` (Canadian Lightning Detection Network: flashes of the last 10 min on a 2.5 km grid, every
   10 min, kept 3 h, Canada + 250 km), same bbox and size as the radar. Time = the radar time rounded down to 10 min;
   if that window isn't published yet (GeoMet answers XML, detected by the PNG signature) the one before. The image
@@ -597,9 +598,24 @@ order, and ~11 ms on the bus.
   2 px units **after the pixels in the frame's PSRAM buffer** (`LTG_X()` / `LTG_Y()`, buffer W×H + 128), so they move
   with it in `plan_frames()`; putting them in `frame_t` cost ~25 KB of internal RAM (it is copied ~46 times in
   static arrays). Optional: a failed request leaves the frame without bolts. Being requested for the view's bbox, the
-  bolts follow the map on zoom and relocation like the rain. Adds ~0.3–0.5 s per frame (one more GetMap + decode).
+  bolts follow the map on zoom and relocation like the rain. Adds one GetMap per frame (~95 ms on the display). GeoMet
+  sends the same ~920 bytes for every image without a flash; inflating its 868 KB took ~135 ms, so a response identical
+  to the last empty one (`ltg_empty`, a copy in PSRAM) gives no bolts without decoding (v1.14.3).
   Testing without storms: a throwaway build that fills empty frames with marks at fixed lat/lon (converted with the
   view's `zoom` / `view_x` / `view_y`); fixed *screen* positions don't follow zooms and only test the drawing.
+- **Loading time** (measured October 6 with a throwaway timing build, a quiet day): 590 ms a frame one after the
+  other: radar download 164 + decode 142 ms, lightning download 95 + decode 135 ms, on one keep-alive connection
+  (GeoMet alone: ~100 / 66 ms from the PC). GeoMet sends only RGBA PNGs (no 8-bit mode): every image inflates to
+  868 KB whatever its size, through `png_rows`' 32 KB dictionary in PSRAM, so decoding cost as much as downloading.
+  Since v1.14.3 the history frames are pipelined (`pipe_load()`): the `radar` task downloads frame after frame on the
+  same connection while `radar_dec` decodes the previous ones (two slots: at most two frames wait, their PNGs in PSRAM,
+  trimmed to their size by `http_fetch()`). A zoom or relocation stops the downloads; `pipe_load()` returns only when
+  the decoder has finished or dropped what was queued, so nothing else touches the connection or `frames[]`
+  meanwhile. 14 past frames on a quiet day: 8.3 s before, 7.4 s with the lightning skip alone, 4.5-5.6 s pipelined
+  with the decoder on core 0 (6.0 s on core 1: the downloads slowed more, decoding streams 868 KB an image through
+  PSRAM and the cache in front of it, which the TLS buffers share). More connections in parallel would not beat this
+  (decoding stays one image at a time) and each costs internal RAM. Log: `radar: Past frames: N loaded in X ms (...;
+  downloads D ms, decoding E ms)`; harness `radar_history_s`.
 - **Animation:** 15 frames. The latest frame, plus 14 history frames on a fixed 12-minute grid (so refreshes reuse
   most of them). They download newest first while the radar screen is visible. A tap plays at 3 fps via an LVGL timer,
   holds the last frame about 1 s and loops for `PLAY_LOOP_MS` (60 s), then returns to live. A tap while playing
