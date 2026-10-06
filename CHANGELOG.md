@@ -10,6 +10,15 @@ their own `## vX.Y.Z-rc.N` section. Those are shown only to Beta users, while th
 list everything again. (Three tags have no section: v1.3.0-rc.1; and v1.12.0-rc.1 and v1.12.1-rc.2, whose builds failed and were published
 as v1.12.0-rc.2 and v1.12.1-rc.3.)
 
+## v1.14.2 - 2026-10-06
+- With a weather alert in effect, the display keeps far more memory free: the alert's region map is drawn using much less, and it is no longer downloaded again each time you come back to that place. Before, the map could fail to appear.
+- With a weather alert in effect, swiping back to the place that has the alert no longer pauses for a moment before the screen follows your finger.
+- Switching between places uses much less of the display's scarcest memory: the radar's saved map is read in smaller pieces, and the air-quality reading keeps its data in the larger memory.
+- The radar's widest map no longer has a dark square in some places, and it is no longer downloaded again at every start and every return to your first place. The first start after this update builds that map once, so the radar can take a few more seconds to appear that one time.
+- In Inuktitut, scrolling the Settings list slowly no longer leaves the tops of some syllabics missing.
+- Lists scroll a little more smoothly in English and French, and Settings no longer redraws itself every second.
+- Behind the scenes: new automatic tests with a real weather alert, while places are switched, and scrolling Settings slowly in each language.
+
 ## v1.14.2-rc.2 - 2026-10-06
 - Switching between places uses much less of the display's scarcest memory: the radar's saved map is read in smaller pieces, and the air-quality reading keeps its data in the larger memory.
 - The radar's widest map no longer has a dark square in some places, and it is no longer downloaded again at every start and every return to your first place.
