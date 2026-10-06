@@ -333,6 +333,12 @@ Windows build gets both from `main/idf_component.yml`. `components/dns_server` *
     it too). The first guess (the per-second redraw erasing tips) was wrong: the misses were there from the first
     `pictest` and didn't change across ticks.
 
+29. **Measure before parallelising** (v1.14.3, October 6): "load the radar frames in parallel" looked like the fix;
+    a timing build showed half of each frame was decoding (GeoMet sends only RGBA PNGs: 868 KB to inflate each) on a
+    connection already reused, and GeoMet answering in ~100 ms. So: skip decoding an empty lightning image (same bytes
+    as the last empty one) and overlap downloads with decoding (`pipe_load()`). The overlap gained less than
+    predicted: downloads ran ~60 % slower while the other core decoded (the cache in front of PSRAM is shared; the TLS
+    buffers live there too); the decoder on the downloads' core, below them, did better. Time each stage under load.
 - Internal RAM ran out silently (10 KB free, 0 KB min ever) because LVGL's small allocations went to internal RAM
   first. Fixed with `lvgl_mem.c` (LVGL heap in PSRAM). Font kerning cost 71% of render time; fonts now use
   `LV_FONT_KERNING_NONE`. Before optimising anything, run the diagnostics (docs/DIAGNOSTICS.md) and compare with

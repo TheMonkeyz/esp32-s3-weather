@@ -9,6 +9,8 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
+#include "freertos/queue.h"
+#include "freertos/idf_additions.h"   // xTaskCreatePinnedToCoreWithCaps
 #include "esp_http_client.h"
 #include "esp_crt_bundle.h"
 #include "esp_heap_caps.h"
@@ -120,6 +122,10 @@ static bool http_fetch(esp_http_client_handle_t *hp, const char *url, dl_t *d)
         ESP_LOGW(TAG, "GET failed (%s, %d%s): %.90s", esp_err_to_name(err), st, d->oom ? ", no memory for the body" : "", url);
         free(d->buf); d->buf = NULL;
         return false;
+    }
+    if (d->cap > d->len + 1) {                 // give back the slack: the buffer grows by doubling from 64 KB, and
+        uint8_t *nb = heap_caps_realloc(d->buf, d->len + 1, MALLOC_CAP_SPIRAM);   // two frames wait in pipe_load()
+        if (nb) { d->buf = nb; d->cap = d->len + 1; }
     }
     return true;
 }
@@ -460,27 +466,44 @@ static bool lightning_row(unsigned y, const uint8_t *rgba, unsigned w, void *use
     return true;
 }
 
-static void fetch_lightning(time_t t, frame_t *f)
+// The lightning image for radar time t: the newest window may not be published yet (an XML error instead of a PNG),
+// then the one before. Returns the PNG in *d (caller frees d->buf) and its window in iso.
+static bool dl_lightning(time_t t, dl_t *d, char *iso, size_t isz)
+{
+    time_t lt = t / 600 * 600;                  // the 10-min window the radar time falls in
+    char url[420];
+    for (int k = 0; k < 2; k++, lt -= 600) {
+        geomet_url(url, sizeof(url), "Lightning_2.5km_Density", lt, iso, isz);
+        if (!http_fetch(&geo_h, url, d)) continue;
+        if (d->len > 8 && !memcmp(d->buf, "\x89PNG", 4)) return true;
+        free(d->buf); d->buf = NULL;
+    }
+    return false;
+}
+
+// GeoMet sends the same bytes for every lightning image without a flash (466x466 transparent RGBA, ~920 bytes), and
+// inflating its 868 KB took ~135 ms per frame, a quarter of a loop's load time on a quiet day. A response identical to
+// the last one that held no flash holds none either. Used by one task at a time (pipe_load() drains first).
+static EXT_RAM_BSS_ATTR uint8_t ltg_empty[4096];
+static size_t ltg_empty_len;
+
+// Bolt marks of frame f from a lightning PNG (frees d->buf); got = false: none available
+static void dec_lightning(frame_t *f, dl_t *d, bool got, const char *iso)
 {
     enum { BW = LTG_BW, BH = LTG_BH };
     f->nltg = 0;
-    time_t lt = t / 600 * 600;                  // the 10-min window the radar time falls in
-    char url[420], iso[24];
-    uint32_t *sx = heap_caps_calloc(3 * BW * BH, sizeof(uint32_t), MALLOC_CAP_SPIRAM);   // internal RAM is scarce
-    if (!sx) return;
-    uint32_t *sy = sx + BW * BH, *cnt = sy + BW * BH;
-    bool got = false;
-    for (int k = 0; k < 2 && !got; k++, lt -= 600) {   // the newest window may not be published yet
-        geomet_url(url, sizeof(url), "Lightning_2.5km_Density", lt, iso, sizeof(iso));
-        dl_t d;
-        if (!http_fetch(&geo_h, url, &d)) continue;
-        unsigned rw = 0, rh = 0;
-        bool png = d.len > 8 && !memcmp(d.buf, "\x89PNG", 4);   // else an XML error: time not published yet
-        memset(sx, 0, 3 * BW * BH * sizeof(uint32_t));
-        got = png && png_rows(d.buf, d.len, lightning_row, sx, &rw, &rh) && (int)rw == W && (int)rh == H;
-        free(d.buf);
+    if (!got) { ESP_LOGW(TAG, "Lightning %s: not available", iso); return; }
+    if (ltg_empty_len && d->len == ltg_empty_len && !memcmp(d->buf, ltg_empty, d->len)) {
+        free(d->buf); d->buf = NULL;
+        ESP_LOGI(TAG, "Lightning %s: 0 px, 0 marks", iso);
+        return;
     }
-    if (!got) { ESP_LOGW(TAG, "Lightning %s: not available", iso); free(sx); return; }
+    uint32_t *sx = heap_caps_calloc(3 * BW * BH, sizeof(uint32_t), MALLOC_CAP_SPIRAM);   // internal RAM is scarce
+    if (!sx) { free(d->buf); d->buf = NULL; return; }
+    uint32_t *sy = sx + BW * BH, *cnt = sy + BW * BH;
+    unsigned rw = 0, rh = 0;
+    bool ok = png_rows(d->buf, d->len, lightning_row, sx, &rw, &rh) && (int)rw == W && (int)rh == H;
+    if (!ok) { ESP_LOGW(TAG, "Lightning %s: not available", iso); free(sx); free(d->buf); d->buf = NULL; return; }
     int flashes = 0;
     uint8_t *lx = LTG_X(f), *ly = LTG_Y(f);
     for (int b = 0; b < BW * BH; b++) {
@@ -493,6 +516,8 @@ static void fetch_lightning(time_t t, frame_t *f)
         }
     }
     free(sx);
+    if (!flashes && d->len <= sizeof(ltg_empty)) { memcpy(ltg_empty, d->buf, d->len); ltg_empty_len = d->len; }
+    free(d->buf); d->buf = NULL;
     ESP_LOGI(TAG, "Lightning %s: %d px, %d marks", iso, flashes, f->nltg);
 }
 
@@ -528,24 +553,41 @@ static bool frame_row(unsigned y, const uint8_t *row, unsigned w, void *user)
     return true;
 }
 
-static bool fetch_frame(time_t t, frame_t *f)
+static bool dl_radar(time_t t, dl_t *d)
 {
     char iso[24], url[420];
     geomet_url(url, sizeof(url), "RADAR_1KM_RRAI", t, iso, sizeof(iso));
-    dl_t d;
     bool got = false;
-    for (int attempt = 0; attempt < 2 && !got; attempt++) got = http_fetch(&geo_h, url, &d);
-    if (!got) return false;
+    for (int attempt = 0; attempt < 2 && !got; attempt++) got = http_fetch(&geo_h, url, d);
+    return got;
+}
+
+// Frame f (time t) from its radar PNG (frees d->buf)
+static bool dec_radar(time_t t, frame_t *f, dl_t *d)
+{
+    char iso[24];
+    struct tm tm;
+    gmtime_r(&t, &tm);
+    strftime(iso, sizeof(iso), "%Y-%m-%dT%H:%M:%SZ", &tm);
     unsigned rw = 0, rh = 0;
     frame_dec_t fd = { .f = f, .npal = 1, .lastk = 0xFFFFFFFF };
-    bool decoded = png_rows(d.buf, d.len, frame_row, &fd, &rw, &rh);
-    if (!decoded) { ESP_LOGW(TAG, "Radar response: %.80s", (char *)d.buf); free(d.buf); return false; }
-    free(d.buf);
-    if ((int)rw != W || (int)rh != H) return false;
-    int npal = fd.npal, echoes = fd.echoes;
+    bool decoded = png_rows(d->buf, d->len, frame_row, &fd, &rw, &rh);
+    if (!decoded) ESP_LOGW(TAG, "Radar response: %.80s", (char *)d->buf);
+    free(d->buf); d->buf = NULL;
+    if (!decoded || (int)rw != W || (int)rh != H) return false;
     f->t = t;
-    ESP_LOGI(TAG, "Frame %s: %d px with echoes, %d colours", iso, echoes, npal - 1);
-    fetch_lightning(t, f);
+    ESP_LOGI(TAG, "Frame %s: %d px with echoes, %d colours", iso, fd.echoes, fd.npal - 1);
+    return true;
+}
+
+static bool fetch_frame(time_t t, frame_t *f)   // one frame, in this task: download and decode in turn
+{
+    dl_t d;
+    if (!dl_radar(t, &d)) return false;
+    if (!dec_radar(t, f, &d)) return false;
+    char iso[24];
+    bool got = dl_lightning(t, &d, iso, sizeof(iso));
+    dec_lightning(f, &d, got, iso);
     return true;
 }
 
@@ -857,6 +899,106 @@ static bool load_frame(int i)
     return true;
 }
 
+/* Past frames, pipelined: this task downloads frame after frame on the one GeoMet connection while a decode task
+ * inflates the previous ones (466x466 RGBA PNGs: ~140 ms each, radar and lightning; a quiet-day loop took 590 ms a
+ * frame, half of it decoding, October 6). Two slots: at most two frames wait, their PNGs in PSRAM. The decode task's
+ * stack is in PSRAM (no internal RAM; it must never write flash: it only decodes, sets the frame under the display
+ * lock and updates the status). It runs on this task's core below it, while a download waits on the network: on
+ * core 1 the downloads slowed more (decoding streams 868 KB an image through PSRAM, which the TLS buffers share).
+ * Measured, 14 past frames on a quiet day: 8.3 s one after the other; 7.4 s skipping empty lightning images (A);
+ * 6.0 s pipelined on core 1, 4.5-5.6 s on core 0. */
+#define PIPE_SLOTS 2
+typedef struct { int i; time_t t; frame_t f; dl_t radar, ltg; bool radar_ok, ltg_ok; char ltg_iso[24]; } pipe_slot_t;
+static EXT_RAM_BSS_ATTR pipe_slot_t slots[PIPE_SLOTS];
+static QueueHandle_t pipe_full, pipe_free;      // slot numbers
+static volatile bool pipe_abort;               // drop what is queued (the view changed)
+static volatile int64_t pipe_dec_us;           // time spent decoding (log)
+
+static void decode_task(void *arg)
+{
+    int s;
+    for (;;) {
+        xQueueReceive(pipe_full, &s, portMAX_DELAY);
+        pipe_slot_t *p = &slots[s];
+        bool ok = false;
+        int64_t t0 = esp_timer_get_time();
+        if (!pipe_abort && p->radar_ok && dec_radar(p->t, &p->f, &p->radar)) {
+            dec_lightning(&p->f, &p->ltg, p->ltg_ok, p->ltg_iso);
+            ok = true;
+        }
+        pipe_dec_us += esp_timer_get_time() - t0;
+        free(p->radar.buf); p->radar.buf = NULL;   // (the decoders free and clear what they used)
+        free(p->ltg.buf); p->ltg.buf = NULL;
+        if (ok && !pipe_abort) {
+            display_lock(-1);
+            p->f.ok = true;
+            frames[p->i] = p->f;
+            display_unlock();
+            if (play_pending) {
+                char msg[40];
+                snprintf(msg, sizeof(msg), tr(T_LOADING_PAST), frames_ready(), NFRAMES);
+                set_status(NULL, msg);
+            }
+        }
+        xQueueSend(pipe_free, &s, portMAX_DELAY);
+    }
+}
+
+// The missing past frames, newest first, while the radar is wanted and the view stays the same. Returns when every
+// frame queued has been decoded (or dropped): nothing else uses the connection or frames[] meanwhile.
+static void pipe_load(void)
+{
+    if (!pipe_full) {
+        pipe_full = xQueueCreate(PIPE_SLOTS, sizeof(int));
+        pipe_free = xQueueCreate(PIPE_SLOTS, sizeof(int));
+        for (int s = 0; s < PIPE_SLOTS; s++) xQueueSend(pipe_free, &s, 0);
+        // Core 0 below this task (3): it decodes while a download waits; 6 KB of stack in PSRAM
+        if (xTaskCreatePinnedToCoreWithCaps(decode_task, "radar_dec", 6144, NULL, 2, NULL, 0, MALLOC_CAP_SPIRAM) != pdPASS) {
+            ESP_LOGW(TAG, "No decode task: past frames load one after the other");
+            vQueueDelete(pipe_full); vQueueDelete(pipe_free); pipe_full = pipe_free = NULL;
+        }
+    }
+    int64_t t0 = esp_timer_get_time(), dl_us = 0;
+    int n = 0;
+    pipe_dec_us = 0;
+    for (int i = NFRAMES - 2; i >= 0; i--) {
+        if (!(visible || play_pending) || relocate_pending || zoom_target != zoom) break;
+        if (frames[i].ok) continue;
+        if (!pipe_full) {                            // no decode task: one frame after the other, as before
+            n += load_frame(i);
+            if (play_pending) {
+                char msg[40];
+                snprintf(msg, sizeof(msg), tr(T_LOADING_PAST), frames_ready(), NFRAMES);
+                set_status(NULL, msg);
+            }
+            continue;
+        }
+        int s;
+        xQueueReceive(pipe_free, &s, portMAX_DELAY);   // a free slot: the decoder is at most two frames behind
+        pipe_slot_t *p = &slots[s];
+        p->i = i;
+        p->t = frames[i].t;
+        p->f = frames[i];
+        int64_t td = esp_timer_get_time();
+        p->radar_ok = dl_radar(p->t, &p->radar);
+        p->ltg_ok = p->radar_ok && dl_lightning(p->t, &p->ltg, p->ltg_iso, sizeof(p->ltg_iso));
+        dl_us += esp_timer_get_time() - td;
+        if (!p->ltg_ok) p->ltg.buf = NULL;
+        xQueueSend(pipe_full, &s, portMAX_DELAY);
+        n++;
+    }
+    if (pipe_full) {
+        if (relocate_pending || zoom_target != zoom) pipe_abort = true;   // the queued frames are for the old view
+        int s[PIPE_SLOTS];
+        for (int k = 0; k < PIPE_SLOTS; k++) xQueueReceive(pipe_free, &s[k], portMAX_DELAY);   // decoder done
+        for (int k = 0; k < PIPE_SLOTS; k++) xQueueSend(pipe_free, &s[k], 0);
+        pipe_abort = false;
+    }
+    if (n) ESP_LOGI(TAG, "Past frames: %d loaded in %d ms (%d of %d ready; downloads %d ms, decoding %d ms)", n,
+                    (int)((esp_timer_get_time() - t0) / 1000), frames_ready(), NFRAMES, (int)(dl_us / 1000),
+                    (int)(pipe_dec_us / 1000));
+}
+
 static int out_steps;      // zoom-out levels still to animate when the new map is shown
 
 // Show the new basemap; after a zoom-out, shrink it from 2x (or 4x) into place
@@ -992,15 +1134,7 @@ static void radar_task(void *arg)
         }
 
         // History frames for the animation, newest first (only while the radar is on screen)
-        for (int i = NFRAMES - 2; i >= 0 && (visible || play_pending) && !relocate_pending && zoom_target == zoom; i--) {
-            if (frames[i].ok) continue;
-            load_frame(i);
-            if (play_pending) {
-                char msg[40];
-                snprintf(msg, sizeof(msg), tr(T_LOADING_PAST), frames_ready(), NFRAMES);
-                set_status(NULL, msg);
-            }
-        }
+        if (visible || play_pending) pipe_load();
         if (play_pending && frames_ready() >= NFRAMES - 2) {
             display_lock(-1);
             if (visible) start_play(); else play_pending = false;

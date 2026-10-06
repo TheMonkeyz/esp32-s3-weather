@@ -11,7 +11,7 @@
 #include "freertos/task.h"
 #include "esp_timer.h"
 
-#define MAX_TASKS 4
+#define MAX_TASKS 6
 #define C_STACK (256 * 1024)
 #define ASYNC_STACK (64 * 1024)
 
@@ -141,4 +141,9 @@ BaseType_t xQueueReceive(QueueHandle_t q, void *out, TickType_t ms)
     q->n--;
     return pdTRUE;
 }
+void vQueueDelete(QueueHandle_t q)
+{
+    if (q) { free(q->items); free(q); }
+}
+
 bool emu_in_task(void) { return current != NULL; }
