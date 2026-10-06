@@ -167,10 +167,14 @@ found no single hot spot to fix. Copying finished pictures is cheap: ~8 ms per s
 order, and ~11 ms on the bus.
 
 - **Pictures:** a screen is rendered off-display into a 466×466 RGB565 draw buffer (434 KB, PSRAM through LVGL's
-  heap). `slide_picture_rows()` renders only rows y0..y1, so a picture can be made one strip at a time. `render_rows()`
-  also clears and draws up to 8 rows on each side (`ROW_MARGIN`, as far as the buffer has room): LVGL skips a label
-  whose box misses the rows drawn, and Inuktitut's syllabics (the fallback font, 5/4 larger) reach a few rows past
-  their box, so a strip ending just above a label lost the glyphs' tips (v1.14.1). Painting saves
+  heap). `slide_picture_rows()` renders only rows y0..y1, so a picture can be made one strip at a time. LVGL skips a
+  label whose box misses the rows drawn (`lv_draw_label` returns unless the clip meets the box itself), and glyphs
+  reach past their box: Inuktitut's syllabics (the fallback font, 5/4 larger, placed from Montserrat's baseline) up to
+  9 rows above at 28 px (7 at 20) and 3 below, Montserrat's own glyphs at most 4 / 1 (computed from the TTFs as
+  TinyTTF places them). So `render_rows_reach()` draws up + down rows on each side (`ROW_MARGIN` 12 at most, as far
+  as the buffer has room) and changes only rows y0 - up .. y1 + down: the outermost margin rows are put back as they
+  were, since a label just past them was skipped (v1.14.1 drew 8 and wrote them all; v1.14.2-rc.2). Whole screens use
+  the syllabics' reach in every language (place and network names). Painting saves
   and restores the display's redraw list (`inv_p`) and ignores the invalidations it causes.
 - **Slides** (`slide_screen(to, MOVE_*, ms)`, run on the next LVGL cycle via `lv_async_call`): pictures of both
   screens, then frames sent with `display_raw_frame()`. `fill()` composes each row from the two pictures with a byte
@@ -221,9 +225,12 @@ order, and ~11 ms on the bus.
   - For the screens not shown, the `ui_*` functions mark what they change: `ui_place` its page (and, for the place
     shown, extras and the hourly days via `place_current`), `ui_air` the extras page, `ui_ota` the update, status
     and Settings screens (the places only when the weather screen's update pill changes: every update check used to
-    mark everything), `ui_alerts`, `ui_units_changed` and a new place count everything (`slide_cache_dirty(NULL)`);
+    mark everything), `ui_alerts` the alert screen and the pill's rows on the place shown's page (`pill_rows_dirty`),
+    `ui_alert_map` the alert screen, `ui_units_changed` and a new place count everything (`slide_cache_dirty(NULL)`);
     the radar marks its own screen in `show_live()`. New code that changes a screen while it isn't shown must do the
-    same, or a drag shows stale content for a moment.
+    same, or a drag shows stale content for a moment. And no more than it changes: until v1.14.1 `ui_alerts` marked
+    every picture, so with an alert at home the "none" sent at each switch (below) made both places' pictures out of
+    date, and the drag back 2 s later waited 124-155 ms for one (October 5; harness `perf.alert_active`).
   - **Rows only** (`slide_cache_dirty_rows(key, y0, y1)`): a picture is out of date in a row range (`d0`..`d1`,
     widened by later marks), and only those rows are rendered again (`get()`, the idle strips). A range of one strip
     or less renders at once, without waiting for a quiet screen. The minute tick: `clock_tick` marks each other
@@ -247,13 +254,20 @@ order, and ~11 ms on the bus.
     renders its neighbour first (~0.12 s). Until v1.12.1 that lasted 1.5 s for a place drag and 1 s for a screen
     drag (0.8 s of quiet, then a strip per 30 ms); untouched, a place drag is now ready after ~0.6 s and a screen
     drag after ~0.3 s (console `dirty` + drags at fixed delays; harness `drag_place_after_data`). Other places' pictures never show the alert pill of
-    the place shown (`drag_paint` hides it): a switch clears the alerts until the new place's are fetched.
+    the place shown (`drag_paint` hides it): a switch clears the alerts until the new place's are fetched. So the
+    place left had the pill in its picture and is drawn without it from then on: `ui_places` marks those rows (the
+    pill and the city name, ~40: rendered again at once, as a clock's).
 - **List scrolls** (`slide_scroll()`, from `drag_read` for a vertical drag on a scrollable object other than the
   weather screen's places and the radar's zoom swipes: `slide_scroll_target()`): LVGL redrew all of a scrolling list
   for every frame (35–50 ms: 17–22 fps). Here each frame moves the list's rows within the picture of the screen shown
-  (which matches the panel, see Cache), has LVGL render only the rows coming into view (into a 102 KB strip buffer, 96 rows and the margins),
+  (which matches the panel, see Cache), has LVGL render only the rows coming into view (into a 112 KB strip buffer, 96 rows and the margins),
   and sends just the list's rectangle (`display_raw_area`); the move and the send are one pass
-  (`scroll_move_fill`), bottom up when the content goes down. LVGL's own scroll position is kept up to date with
+  (`scroll_move_fill`), bottom up when the content goes down. The rows next to the new ones (as far as the text
+  reaches: Inuktitut's 9 before and 3 after, Montserrat's 4 / 1 in English and French; lists hold no names) are
+  taken from the strip too: they were drawn while the next label was still past the list's edge (LVGL clips it to
+  the list), so without its tops, and moving kept them so. In Inuktitut a slow drag left 6-7 rows off every time
+  and a quick flick 1-2 rows one time in four, always at the same two places in Settings (v1.14.2-rc.2; harness
+  `scroll_other_languages` drags slowly too). LVGL's own scroll position is kept up to date with
   `lv_obj_scroll_by()` so it renders those rows right; its redraw requests are dropped at the end (`inv_p` restored:
   the panel and the picture already show the result).
   - **`lv_obj_scroll_to_y()` stops at the ends**: past them (pulled, springing back) the picture moved while the list
@@ -466,13 +480,24 @@ order, and ~11 ms on the bus.
   when/where and text in one scrolling column). The title wraps within 260 px (the round edge's width at y = 40) and
   `al_layout()` starts the column under its last line: up to v1.12.1 the column sat at a fixed y = 80, and a two-line
   title ("Wreckhouse wind warning", October 4) ran into "Until …" or hid its second line behind the map.
-- **Region map** (`alerts_map()`): `items/<id>?f=json` gives the shape (≈4 KB for a county). Coordinates are pulled
-  out with a small scanner instead of cJSON (thousands of points would mean thousands of small allocations). The zoom
-  is the closest level (4–10) where the region fits around the location in the 300×200 crop, then one level out for
-  context. Background: the radar's cached basemap for that zoom (`radar_basemap_read()`, under the new `cache_mux`),
-  or OSM tiles fetched directly (`radar_osm_render()`) when it isn't cached. Region filled at 35 % plus outline,
-  white dot at the location. Rebuilt only when the top alert changes. `ui_alert_map()` swaps the buffer under the
-  display lock.
+- **Region map** (`alerts_map()`): `items/<id>?f=json` gives the shape (≈4 KB for a county, 12.5 KB for Québec's
+  frost advisory region). Coordinates are pulled out with a small scanner instead of cJSON (thousands of points would
+  mean thousands of small allocations). The zoom is the closest level (4–10) where the region fits around the
+  location in the 300×200 crop, then one level out for context. Background: the crop's rows of the radar's cached
+  basemap for that zoom (`radar_basemap_crop()`, under `cache_mux`), or OSM tiles fetched directly
+  (`radar_osm_render()`) when it isn't cached. Region filled at 35 % plus outline, white dot at the location.
+  Rebuilt only when the top alert changes. `ui_alert_map()` swaps the buffer under the display lock.
+  - **Memory, one step at a time** (v1.14.2): the reply grows as it arrives (16 KB first, up to 160 KB; a reply that
+    doesn't fit is refused, it used to be cut and drawn), the points are sized from it (its `]` count), and it is
+    freed before the 117 KB picture is taken; the crop is read row by row from flash. Up to v1.14.1 every buffer was
+    taken at once: 160 KB for the reply, 96 KB of points, a 434 KB copy of the whole cached map to crop 117 KB from
+    it, ~830 KB (818 KB measured by the host test, 134 KB now). On top of the picture cache (PSRAM ~0.9-1 MB free
+    once it is full) that took PSRAM's low point to 11-190 KB with a frost advisory at home, and twice the map failed
+    for lack of memory (`region map: no memory (176 KB of PSRAM free, largest 92 KB)`).
+  - **Kept across place switches:** `main.c` keeps the map (`map_key` + the point it was drawn for) when another place
+    is shown, hidden (`ui_alert_map_show(false)`), and shows it again when the alerts fetched on the way back have
+    the same top alert: until v1.14.1 every return to the place downloaded and drew it again (4 times in 2 minutes
+    of harness drags). One map is held at most (117 KB); a place without alerts frees it only if it is its own.
 - Tested with a throw-away build using Athabasca, AB (frost advisory at the time). Large static buffers
   (`alerts_t`, `weather_t`, the alert text) use `EXT_RAM_BSS_ATTR` (`CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY`),
   which also freed ~15 KB of internal RAM.
@@ -540,8 +565,14 @@ order, and ~11 ms on the bus.
   512 KB slot in the 4 MB `mapcache` partition (7 slots). The header (magic `MAP7`, zoom, view origin) makes a location change
   download fresh tiles. Bump the magic to force a full re-download (useful for testing the preload). `cache_save()`
   stores only the first place's view and waits between sectors while the screen is in use (see Known issues).
+  `cache_load()` reads a map back in 4 KB pieces (~70 ms): a flash read into PSRAM goes through an internal buffer as
+  large as the read (up to 16 KB), and read whole it was internal RAM's low point at each return to the first place
+  (v1.14.2-rc.2, docs/DIAGNOSTICS.md §5). A level with a tile that fails to decode is not saved: OSM's zoom-4 tile
+  `4/5/6.png` near the first place is a 4-bit PNG that `png_rows` refused until espforge v0.2.1-rc.1, so that level
+  downloaded again at every boot and return to the first place, with a dark square (fixed in v1.14.2-rc.2).
 - **Background preload:** `radar_preload_start()` (called by `main` after Wi-Fi connects) and a change of the first
-  place (the only one cached) run `preload_all()` in the radar task. It checks each zoom level's cache header and downloads the missing levels
+  place (the only one cached; only once `radar_preload_start()` has run, so never in the browser emulator, which loads
+  the zoom shown only) run `preload_all()` in the radar task. It checks each zoom level's cache header and downloads the missing levels
   (9 tiles each; all 7 take about 45 s). Meanwhile the weather screen works normally. The radar screen shows a
   "Preparing maps" panel (level x of n, tile bar), and zoom swipes answer "Maps still downloading", because the
   preload temporarily moves the task's `zoom`. If a level gets no tiles at all (no network), the preload stops.
@@ -824,6 +855,10 @@ by `GET /api/config` as `version`.
 - Wi-Fi test switches (`net_test_*` in `net.c`): a fake network name in the station config, never the saved
   credentials; `offline-boot` uses an `RTC_NOINIT` flag (one boot). `web_test_windows_quiet()` answers
   `/connecttest.txt` on the setup AP until restart.
+- `alert at LAT LON|off` (main.c's `alert_at`, RAM only): the first place's alerts and region map are looked up at
+  that point, handled like a switch (the alert found doesn't sound, the map held is dropped). `memlow start|stop`:
+  ESP-IDF's local heap minimum (`heap_caps_monitor_local_minimum_free_size_start/stop`), so a test reads the low
+  points of one step; the since-boot ones come back as the lower of both.
 - In every build on purpose: USB access can already reflash the board, and the harness tests what ships.
   See docs/TESTING.md §6.
 
@@ -834,7 +869,7 @@ by `GET /api/config` as `version`.
 | LVGL draw buffers | internal DMA | 2 × 30 KB |
 | Radar frame structs (46 × ~1 KB of palettes) | PSRAM (`EXT_RAM_BSS_ATTR`, since v1.12.0) | 48 KB |
 | cJSON parse trees (forecast ~10 KB of JSON) | PSRAM (`cJSON_InitHooks`, since v1.12.0) | transient, ~100 KB |
-| Alert region map (shape download, full basemap copy, crop) | PSRAM (transient, main task) | ~160 KB + 434 KB + 117 KB |
+| Alert region map (shape reply, points, crop) | PSRAM (main task; the crop is kept) | 16–160 KB + ~10 KB, then 117 KB (~830 KB at once until v1.14.1) |
 | LVGL heap (objects, styles, glyph cache) | PSRAM (`lvgl_mem.c`, `LV_USE_CUSTOM_MALLOC`) | ~40–50 KB |
 | Basemap + composed screen | PSRAM | 2 × 434 KB |
 | Hourly temperature graphs (7 canvases) | PSRAM (LVGL heap) | 7 × 76 KB |
@@ -842,6 +877,8 @@ by `GET /api/config` as `version`.
 | Drag and slide pictures (`slide.c` cache) | PSRAM (LVGL heap) | up to 5 × 434 KB |
 | PNG decode (`png_rows.c`) | PSRAM (transient) | ~50 KB |
 | TLS (client and server) | PSRAM (`MBEDTLS_EXTERNAL_MEM_ALLOC`) | ~40–60 KB per session |
+| A TLS client's own part: `esp_tls_t`, the HTTP client's buffers (radar 4 + 0.5 KB, alerts 2 + 0.5, air and forecast 0.5 + 1), lwIP's control block and unsent segments, queued Wi-Fi frames (1.75 KB each) | internal (`malloc` under 16 KB; PSRAM when internal is full) | ~10–15 KB per download while it runs |
+| Flash reads into PSRAM (`esp_partition_read`) | internal: the flash driver's buffer, as large as the read | up to 16 KB while reading (`cache_load()`: 4 KB pieces since v1.14.2-rc.2) |
 
 Build: `CONFIG_COMPILER_OPTIMIZATION_PERF=y` (debug `-Og` made LVGL rendering noticeably slow),
 `CONFIG_LV_DEF_REFR_PERIOD=15`, and **QIO flash** since v1.11.1 (`CONFIG_ESPTOOLPY_FLASHMODE_QIO`; DIO before). The
@@ -869,6 +906,13 @@ v1.12.0-rc.5: the AES peripheral allocates internal DMA bounce buffers, and that
 the settings page. With internal RAM no longer short (LVGL's heap and the radar palettes in PSRAM) it is on again
 since rc.6: HTTPS snapshots 2.2 → 1.5 s, the page whole every time, internal RAM the same (measured on the board, then
 the full harness).
+
+Internal RAM is five heaps (October 5): main DRAM (~260 KB, full all the time), a 22 KB one (full), a 32 KB region
+where the network buffers go, 8 KB of RTC RAM, and the 32 KB pool `CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL` keeps for
+allocations that ask for internal or DMA memory explicitly. A plain `malloc` that finds no internal room takes PSRAM
+instead of failing; what must be internal (task stacks, FreeRTOS objects, DMA buffers, the flash driver's read
+buffer) depends on the small heaps and that pool. The low-point numbers (`memlow`, "min ever", the harness's floors)
+add up each heap's own low point, so they sit below any real moment (docs/DIAGNOSTICS.md §5).
 
 ## Known issues / TODO
 

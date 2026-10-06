@@ -61,7 +61,10 @@ Emscripten 6.0.11. The `pages` job adds it to the site; if the emulator build fa
   down between places works from the start, across three time zones.
 - Fetches pause the screen while they wait (one thread); a forecast takes ~0.3-0.5 s.
 - The radar loads the zoom shown only: the display preloads every zoom level's map once, which a public page would turn
-  into bulk downloads against OpenStreetMap's tile policy (`radar_preload_start` is never called here).
+  into bulk downloads against OpenStreetMap's tile policy (`radar_preload_start` is never called here, and radar.c
+  preloads at a return to the first place only after it was).
+- A place change calls `radar_relocate()` (`place_select()`, as main.c's `follow_active()`): until October 5 it didn't,
+  and the radar kept the previous place's map and rain until a zoom made it look at the location again.
 - A request starts a `fetch()` and polls for it: an await inside a fiber isn't safe with ASYNCIFY.
 - OpenStreetMap's tile policy: a page can't set `User-Agent` (the firmware's isn't sent); for browser apps the policy
   asks for a valid `Referer` (sent explicitly: `strict-origin-when-cross-origin`, the site's origin) and the server's

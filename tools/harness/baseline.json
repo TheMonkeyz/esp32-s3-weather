@@ -68,9 +68,19 @@
   "note": "slide.c's drag alone, from its first frame (57-69 fps in the October 2 runs)",
   "ref": 68.5
  },
+ "drag_fps.drag_place_alert": {
+  "min": 45,
+  "note": "as drag_fps.drag_place, with an alert on the first place (perf.alert_active)",
+  "ref": 68.5
+ },
  "drag_fps.drag_place_back": {
   "min": 45,
   "note": "slide.c's drag alone, from its first frame (57-69 fps in the October 2 runs)",
+  "ref": 65.0
+ },
+ "drag_fps.drag_place_back_alert": {
+  "min": 45,
+  "note": "as drag_fps.drag_place_back, with an alert on the first place (perf.alert_active)",
   "ref": 65.0
  },
  "drag_fps.screen_extras_to_weather": {
@@ -103,9 +113,19 @@
   "note": "a place drag 0.8 s after new data (console 'dirty', as a forecast or alerts): 14 ms with the pictures re-rendered in time; ~120 ms before v1.12.1 (strips only after 0.8 s of quiet, one per 30 ms)",
   "ref": 15
  },
+ "drag_start_ms.drag_place_alert": {
+  "max": 100,
+  "note": "as drag_start_ms.drag_place, with an alert on the first place (perf.alert_active)",
+  "ref": 15
+ },
  "drag_start_ms.drag_place_back": {
   "max": 100,
   "note": "finger recognised -> first frame; ~15 ms with the pictures ready, 180-580 ms when a switch had made them out of date (October 2)",
+  "ref": 15
+ },
+ "drag_start_ms.drag_place_back_alert": {
+  "max": 100,
+  "note": "as drag_start_ms.drag_place_back, with an alert on the first place (perf.alert_active): 124-142 ms before v1.14.2, when a switch marked every picture out of date",
   "ref": 15
  },
  "drag_start_ms.screen_extras_to_weather": {
@@ -137,6 +157,11 @@
   "min": 25,
   "note": "lowest internal RAM since boot, read in perf. 8-10 KB until v1.12.0 (3 KB once); 50 KB with the radar palettes and cJSON in PSRAM (rc.2), 36-40 KB since the task stacks grew ~12.7 KB in rc.3 (main, HTTPS, HTTP, ota, event task, console)",
   "ref": 38
+ },
+ "internal_min_kb.place_switch": {
+  "min": 36,
+  "note": "internal RAM's low point over perf's place drags there and back until the radar is done (console memlow: each internal heap's own low point, added up; the real moment was ~15 KB higher). 31 KB on v1.14.2-rc.1 (23-28 with a 6 s wait at each place): the radar read its cached map from flash through a 16 KB internal buffer while alerts and air quality loaded; 39-47 KB with 4 KB reads and air quality's buffer in PSRAM (October 5-6; it varies run to run)",
+  "ref": 44
  },
  "internal_min_kb.reconnect": {
   "min": 28,
@@ -175,8 +200,13 @@
  },
  "psram_min_kb": {
   "min": 300,
-  "note": "v1.11.0: 452-517 KB with the 5-picture cache of slide.c (1042 in v1.10.0); the radar needs ~50 KB to decode plus 217 KB per new frame",
+  "note": "v1.11.0: 452-517 KB with the 5-picture cache of slide.c (1042 in v1.10.0); the radar needs ~50 KB to decode plus 217 KB per new frame. With an alert held (v1.14.2): 318-325 KB, at navigation's radar snapshot (434 KB on top of the radar loading its first frames and the 117 KB map)",
   "ref": 452
+ },
+ "psram_min_kb.alert": {
+  "min": 300,
+  "ref": 331,
+  "note": "PSRAM's low point while an alert arrives on the first place, its region map is drawn, the weather and alert screens are snapshot and places dragged (perf.alert_active, console memlow). 11-190 KB with v1.14.1 (alerts_map took ~830 KB at once, again at every return to the place)"
  },
  "radar_first_frame_s": {
   "max": 10,
@@ -292,9 +322,19 @@
   "note": "includes LVGL's redraws of the new place after the switch (30-47 fps); drag_fps.drag_place is the drag alone",
   "ref": 45.6
  },
+ "swipe_fps.drag_place_alert": {
+  "min": 20,
+  "note": "as swipe_fps.drag_place, with an alert on the first place (perf.alert_active)",
+  "ref": 45.6
+ },
  "swipe_fps.drag_place_back": {
   "min": 20,
   "note": "as swipe_fps.drag_place: includes LVGL's redraws after the switch",
+  "ref": 60.9
+ },
+ "swipe_fps.drag_place_back_alert": {
+  "min": 20,
+  "note": "as swipe_fps.drag_place_back, with an alert on the first place (perf.alert_active)",
   "ref": 60.9
  },
  "swipe_fps.screen_extras_to_weather": {
@@ -337,9 +377,19 @@
   "note": "longest gap between two frames of the move (16-87 ms in October 2 runs); over ~0.1 s is a visible stutter",
   "ref": 36
  },
+ "swipe_gap_max_ms.drag_place_alert": {
+  "max": 120,
+  "note": "as swipe_gap_max_ms.drag_place, with an alert on the first place (perf.alert_active)",
+  "ref": 36
+ },
  "swipe_gap_max_ms.drag_place_back": {
   "max": 120,
   "note": "longest gap between two frames of the move (16-87 ms in October 2 runs); over ~0.1 s is a visible stutter",
+  "ref": 37
+ },
+ "swipe_gap_max_ms.drag_place_back_alert": {
+  "max": 120,
+  "note": "as swipe_gap_max_ms.drag_place_back, with an alert on the first place (perf.alert_active)",
   "ref": 37
  },
  "swipe_gap_max_ms.screen_extras_to_weather": {
@@ -382,9 +432,19 @@
   "note": "LVGL render time per frame during the move (pictures: ~0-4 ms); high = LVGL drew the move itself",
   "ref": 1.8
  },
+ "swipe_render_avg_ms.drag_place_alert": {
+  "max": 10,
+  "note": "as swipe_render_avg_ms.drag_place, with an alert on the first place (perf.alert_active)",
+  "ref": 1.8
+ },
  "swipe_render_avg_ms.drag_place_back": {
   "max": 10,
   "note": "LVGL render time per frame during the move (pictures: ~0-4 ms); high = LVGL drew the move itself",
+  "ref": 2.0
+ },
+ "swipe_render_avg_ms.drag_place_back_alert": {
+  "max": 10,
+  "note": "as swipe_render_avg_ms.drag_place_back, with an alert on the first place (perf.alert_active)",
   "ref": 2.0
  },
  "swipe_render_avg_ms.screen_extras_to_weather": {

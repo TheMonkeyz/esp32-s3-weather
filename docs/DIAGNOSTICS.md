@@ -30,7 +30,7 @@ after boot blocked the screen for 1.5 s and swallowed swipes.
 | `diag: mark <stage> internal N KB free (largest N), DMA N KB, PSRAM N KB` | heap after each boot stage (`diag_mark()` calls in `main.c`) |
 | `diag: bench render-only full screen: blank … weather … hourly … radar …` | on request (`bench`), when the weather screen is idle (otherwise "postponed"; the harness asks again; its last step repaints the weather screen, which flashed over the hourly view once): time to render each whole screen, not sent to the panel (invisible to the user; blocks the UI ~1.5 s) |
 | `diag: bench weather incl. panel transfer` | same for the weather screen repainted *with* the SPI transfer; minus the render-only time = cost of the panel |
-| `diag: heap: internal … (min ever …, largest block now … / worst …) \| DMA … \| PSRAM …` | every period. *min ever* is since boot. *worst* largest block is sampled every second |
+| `diag: heap: internal … (min ever …, largest block now … / worst …) \| DMA … \| PSRAM …` | every period. *min ever* is since boot, and it adds up each internal heap's own low point (see "Internal RAM at a place switch" below): it can be lower than any real moment. *worst* largest block is sampled every second |
 | `diag: display: N frames, render avg/max, Mpx sent \| animation fps (frames, worst gap) \| LVGL lock wait max, longest hold by <task>` | per period. *Animation* counts frames rendered less than 250 ms apart. *Lock wait* is how long the LVGL task waited for `display_lock()`; *hold* is the longest time another task kept it |
 | `diag: tasks: name(c<core> p<prio>) CPU% stackB` | per period, busiest first; CPU % of one core over the window, *stack* = free stack high-water mark (bytes) |
 | `diag: cpu: core0 N% busy, core1 N% busy` | 100 − idle task time |
@@ -132,6 +132,47 @@ RAM for the two 8 KB draw stacks. Reverted.
 - `GET failed (ESP_ERR_HTTP_WRITE_DATA / FETCH_HEADER)` from GeoMet = idle keep-alive connection closed by the
   server; the retry logic handles it.
 
+### 5. Internal RAM at a place switch (2026-10-05, v1.14.2-rc.2)
+
+`memlow` around "drag to the second place, wait, drag back, wait" gave 23-28 KB on v1.14.2-rc.1 (from ~72 KB free),
+with or without an alert. A throwaway probe build (local branch `probe/switch-ram`, console `rp`) found the parts:
+
+| What | Internal RAM | When |
+|---|---|---|
+| `cache_load()`: the radar's cached map read from flash into PSRAM in one call; the flash driver reads through an internal buffer as large as the read, up to 16 KB | 16 KB for ~50 ms | return to the first place (and every zoom change, the end of a preload) |
+| A TLS download: `esp_tls_t` (1.75 KB), the HTTP client's buffers (radar 4 KB + 0.5, alerts 2 + 0.5, air and forecast 0.5 + 1), lwIP's control block and unsent segments (1.5 KB each), queued Wi-Fi frames (1.75 KB each, 3-8 seen) | ~10-15 KB each | the radar's tiles and GeoMet frame overlap the main task's alerts, then air quality |
+| Air quality's reply buffer (`calloc(4096)`: under 16 KB, so internal) | 4 KB | the air request |
+
+Fixed in v1.14.2-rc.2: `cache_load()` reads 4 KB pieces (16 KB pieces: 50 ms and the reserve below left at 15 KB;
+8 KB: 59 ms, 24 KB; 4 KB: 70 ms, 27.5 KB; 2 KB: 87 ms, 29 KB) and the air reply goes to PSRAM. `memlow` over the same
+round: 23-28 -> 42-43 KB. Holding the radar's switch work 3 s more (until alerts and air are done) measured 45-48 KB,
+but the radar's map for a new place then comes later and the held download landed on the drag back (59-61 fps
+instead of 68): not done.
+
+**How the numbers add up.** Internal RAM is five heaps (`heap_caps_print_heap_info(MALLOC_CAP_INTERNAL)`): the main
+DRAM heap (260 KB, full all the time: a few KB free), a 22 KB one (full), a 32 KB region (where the network buffers
+go), 8 KB of RTC RAM, and the 32 KB pool `CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL` keeps for allocations that ask for
+internal or DMA memory explicitly. `memlow`, `heap`'s min and the diag line's "min ever" add up **each heap's own
+low point**, reached at different times: over one switch round the sum was 23-28 KB while internal RAM sampled every
+2 ms never went below 41-45 KB. The harness's internal floors use that sum; compare it with itself, and use a
+timeline (below) for the real moment.
+
+**What runs out first.** A plain `malloc()` under 16 KB tries internal RAM, then quietly takes PSRAM
+(`heap_caps_malloc_default`): Wi-Fi's buffers, lwIP, esp-tls and the HTTP clients spill into PSRAM rather than fail,
+and `failed_allocs` stays 0. What can fail is what must be internal: task stacks, FreeRTOS queues and semaphores,
+DMA buffers (AES bounce buffers, SPI), and the flash driver's read buffer. They come from the small heaps and then the
+reserve pool, so the reserve's own low point (16 KB taken by the map read before rc.2, ~4 KB since) is the margin
+that matters.
+
+**How it was found** (to do again after a change that touches the network or flash): a throwaway build where each
+download, decode and flash save marks itself active, and a task (priority 10, every 2 ms) logs per 100 ms the exact
+low point (`heap_caps_monitor_local_minimum_free_size_start/stop` around each bucket) with what was running; at the
+sampled low it walks the internal heap's used blocks (`heap_caps_walk`) and diffs them against the start of the
+window. With `CONFIG_HEAP_USE_HOOKS` (in `build\v55\sdkconfig` only), an `esp_heap_trace_alloc_hook` records the
+callers of internal allocations of 480 B or more (`esp_backtrace_get_start`, an IRAM hook, a DRAM ring copied at the
+walk), resolved with `xtensa-esp32s3-elf-addr2line`. Console delays (the radar's relocation, or alerts and air,
+held 12 s) separate the two tasks: 43-53 KB each alone, 34-37 overlapped (the probe's own 100 ms lows).
+
 ### Candidate optimisations (only if a symptom appears)
 
 | Symptom | Candidate | Expected gain |
@@ -140,4 +181,6 @@ RAM for the two 8 KB draw stacks. Reverted.
 | ~~Swipes/animations feel choppy~~ (done, v1.11.0) | profiled (docs/TESTING.md §8); 80 MHz SPI; moves drawn as pictures (`slide.c`, ARCHITECTURE "Moves") | screens 10–15 → 64–70 fps, places 10 → 46, days 11 → 58 |
 | ~~Lists scroll at 17–22 fps~~ (done, v1.10.1-rc.4) | move the picture of the screen, render only the new rows (ARCHITECTURE "Moves", List scrolls) | hourly ~52 fps, Settings ~70 |
 | UI hiccup while the radar loads | compose radar frames outside `display_lock()` | removes 75 ms stalls |
-| Internal RAM low again | check `diag: mark` lines to find the stage; stacks from the task table | — |
+| ~~Internal RAM low at a place switch~~ (done, v1.14.2-rc.2) | the map read from flash in 4 KB pieces, air quality's buffer in PSRAM (5 above) | `memlow` 23-28 -> 42-43 KB |
+| Internal RAM low at a place switch again | the radar's switch work after the alerts and air-quality requests (one TLS download at a time) | +3-5 KB; the radar map of a new place 1-3 s later |
+| Internal RAM low again | check `diag: mark` lines to find the stage; stacks from the task table; for a moment, the probe in 5 | — |

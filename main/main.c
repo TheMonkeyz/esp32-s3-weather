@@ -68,8 +68,24 @@ static EXT_RAM_BSS_ATTR weather_t wx[MAX_PLACES];
 static location_t wx_at[MAX_PLACES];
 static bool have[MAX_PLACES];
 static location_t shown;                  // the place alerts, air quality and radar are for
-static char map_key[80];                  // region map shown (alerts_map_key: alert code + region)
+static char map_key[80];                  // region map held (alerts_map_key: alert code + region)...
+static double map_lat, map_lon;           // ...for this point. Kept (hidden) while another place is shown: it was
+                                          // downloaded and drawn again at every return (~830 KB of PSRAM, v1.14.1)
 static char map_failed[80];               // its download failed: not retried every 10 min until the alert changes
+
+// Test console "alert at LAT LON | off" (console.c): the first place's alerts are looked up at that point instead, so
+// the harness can test with a real alert and its region map whatever the weather at home. RAM only.
+static struct { volatile bool on, changed; double lat, lon; } alert_at;
+
+static void alert_at_set(bool on, double lat, double lon)     // console task
+{
+    alert_at.lat = lat;
+    alert_at.lon = lon;
+    alert_at.on = on;
+    alert_at.changed = true;
+    extras_now = true;
+    if (main_task) xTaskNotifyGive(main_task);
+}
 
 // Alerts already heard for the place shown (alerts_to_sound: once per warning, again if it gets worse; the ones there
 // at start-up or after a switch are only recorded)
@@ -113,8 +129,8 @@ static void follow_active(bool all)
         static const alerts_t none;
         static const air_t no_air = { .us_aqi = -1, .pollen = { -1, -1, -1, -1 } };
         ui_alerts(&none);
-        ui_alert_map(NULL, 0, 0);
-        map_key[0] = map_failed[0] = 0;
+        ui_alert_map_show(false);                // (kept: shown again on the way back, see map_key)
+        map_failed[0] = 0;
         memset(&seen, 0, sizeof(seen));          // the new place's current alerts don't chime
         ui_air(&no_air);
         radar_relocate();
@@ -254,6 +270,7 @@ void app_main(void)
     diag_mark("ui");
     testcon_start();            // USB test console (tools/harness), ready before Wi-Fi so start-up can be tested
     console_init();             // the display's own commands
+    console_on_alert_at(alert_at_set);
     ui_message(tr(T_WEATHER), tr(T_STARTING));
 
     if (boot_button_held()) {
@@ -347,19 +364,36 @@ void app_main(void)
             extras_due = esp_timer_get_time() + REFRESH_MIN * 60 * 1000000LL;
             if (extras_due < next) next = extras_due;
             show_place(false);
+            if (alert_at.changed) {                          // a test point set or cleared: as a switch (silent)
+                alert_at.changed = false;
+                memset(&seen, 0, sizeof(seen));
+                if (map_key[0]) { ui_alert_map(NULL, 0, 0); map_key[0] = 0; }
+                map_failed[0] = 0;
+            }
+            double alat = loc.lat, alon = loc.lon;          // where the alerts are looked up
+            if (alert_at.on && a == 0) { alat = alert_at.lat; alon = alert_at.lon; }
             static EXT_RAM_BSS_ATTR alerts_t al;
-            if (alerts_fetch(loc.lat, loc.lon, &al) && a == config_active_place()) {   // failed: keep the last ones
+            if (alerts_fetch(alat, alon, &al) && a == config_active_place()) {   // failed: keep the last ones
                 ui_alerts(&al);
                 chime_new_alerts(&al);
                 char key[80];
                 if (al.n) alerts_map_key(&al.a[0], key, sizeof(key));
-                if (!al.n) { if (map_key[0]) { ui_alert_map(NULL, 0, 0); map_key[0] = 0; } }
-                else if (strcmp(map_key, key) && strcmp(map_failed, key)) {   // map of the top alert's region
-                    uint16_t *m = alerts_map(&al.a[0], loc.lat, loc.lon, ALERT_MAP_W, ALERT_MAP_H);
+                bool here = map_key[0] && map_lat == alat && map_lon == alon;   // the map held is this place's
+                if (!al.n) { if (here) { ui_alert_map(NULL, 0, 0); map_key[0] = 0; } }
+                else if (here && !strcmp(map_key, key)) ui_alert_map_show(true);   // back on its place: no download
+                else if (strcmp(map_failed, key)) {          // map of the top alert's region
+                    uint16_t *m = alerts_map(&al.a[0], alat, alon, ALERT_MAP_W, ALERT_MAP_H);
                     ESP_LOGI(TAG, "alert map %s, main task stack %u B spare", m ? "drawn" : "failed",
                              (unsigned)uxTaskGetStackHighWaterMark(NULL));
-                    if (m) { ui_alert_map(m, ALERT_MAP_W, ALERT_MAP_H); strlcpy(map_key, key, sizeof(map_key)); }
-                    else strlcpy(map_failed, key, sizeof(map_failed));   // (a 404 was retried every cycle)
+                    if (m) {
+                        ui_alert_map(m, ALERT_MAP_W, ALERT_MAP_H);
+                        strlcpy(map_key, key, sizeof(map_key));
+                        map_lat = alat;
+                        map_lon = alon;
+                    } else {
+                        strlcpy(map_failed, key, sizeof(map_failed));   // (a 404 was retried every cycle)
+                        if (here) { ui_alert_map(NULL, 0, 0); map_key[0] = 0; }   // (another alert's region)
+                    }
                 }
             }
             static air_t air;

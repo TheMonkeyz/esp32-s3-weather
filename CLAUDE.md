@@ -286,6 +286,49 @@ Windows build gets both from `main/idf_component.yml`. `components/dns_server` *
     Settings scroll in Inuktitut, `pictest` found one row off (faint glyph tips missing). `render_rows()` draws an
     8-row margin around each strip (scroll strip, cache strips, pictest bands). Check new layouts with pictest in
     every language (harness `scroll_other_languages`), not only English.
+26. **An alert at home failed the gates that passed that morning (v1.14.2, October 5):** with a frost advisory, PSRAM's
+    low point fell to 11-190 KB (floor 300; twice the map itself failed for lack of memory) and the drag back to the
+    first place took 124-155 ms. Two causes, both read in the log. (a) `alerts_map()` took all its buffers at once
+    (the reply's 160 KB, 96 KB of points, a 434 KB copy of the whole cached map to crop 117 KB: ~830 KB), and every
+    return to the place downloaded and drew it again. Now one step at a time (134 KB, host-tested with ASan's byte
+    count) and the map is kept across switches. Size a buffer from what it holds, free it before the next step. (b)
+    `ui_alerts()` marked every picture out of date (21(f) the other way), and the "none" sent at each switch made both
+    places' pictures stale; it marks the pill's rows and the alert screen now. Test with a real alert any day: console
+    `alert at LAT LON` (harness `perf.alert_active`); `memlow start|stop` gives one step's low points. Internal RAM
+    fell too (23 KB, floor 25): its low point is a place switch, ~27 KB with or without an alert (the radar's
+    downloads and the alerts and air fetches at once; `memlow`, 2 rounds each), right at the floors; before v1.14.2
+    the map's download at each return added one more TLS connection to that moment. (Mostly a flash read: see 27.)
+27. **Internal RAM's "27 KB" at a place switch (v1.14.2-rc.2, October 5)** was mostly one flash read, and partly a
+    sum. Found with a throwaway probe (branch `probe/switch-ram`, local: a 100 ms timeline of the exact low point
+    tagged with the downloads running, a diff of the internal heap's used blocks at the low point, their callers from
+    `CONFIG_HEAP_USE_HOOKS`, per-heap low points). (a) `esp_partition_read()` into PSRAM borrows an internal buffer as
+    large as the read, up to 16 KB, for the whole read: `cache_load()` read the 434 KB map in one call at each return
+    to the first place, while air quality loaded. It reads 4 KB pieces now (+20 ms). Writes don't (a 32-byte stack
+    buffer). (b) Each TLS download holds ~10-15 KB internal while it runs (`esp_tls_t` 1.75 KB, the HTTP client's
+    buffers, queued Wi-Fi frames of 1.75 KB each); air quality's 4 KB reply buffer was `calloc`'d (under 16 KB =
+    internal): PSRAM now. Together 23-28 -> 42-43 KB. (c) `memlow` and the "min ever" numbers **add each internal
+    heap's own low point** (5 heaps, reached at different times): the real moment was ~15 KB higher. Main DRAM is full
+    all the time, and a plain `malloc` falls back to PSRAM when internal RAM is full (`failed_allocs` stays 0); what
+    can fail is what must be internal (task stacks, FreeRTOS objects, DMA, flash reads), served from the 32 KB
+    `CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL` pool. (d) A by-catch: OSM's zoom-4 tile `4/5/6.png` near home is a 4-bit
+    PNG that espforge's `png_rows` refused, so that level was never cached and downloaded again at every boot and
+    return home (espforge v0.2.1-rc.1 decodes 1/2/4-bit PNGs, its LESSONS L190). Harness:
+    `internal_min_kb.place_switch` (`perf.swipes`, floor 36: 31 on rc.1, 39-47 since).
+28. **Lesson 25's margin wasn't the whole fix (v1.14.2-rc.2, October 6):** the harness's Inuktitut `pictest` after a
+    Settings scroll failed one time in four (rc.1 too), always 1-2 rows at the same two places in the list. (a) A
+    list scroll moves the picture and renders only the new rows; the rows just before them were drawn while the next
+    label was still past the list's edge (LVGL clips children to the list, and `lv_draw_label` returns unless the clip
+    meets the label's own box), so without its syllabics' tops, then moved. A **slow drag** (2.5 s: each label comes in
+    a row at a time) made it 6/6, and the snapshot diff showed which glyph (the dot over ᓈ). `scroll_move_fill` now
+    takes the rows next to the new ones from the strip too. (b) How far: computed from the TTFs as TinyTTF places glyphs
+    (rise = `ceil(yMax x fallback scale) + 1 - Montserrat's ascent`): syllabics 9 rows up at 28 px (7 at 20), 3 down;
+    Montserrat alone 4 / 1. Lists use the syllabics' reach in Inuktitut only (Settings scrolls got faster in English:
+    render 3.7 -> 3.2 ms a frame), whole screens always. (c) `render_rows` wrote its outermost margin rows, drawn
+    without the labels past them: it puts them back now. (d) Settings re-set its labels every second (`cfg_tick`):
+    `set_text()` compares first, as 21(f) says; the redraw was the 190-200 ms `swipe_gap_max_ms.scroll_settings`.
+    An intermittent one-row miss: make it deterministic first (slowly, every time), and A/B the old firmware (it had
+    it too). The first guess (the per-second redraw erasing tips) was wrong: the misses were there from the first
+    `pictest` and didn't change across ticks.
 
 - Internal RAM ran out silently (10 KB free, 0 KB min ever) because LVGL's small allocations went to internal RAM
   first. Fixed with `lvgl_mem.c` (LVGL heap in PSRAM). Font kerning cost 71% of render time; fonts now use
@@ -366,8 +409,9 @@ Windows build gets both from `main/idf_component.yml`. `components/dns_server` *
   2`); the fake ids' region maps give HTTP 404 (expected). Then restore quiet hours, `git checkout main/main.c`, and
   flash a clean build.
 - **The alert screen with a real alert** (October 4): no fakes needed. Find a place under a long-named alert with
-  the Environment Canada API, open the emulator there (`?place=`), or point a throwaway build's `alerts_fetch()` and
-  `alerts_map()` at it: real texts in both languages and the real map (docs/TESTING.md §4).
+  the Environment Canada API, open the emulator there (`?place=`), or, since v1.14.2, send the board's console
+  `alert at LAT LON` (the first place's alerts and map from that point, RAM only, silent; `alert at off`): real texts
+  in both languages and the real map (docs/TESTING.md §4). The harness's `perf.alert_active` does it every run.
 - **Lightning on the radar** (October 1): GeoMet `Lightning_2.5km_Density`, see ARCHITECTURE "Radar". There was no
   lightning in Canada while it was built: test with fake marks at fixed **lat/lon** in a throwaway build (fixed
   screen positions don't follow zooms, which looked like a bug). Check `diag: heap` against a baseline build after

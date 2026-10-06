@@ -164,3 +164,12 @@ an empty translation is not a missing one; a rule with a time window needs a tes
   picture (v1.12.1; it was 1.5 s). The picture cache has 5 slots: with 2 places, Settings and the hourly view's other days aren't
   kept ready.
 - Boards updated over the air keep a DIO bootloader (no QIO speed-up) until a USB or web-flasher install.
+- Internal RAM's low point was a place switch: ~27 KB there and back (October 5, console `memlow`, v1.14.2-rc.1). A
+  probe build found it was mostly the radar's map read from flash at the return home (a 16 KB internal buffer while
+  air quality loaded) and partly a sum (`memlow` adds each internal heap's own low point; the real moment was ~15 KB
+  higher). v1.14.2-rc.2 reads the map in 4 KB pieces and moves air quality's buffer to PSRAM: 42-43 KB, harness
+  `internal_min_kb.place_switch` (docs/DIAGNOSTICS.md §5). Left: the radar's downloads still overlap the alerts and
+  air requests (holding the radar until they are done measured +3-5 KB, not done). OSM's 4-bit zoom-4 tile near home,
+  which made that level download at every boot and return home, decodes since espforge v0.2.1-rc.1.
+- Radar frames take a while to load (15 of them, one connection): the owner asked whether they could load in
+  parallel (October 6). Each TLS download holds ~10-15 KB of internal RAM: measure where the time goes first.

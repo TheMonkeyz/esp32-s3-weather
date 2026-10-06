@@ -169,6 +169,12 @@ static void set_hidden(lv_obj_t *o, bool hide)
     if (hide) lv_obj_add_flag(o, LV_OBJ_FLAG_HIDDEN); else lv_obj_remove_flag(o, LV_OBJ_FLAG_HIDDEN);
 }
 
+// A label's text, only when it changed: lv_label_set_text() redraws the label even with the same text
+static void set_text(lv_obj_t *l, const char *t)
+{
+    if (strcmp(lv_label_get_text(l), t)) lv_label_set_text(l, t);
+}
+
 // Let presses on decorative children reach the screen (long-press, swipe)
 static void passthrough(lv_obj_t *o)
 {
@@ -1493,11 +1499,27 @@ static void alert_create(void)
     lv_obj_add_event_cb(scr_alert, alert_gesture, LV_EVENT_GESTURE, NULL);
 }
 
+static void dirty_hidden_one(const void *key);
+
+// The rows of the alert pill and of the city name it replaces, on place i's page: out of date in its picture, unless
+// that page is shown (slide.c). Only those rows: ~40, rendered again at once, so a drag right after finds it ready.
+static void pill_rows_dirty(int i)
+{
+    lv_obj_t *page = pager_page(place_pager, i);
+    if (page == key_of(lv_screen_active())) return;
+    lv_area_t a, c, pa;
+    lv_obj_get_coords(al_pill, &a);                     // on scr_main: rows of the screen
+    lv_obj_get_coords(pp[i].city, &c);                  // on the page: rows within it (= on screen when it's shown)
+    lv_obj_get_coords(page, &pa);
+    slide_cache_dirty_rows(page, LV_MIN(a.y1, c.y1 - pa.y1) - 2, LV_MAX(a.y2, c.y2 - pa.y1) + 2);
+}
+
 void ui_alert_map(uint16_t *buf, int w, int h)
 {
     display_lock(-1);
     uint16_t *old = al_map_buf;
     al_map_buf = buf;
+    dirty_hidden_one(scr_alert);
     if (buf) {
         memset(&al_map_dsc, 0, sizeof(al_map_dsc));
         al_map_dsc.header.magic = LV_IMAGE_HEADER_MAGIC;
@@ -1516,7 +1538,21 @@ void ui_alert_map(uint16_t *buf, int w, int h)
         lv_obj_add_flag(al_attr, LV_OBJ_FLAG_HIDDEN);
     }
     display_unlock();
-    free(old);
+    if (old != buf) free(old);
+}
+
+// The map held, hidden while another place is shown and shown again on the way back (main.c keeps it: it was
+// downloaded and drawn again at every return to the place, ~830 KB of PSRAM each time until v1.14.1)
+void ui_alert_map_show(bool show)
+{
+    display_lock(-1);
+    show = show && al_map_buf;
+    if (lv_obj_has_flag(al_map, LV_OBJ_FLAG_HIDDEN) == show) {
+        set_hidden(al_map, !show);
+        set_hidden(al_attr, !show);
+        dirty_hidden_one(scr_alert);
+    }
+    display_unlock();
 }
 
 #define AL (i18n_lang() < ALERT_LANGS ? i18n_lang() : 0)    // alert texts exist in English and French
@@ -1540,7 +1576,11 @@ void ui_alerts(const alerts_t *al)
     // The same alerts again (each fetch, and "none" at every place switch): nothing to redraw, and the cached
     // pictures for drags (slide.c) stay valid. al == &alerts: redraw anyway (language or units changed).
     if (al != &alerts && alerts_same(al, &alerts)) { display_unlock(); return; }
-    slide_cache_dirty(NULL);                        // new content: the cached pictures are out of date
+    // New content, shown in two places: the pill (in place of the city name) on the place shown's page, and the alert
+    // screen. Until v1.14.1 every picture was marked: at a switch away from a place with an alert ("none" until the
+    // new place's are fetched) the drag back waited for both places' pictures (124-142 ms, October 5).
+    dirty_hidden_one(scr_alert);
+    pill_rows_dirty(cur_place);
     if (al != &alerts) alerts = *al;
     if (!alerts.n) {
         lv_obj_add_flag(al_map, LV_OBJ_FLAG_HIDDEN);
@@ -1589,7 +1629,7 @@ bool ui_alert_sample(const char *which, int *title_h, int *lines, int *box_y)
     if (!strcmp(which, "off")) {
         if (alerts.n) ui_alerts(&alerts);                   // (redraws from the alerts held)
         else {
-            slide_cache_dirty(NULL);
+            dirty_hidden_one(scr_alert);
             lv_label_set_text(al_title, ""); lv_label_set_text(al_sub, ""); lv_label_set_text(al_body, "");
         }
         *title_h = *lines = *box_y = 0;
@@ -1597,7 +1637,7 @@ bool ui_alert_sample(const char *which, int *title_h, int *lines, int *box_y)
     }
     for (int i = 0; i < (int)(sizeof(samples) / sizeof(samples[0])); i++) {
         if (strcmp(which, samples[i][0])) continue;
-        slide_cache_dirty(NULL);                            // a cached picture of the alert screen is out of date
+        dirty_hidden_one(scr_alert);                        // a cached picture of the alert screen is out of date
         lv_label_set_text(al_title, samples[i][1]);
         lv_label_set_text(al_sub, samples[i][2]);
         lv_label_set_text(al_body, "Sample text for the layout test (test console).");
@@ -2343,6 +2383,9 @@ static void cfg_open_state(void)
     lv_obj_scroll_to_y(lv_obj_get_parent(cfg_row[0]), 0, LV_ANIM_OFF);
 }
 
+// Every second while Settings is shown (cfg_tick) and after each change: only what changed is set, a label set to its
+// own text or a row hidden again redrew it each second (a frame 200 ms before a scroll's first, harness
+// swipe_gap_max_ms.scroll_settings 190-200 ms, October 6)
 static void cfg_refresh(void)                      // display lock held
 {
     presence_cfg_t c;
@@ -2355,20 +2398,20 @@ static void cfg_refresh(void)                      // display lock held
     ota_get_status(&o);
     cfg_switch(R_DIM, c.enabled);
     cfg_switch(R_MOTION, presence_motion_wake());
-    if (st.imu_ok) lv_obj_remove_flag(cfg_row[R_MOTION], LV_OBJ_FLAG_HIDDEN);
-    else lv_obj_add_flag(cfg_row[R_MOTION], LV_OBJ_FLAG_HIDDEN);
+    set_hidden(cfg_row[R_MOTION], !st.imu_ok);
     int p = cfg_preset(&c);
-    lv_label_set_text(cfg_val[R_TIMING], tr(p < 0 ? T_T_CUSTOM : cfg_presets[p].name));
-    lv_label_set_text(cfg_val[R_TEMP], u.fahrenheit ? "°F" : "°C");
-    lv_label_set_text(cfg_val[R_WIND], u.wind == WIND_MPH ? "mph" : u.wind == WIND_MS ? "m/s" : "km/h");
-    lv_label_set_text(cfg_val[R_CLOCK], u.h12 ? "12 h" : "24 h");
-    lv_label_set_text(cfg_val[R_LANG], i18n_name(i18n_lang()));   // (Inuktitut: "draft" in its name, i18n.c)
+    set_text(cfg_val[R_TIMING], tr(p < 0 ? T_T_CUSTOM : cfg_presets[p].name));
+    set_text(cfg_val[R_TEMP], u.fahrenheit ? "°F" : "°C");
+    set_text(cfg_val[R_WIND], u.wind == WIND_MPH ? "mph" : u.wind == WIND_MS ? "m/s" : "km/h");
+    set_text(cfg_val[R_CLOCK], u.h12 ? "12 h" : "24 h");
+    set_text(cfg_val[R_LANG], i18n_name(i18n_lang()));   // (Inuktitut: "draft" in its name, i18n.c)
     sound_cfg_t sc;
     sound_get_config(&sc);
     static const tid_t lvl[4] = { T_CHIME_OFF, T_CHIME_RED, T_CHIME_ORANGE, T_CHIME_ALL };
-    lv_label_set_text(cfg_val[R_CHIME], tr(lvl[sc.level & 3]));
-    lv_label_set_text_fmt(cfg_val[R_VOLUME], "%d%%", sc.volume);
+    set_text(cfg_val[R_CHIME], tr(lvl[sc.level & 3]));
     char b[48];
+    snprintf(b, sizeof(b), "%d%%", sc.volume);
+    set_text(cfg_val[R_VOLUME], b);
     bool just_checked = check_tapped && lv_tick_elaps(check_tapped) < 6000;
     if (o.state == OTA_AVAILABLE) snprintf(b, sizeof(b), "%s >", o.latest);             // tap: update screen
     else if (o.state == OTA_CHECKING) snprintf(b, sizeof(b), "%s", tr(T_CHECKING));
@@ -2376,12 +2419,13 @@ static void cfg_refresh(void)                      // display lock held
     else if (just_checked && o.state == OTA_UP_TO_DATE) snprintf(b, sizeof(b), "%s", tr(T_UP_TO_DATE));
     else if (just_checked && o.state == OTA_FAILED) snprintf(b, sizeof(b), "%s", tr(T_FAILED));
     else snprintf(b, sizeof(b), "%s", tr(T_CHECK_NOW));
-    lv_label_set_text(cfg_val[R_UPDATE], b);
+    set_text(cfg_val[R_UPDATE], b);
     bool armed = restart_armed && lv_tick_elaps(restart_armed) < 4000;
-    lv_label_set_text(cfg_val[R_RESTART], armed ? tr(T_TAP_AGAIN) : "");
+    set_text(cfg_val[R_RESTART], armed ? tr(T_TAP_AGAIN) : "");
     if (!lv_obj_has_state(cfg_zone, LV_STATE_PRESSED)) {
-        lv_arc_set_value(cfg_arc, c.bright_pct);
-        lv_label_set_text_fmt(cfg_bright, tr(T_BRIGHTNESS), c.bright_pct);
+        lv_arc_set_value(cfg_arc, c.bright_pct);                   // (returns at once when the value is the same)
+        snprintf(b, sizeof(b), tr(T_BRIGHTNESS), c.bright_pct);
+        set_text(cfg_bright, b);
     }
 }
 
@@ -2764,7 +2808,10 @@ void ui_places(int n, int active)
     bool moved = active != cur_place;
     for (int i = 0; i < MAX_PLACES; i++) {
         set_hidden(pager_page(place_pager, i), i >= n);
-        set_hidden(pp[i].city, alerts.n && i == active);       // the alert pill goes on the place shown
+        // The alert pill goes on the place shown, in place of its city name. The place left had it in its picture,
+        // and is drawn without it from now on (drag_paint): those rows are out of date
+        bool hide = alerts.n && i == active;
+        if (lv_obj_has_flag(pp[i].city, LV_OBJ_FLAG_HIDDEN) != hide) { set_hidden(pp[i].city, hide); pill_rows_dirty(i); }
     }
     n_places = n;
     cur_place = active;

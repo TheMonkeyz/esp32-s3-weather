@@ -187,7 +187,10 @@ def easy_connect_fail_text(ctx):
 def scroll_other_languages(ctx):
     """Settings scrolled in French and Inuktitut: the picture still equals the screen. Inuktitut's syllabics (a
     fallback font drawn 5/4 larger) reach above their label's box, and a strip of rows ending just above a label lost
-    their tips (pictest 1 row off, October 5): slide.c's render_rows draws a margin of rows around each strip."""
+    their tips (pictest 1 row off, October 5): slide.c's render_rows draws a margin of rows around each strip. A slow
+    drag too (2.5 s, ~1 px a frame): rows drawn while the next label was still past the list's edge were moved up
+    without its tops, 6-7 rows off every time in Inuktitut, where the quick flick showed it one time in four (October
+    6); slide.c now takes the rows next to the new ones from the strip as well."""
     b = ctx.board
     was = b.api('/api/config')['units']['lang']
     try:
@@ -205,6 +208,12 @@ def scroll_other_languages(ctx):
             b.cmd('drag 233 130 233 330 300')       # and back to the top
             time.sleep(2.5)
             pictest(ctx, f'Settings scrolled back in {lang}')
+            b.cmd('drag 233 330 233 130 2500', timeout=20)   # slowly: each label comes in a row at a time
+            time.sleep(1.5)
+            pictest(ctx, f'Settings scrolled slowly in {lang}')
+            b.cmd('drag 233 130 233 330 2500', timeout=20)
+            time.sleep(1.5)
+            pictest(ctx, f'Settings scrolled back slowly in {lang}')
             b.cmd('tap 233 45')
             b.wait_screen('weather', 6)
     finally:
@@ -275,6 +284,11 @@ def hourly_touches(ctx):
              f'{" (handed over by the coasting list)" if handed else " (the list had stopped)"}')
     b.cmd('drag 80 300 400 300 250')
     time.sleep(1)
+    # Tomorrow's list back to the top: perf's render bench draws that page as it was left, and scrolled down (the graph
+    # gone, more rows) it took 46 ms instead of 38 (October 5): render_ms.hourly failed by where a flick had coasted
+    for _ in range(2):
+        b.cmd('drag 233 160 233 420 300')
+        time.sleep(1.2)
     b.cmd('tap 233 233')
     b.wait_screen('weather', 6)
 
@@ -564,13 +578,35 @@ def swipes(ctx):
     if places > 1:                                   # places: drawn by slide.c, vertical
         if time.localtime().tm_sec > 48:             # not across a minute change: it makes every picture out of
             time.sleep(64 - time.localtime().tm_sec)  # date (the clocks), and drag_start_ms would measure that
-        measure(ctx, 'drag_place', ['drag 233 380 233 120 400'], settle=1.5)
-        # Back ~2 s later, like a person going through their places: the pictures must still be ready. On October 2
-        # every switch redrew the pages with nothing changed, and the drag back waited 0.2-0.6 s (drag_start_ms).
-        measure(ctx, 'drag_place_back', ['drag 233 120 233 380 400'], settle=1.5)
-        # Back on the first place, the radar fetches its maps and saves them to flash (both cores pause in bursts):
-        # a tap then can go unseen and a move crawls. Wait for it, and tap twice if needed.
-        radar_settled(ctx, since)
+        # Internal RAM's low point over the switch there and back until the radar is done (console memlow): the
+        # radar's downloads and its map read from flash overlap the alerts and air-quality requests. 23-28 KB on
+        # v1.14.2-rc.1, where that read went through a 16 KB internal buffer (October 5).
+        memlow = 'memlow' in b.cmd('help', r'test: commands: (.*)').group(1)
+        if memlow:
+            b.cmd('memlow start', r'test: ok memlow start')
+        else:
+            ctx.skip('internal_min_kb.place_switch', 'firmware without the console command "memlow" (v1.14.1 and older)')
+        low = None
+        try:
+            measure(ctx, 'drag_place', ['drag 233 380 233 120 400'], settle=1.5)
+            # Back ~2 s later, like a person going through their places: the pictures must still be ready. On October
+            # 2 every switch redrew the pages with nothing changed, and the drag back waited 0.2-0.6 s (drag_start_ms).
+            measure(ctx, 'drag_place_back', ['drag 233 120 233 380 400'], settle=1.5)
+            # Back on the first place, the radar fetches its maps and saves them to flash (both cores pause in
+            # bursts): a tap then can go unseen and a move crawls. Wait for it, and tap twice if needed.
+            radar_settled(ctx, since)
+            if memlow:
+                m = b.cmd('memlow stop', r'test: memlow psram_min=(\d+) internal_min=(\d+)')
+                low = int(m.group(2))
+                ctx.metric('internal_min_kb.place_switch', low)
+                ctx.note(f'place switch there and back: internal RAM low point {low} KB, PSRAM {m.group(1)} KB '
+                         f'(memlow: each internal heap\'s own low point, added up)')
+        finally:
+            if memlow and low is None:
+                try:
+                    b.cmd('memlow stop', r'test: memlow')
+                except Fail:
+                    pass
         # A place chosen on the settings page: the pictures slide (slide_page), ~65 fps; LVGL's own scroll of the
         # place pager ran at ~10 fps and the owner found it sluggish (v1.12.0-rc.5)
         for sel in (1, 0):
@@ -623,6 +659,109 @@ def swipes(ctx):
     pictest(ctx, 'Settings scrolled')
     b.cmd('tap 233 45')
     b.wait_screen('weather', 6)
+
+
+EC_ALERTS = 'https://api.weather.gc.ca/collections/weather-alerts/items'
+
+
+def alert_point():
+    """A point under an alert in force somewhere in Canada, from Environment Canada's API (from the PC): (lat, lon,
+    name, area), or None. A vertex of the region's shape: the display asks for the alerts of a 0.01-degree box around
+    its point, which the server intersects with the regions, so a point on the edge finds the region."""
+    import datetime
+    import json
+    import urllib.request
+    try:
+        now = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%S')
+        lst = json.load(urllib.request.urlopen(f'{EC_ALERTS}?f=json&lang=en&skipGeometry=true&limit=100', timeout=20))
+        for f in lst.get('features', [])[:10]:
+            p = f.get('properties', {})
+            if p.get('status_en') in ('ended', 'cancelled') or (p.get('expiration_datetime') or '9') < now:
+                continue
+            raw = urllib.request.urlopen(f'{EC_ALERTS}/{f["id"]}?f=json', timeout=20).read()
+            if len(raw) > 150 * 1024:                       # (the display takes shapes up to 160 KB)
+                continue
+            g = json.loads(raw)['geometry']
+            ring = g['coordinates'][0] if g['type'] == 'Polygon' else g['coordinates'][0][0]
+            lon, lat = ring[0][:2]
+            return lat, lon, p.get('alert_name_en', '?'), p.get('feature_name_en', '?')
+    except Exception as e:                                  # (no internet on the PC: the test is skipped)
+        print(f'    Environment Canada alerts: {e}', flush=True)
+    return None
+
+
+def place_now(b):
+    return dict(kv.split('=') for kv in b.cmd('page', r'test: page (.*)').group(1).split())
+
+
+@test('perf')
+def alert_active(ctx):
+    """An alert on the first place (console "alert at": its alerts looked up at a point under a real alert, RAM only):
+    PSRAM's low point while it arrives, its region map is drawn and the weather and alert screens are snapshot
+    (`memlow`), and place drags with it. October 5, a frost advisory at home: alerts_map took ~830 KB of PSRAM at once
+    and again at every return to the place (low point 11-190 KB, floor 300), and the switch marked every picture out of
+    date, so the drag back waited 124-142 ms for its picture."""
+    b = ctx.board
+    if 'alert at' not in b.cmd('help', r'test: commands: (.*)').group(1):
+        ctx.skip('*alert', 'firmware without the console commands "alert at" and "memlow" (v1.14.1 and older)')
+        return
+    pt = alert_point()
+    if not pt:
+        ctx.skip('*alert', 'no alert in force in Canada, or Environment Canada unreachable from the PC')
+        return
+    lat, lon, name, area = pt
+    b.cmd('wake')
+    go_weather(ctx)
+    while int(place_now(b)['place']) > 0:                   # the first place: the one the test point stands for
+        b.cmd('drag 233 100 233 380 300')
+        time.sleep(1.5)
+    places = int(place_now(b)['places'])
+    since = len(ctx.log.lines())
+    b.cmd('memlow start', r'test: ok memlow start')
+    low = None
+    try:
+        at = len(ctx.log.lines())
+        b.cmd(f'alert at {lat:.5f} {lon:.5f}', r'test: ok alert at')
+        m = ctx.log.wait(r'alerts: (\d+) alert\(s\)|alerts: no alerts', 30, 'the alerts at the test point', start=at)
+        if not m.group(1):
+            ctx.skip('*alert', f'"{name}" ({area}) no longer in force at {lat:.4f},{lon:.4f}')
+            return
+        m = ctx.log.wait(r'app: alert map (drawn|failed)', 45, 'the region map of the test alert', start=at)
+        check(m.group(1) == 'drawn', f'the region map of "{name}" ({area}) failed: see the "alerts:" lines')
+        time.sleep(3)                                       # the pictures (slide.c) settle
+        for scr in ('weather', 'alert'):
+            b.snap(scr, ctx.out(f'alert_active_{scr}.png'))
+        if places > 1:
+            if time.localtime().tm_sec > 48:                # not across a minute change (see swipes)
+                time.sleep(64 - time.localtime().tm_sec)
+            measure(ctx, 'drag_place_alert', ['drag 233 380 233 120 400'], settle=1.5)
+            check(place_now(b)['place'] == '1', 'the place drag from the alert\'s place did not change the place')
+            back = len(ctx.log.lines())
+            measure(ctx, 'drag_place_back_alert', ['drag 233 120 233 380 400'], settle=1.5)
+            check(place_now(b)['place'] == '0', 'the drag back to the alert\'s place did not change the place')
+            ctx.log.wait(r'alerts: \d+ alert\(s\)', 20, 'the alerts again on the way back', start=back)
+            time.sleep(2)
+            again = ctx.log.count(r'alerts: region shape', start=back)
+            check(again == 0, 'back on the alert\'s place, its region map was downloaded and drawn again (it is kept)')
+        else:
+            ctx.skip('*.drag_place*_alert', 'one place on the display: no place drag')
+        m = b.cmd('memlow stop', r'test: memlow psram_min=(\d+) internal_min=(\d+)')
+        low = int(m.group(1))
+        ctx.metric('psram_min_kb.alert', low)
+        ctx.note(f'alert "{name}" ({area}) at {lat:.4f},{lon:.4f}: region map drawn, then snapshots'
+                 f'{" and place drags" if places > 1 else ""}; PSRAM low point {low} KB, internal {m.group(2)} KB '
+                 f'(alert_active_*.png)')
+    finally:
+        if low is None:
+            try:
+                b.cmd('memlow stop', r'test: memlow')
+            except Fail:
+                pass
+        at = len(ctx.log.lines())
+        b.cmd('alert at off', r'test: ok alert at off')
+        if place_now(b)['place'] == '0':                     # the first place's own alerts again
+            ctx.log.wait(r'alerts: (\d+ alert\(s\)|no alerts)', 30, 'the first place\'s own alerts back', start=at)
+        radar_settled(ctx, since)
 
 
 # ---------------------------------------------------------------- start-up lines

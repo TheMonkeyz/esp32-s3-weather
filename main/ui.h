@@ -29,6 +29,7 @@ bool ui_alert_sample(const char *which, int *title_h, int *lines, int *box_y);  
 bool ui_setup_fail_sample(int *lines, int *bottom);  // test console (lock held): Easy Connect's failure text
 void ui_alerts(const alerts_t *al);     // weather alerts for the location (empty = none)
 void ui_alert_map(uint16_t *buf, int w, int h);   // region map for the alert screen (takes ownership; NULL hides)
+void ui_alert_map_show(bool show);   // the map held: hidden (another place shown) or shown again (back on its place)
 void ui_air(const air_t *a);            // air quality for the extras page
 void ui_ota(const ota_status_t *st);    // update availability / progress (from the OTA task)
 // Renders a screen off-display (weather, extras, status, radar, update, alert, hourly0..hourly6 = hourly view of
