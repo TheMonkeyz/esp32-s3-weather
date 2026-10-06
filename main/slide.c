@@ -789,11 +789,13 @@ typedef struct {
     lv_draw_buf_t *pic;                  // the screen shown
     lv_draw_buf_t *strip;                // the rows coming into view, rendered before the frame is sent
     int d, in0, in1;                     // this frame: rows move by d (> 0: up); rows in0..in1 come from the strip
+    int last;                            // the last move's way (> 0: up), for scroll_settle
     int up, down;                        // how far its text reaches past a label's box (render_rows_reach)
     lv_area_t r;                         // the list on screen: the rows that move
     int shown;                           // the scroll position the picture shows
     int frames;
     int64_t us_move, us_render, us_send; // time per part (log)
+    int64_t us_settle;                   // scroll_settle, once at the end (log)
 } scroller_t;
 
 // One pass per frame: each row of the list area is moved within the picture (or taken from the strip) and sent.
@@ -824,6 +826,7 @@ static void scroll_step(scroller_t *s, int want)
 {
     int d = want - s->shown, h = lv_area_get_height(&s->r);
     if (!d) return;
+    s->last = d;
     // Raw: lv_obj_scroll_to_y() stops at the ends, and past them (pulled, springing back) the picture moved while
     // the list didn't: the rows rendered for it repeated the edge (smeared graph labels, a doubled row). And not
     // lv_obj_scroll_by(): its SCROLL_BEGIN / END events bubble up the hourly view (pager, screen) and made LVGL lay
@@ -857,6 +860,22 @@ static void scroll_step(scroller_t *s, int want)
     s->us_send += esp_timer_get_time() - t2;
     s->shown = want;
     s->frames++;
+}
+
+// After the last frame, the edge the list last moved away from. A label whose box has just gone past it is skipped
+// by LVGL (clipped to the list), but the rows moved within the picture still hold what its text reached past the box:
+// syllabics' tops above a label gone out at the bottom (a scroll back), descenders below one gone out at the top. A
+// move the other way takes those rows from the strip, so only the last move's edge can be left off: its rows are
+// rendered again, once, and sent (v1.14.3-rc.1: row 359, Settings' last, after one harness run's slow scroll back in 8).
+static void scroll_settle(scroller_t *s)
+{
+    if (!s->last) return;
+    int64_t t0 = esp_timer_get_time();
+    const lv_area_t *r = &s->r;
+    int y0 = s->last < 0 ? r->y2 - s->up + 1 : r->y1, y1 = s->last < 0 ? r->y2 : r->y1 + s->down - 1;
+    render_rows_reach(s->scr, s->pic, 0, y0, y1, s->up, s->down);
+    display_raw_area(0, y0 - s->up, DISP_W - 1, y1 + s->down, false, scroll_fill, s->pic);   // every row it changed
+    s->us_settle = esp_timer_get_time() - t0;
 }
 
 static void scroll_run(void *unused)
@@ -1043,6 +1062,7 @@ static void scroll_run(void *unused)
         pos = (int)fpos;
         scroll_step(&s, pos);
     }
+    scroll_settle(&s);
     painting = false;
     disp->inv_p = inv0;                                  // LVGL's redraw requests for the list: already on the panel
     if (s.strip) lv_draw_buf_destroy(s.strip);
@@ -1051,11 +1071,11 @@ static void scroll_run(void *unused)
     int64_t t1 = esp_timer_get_time();
     int f = s.frames ? s.frames : 1;
     ESP_LOGI(TAG, "scroll: %d frames in %lld ms, moved %d px, now at %d of %d..%d; per frame: move %.1f, render %.1f, "
-             "send %.1f ms%s; finger: %d lifts, %d silences, %d touches again, %d brief ups bridged "
-             "(longest %lld ms), %d read errors, longest gap %lld ms", s.frames, (t1 - t0) / 1000, moved, pos, lo, hi,
-             s.us_move / 1000.0f / f, s.us_render / 1000.0f / f, s.us_send / 1000.0f / f,
-             sideways ? "; then a sideways touch" : "", lifts, err_lifts - err0, touches, brief_ups - brief0,
-             brief_max / 1000, read_errs, gap_max / 1000);
+             "send %.1f ms, then the edge's rows %.1f ms%s; finger: %d lifts, %d silences, %d touches again, %d brief ups "
+             "bridged (longest %lld ms), %d read errors, longest gap %lld ms", s.frames, (t1 - t0) / 1000, moved, pos,
+             lo, hi, s.us_move / 1000.0f / f, s.us_render / 1000.0f / f, s.us_send / 1000.0f / f,
+             s.us_settle / 1000.0f, sideways ? "; then a sideways touch" : "", lifts, err_lifts - err0, touches,
+             brief_ups - brief0, brief_max / 1000, read_errs, gap_max / 1000);
     scroll.queued = false;
     slide_phase = 0;
     // The sideways touch: to its drag (which reads the finger from here), else LVGL ignores it until it lifts
