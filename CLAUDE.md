@@ -56,6 +56,9 @@ certificate), forge_ota (updates) and dns_server, **at a release tag** (the user
 - **A fix to shared code** is made in espforge: test it with this app first (`python tools/forge_local.py`: a build
   against the espforge checkout, nothing committed), release an espforge rc, then bump the four tags here. Before
   debugging Wi-Fi setup, OTA or the tools, read espforge's LESSONS for that topic.
+- **After bumping the tags, delete `dependencies.lock`** (git-ignored) before building: on October 6 the component
+  manager said it re-solved, yet kept the locked commit for the new tag (v0.2.1 built v0.2.0's `forge_core`, without
+  its PNG fix). Check the build log's `NOTICE: [n/7] forge_core (<commit>)`. CI starts clean.
 - **Still twins** (same code in both, nothing shares them yet): `lvgl_mem.c`, `pager.c`, `imu.c`, `display.c`,
   `touch.c`, the harness's `board.py` / `harness.py`, the flash helper. A fix in one gets ported or a task chip.
 
