@@ -207,6 +207,17 @@ static void cmd_alert(int argc, char **argv)            // the alert screen's la
     ESP_LOGI(TAG, "alert sample %s title_y=40 title_h=%d lines=%d box_y=%d", argv[2], th, lines, by);
 }
 
+static void cmd_setup(int argc, char **argv)            // the Easy Connect page after a failed attempt
+{
+    if (argc != 2 || strcmp(argv[1], "fail")) { ESP_LOGW(TAG, "error setup fail"); return; }
+    if (!display_lock(2000)) { ESP_LOGW(TAG, "error setup: display busy for 2 s (send 'where')"); return; }
+    int lines, bottom;
+    bool ok = ui_setup_fail_sample(&lines, &bottom);
+    display_unlock();
+    if (!ok) { ESP_LOGW(TAG, "error setup fail: only on the Easy Connect page"); return; }
+    ESP_LOGI(TAG, "setup fail lines=%d bottom=%d", lines, bottom);
+}
+
 static void cmd_dirty(int argc, char **argv)            // as new data does: hidden pictures out of date, shown redrawn
 {
     if (!display_lock(2000)) { ESP_LOGW(TAG, "error dirty: display busy for 2 s"); return; }
@@ -345,6 +356,7 @@ void console_init(void)
 #endif
     testcon_register("pictest", "pictest", cmd_pictest);
     testcon_register("alert", "alert sample en|fr|max|off", cmd_alert);
+    testcon_register("setup", "setup fail", cmd_setup);
     testcon_register("dirty", "dirty", cmd_dirty);
     testcon_register("hint", "hint next-boot", cmd_hint);
     testcon_register("bench", "bench", cmd_bench);
