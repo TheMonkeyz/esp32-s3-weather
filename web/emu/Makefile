@@ -54,7 +54,7 @@ $(OUT)/index.html: index.html
 # The display's own settings page under the emulator: unchanged, with emu-settings.js first in its <head> (its requests
 # to /api/ go to the emulator, emu_web.c)
 $(OUT)/settings.html: $(MAIN)/web/index.html
-	sed '0,/<head>/s|<head>|<head><script src="emu-settings.js"></script>|' $< > $@
+	sed 's|<head>|<head><script src="emu-settings.js"></script>|' $< > $@   # (one <head>; macOS's sed has no 0,/re/)
 	@grep -q 'emu-settings.js' $@ || (echo "settings.html: no <head> to put emu-settings.js in" && rm -f $@ && false)
 $(OUT)/emu-settings.js: emu-settings.js
 	cp $< $@
