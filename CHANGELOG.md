@@ -10,6 +10,10 @@ their own `## vX.Y.Z-rc.N` section. Those are shown only to Beta users, while th
 list everything again. (Three tags have no section: v1.3.0-rc.1; and v1.12.0-rc.1 and v1.12.1-rc.2, whose builds failed and were published
 as v1.12.0-rc.2 and v1.12.1-rc.3.)
 
+## v1.14.2-rc.2 - 2026-10-05
+- Switching between places uses much less of the display's scarcest memory: the radar's saved map is read in smaller pieces, and the air-quality reading keeps its data in the larger memory.
+- Behind the scenes: a new automatic test watches that memory while places are switched there and back.
+
 ## v1.14.2-rc.1 - 2026-10-05
 - With a weather alert in effect, swiping back to the place that has the alert no longer pauses for a moment before the screen follows your finger.
 - With a weather alert in effect, the display keeps far more memory free: the alert's region map is drawn using much less, and it is no longer downloaded again each time you come back to that place. Before, the map could fail to appear.

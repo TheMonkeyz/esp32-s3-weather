@@ -556,8 +556,14 @@ order, and ~11 ms on the bus.
   512 KB slot in the 4 MB `mapcache` partition (7 slots). The header (magic `MAP7`, zoom, view origin) makes a location change
   download fresh tiles. Bump the magic to force a full re-download (useful for testing the preload). `cache_save()`
   stores only the first place's view and waits between sectors while the screen is in use (see Known issues).
+  `cache_load()` reads a map back in 4 KB pieces (~70 ms): a flash read into PSRAM goes through an internal buffer as
+  large as the read (up to 16 KB), and read whole it was internal RAM's low point at each return to the first place
+  (v1.14.2-rc.2, docs/DIAGNOSTICS.md §5). A level with a tile that fails to decode is not saved: OSM's zoom-4 tile
+  `4/5/6.png` near the first place is a 4-bit PNG that `png_rows` refuses, so that level downloads again at every boot
+  and return to the first place (October 5; an espforge fix).
 - **Background preload:** `radar_preload_start()` (called by `main` after Wi-Fi connects) and a change of the first
-  place (the only one cached) run `preload_all()` in the radar task. It checks each zoom level's cache header and downloads the missing levels
+  place (the only one cached; only once `radar_preload_start()` has run, so never in the browser emulator, which loads
+  the zoom shown only) run `preload_all()` in the radar task. It checks each zoom level's cache header and downloads the missing levels
   (9 tiles each; all 7 take about 45 s). Meanwhile the weather screen works normally. The radar screen shows a
   "Preparing maps" panel (level x of n, tile bar), and zoom swipes answer "Maps still downloading", because the
   preload temporarily moves the task's `zoom`. If a level gets no tiles at all (no network), the preload stops.
@@ -862,6 +868,8 @@ by `GET /api/config` as `version`.
 | Drag and slide pictures (`slide.c` cache) | PSRAM (LVGL heap) | up to 5 × 434 KB |
 | PNG decode (`png_rows.c`) | PSRAM (transient) | ~50 KB |
 | TLS (client and server) | PSRAM (`MBEDTLS_EXTERNAL_MEM_ALLOC`) | ~40–60 KB per session |
+| A TLS client's own part: `esp_tls_t`, the HTTP client's buffers (radar 4 + 0.5 KB, alerts 2 + 0.5, air and forecast 0.5 + 1), lwIP's control block and unsent segments, queued Wi-Fi frames (1.75 KB each) | internal (`malloc` under 16 KB; PSRAM when internal is full) | ~10–15 KB per download while it runs |
+| Flash reads into PSRAM (`esp_partition_read`) | internal: the flash driver's buffer, as large as the read | up to 16 KB while reading (`cache_load()`: 4 KB pieces since v1.14.2-rc.2) |
 
 Build: `CONFIG_COMPILER_OPTIMIZATION_PERF=y` (debug `-Og` made LVGL rendering noticeably slow),
 `CONFIG_LV_DEF_REFR_PERIOD=15`, and **QIO flash** since v1.11.1 (`CONFIG_ESPTOOLPY_FLASHMODE_QIO`; DIO before). The
@@ -889,6 +897,13 @@ v1.12.0-rc.5: the AES peripheral allocates internal DMA bounce buffers, and that
 the settings page. With internal RAM no longer short (LVGL's heap and the radar palettes in PSRAM) it is on again
 since rc.6: HTTPS snapshots 2.2 → 1.5 s, the page whole every time, internal RAM the same (measured on the board, then
 the full harness).
+
+Internal RAM is five heaps (October 5): main DRAM (~260 KB, full all the time), a 22 KB one (full), a 32 KB region
+where the network buffers go, 8 KB of RTC RAM, and the 32 KB pool `CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL` keeps for
+allocations that ask for internal or DMA memory explicitly. A plain `malloc` that finds no internal room takes PSRAM
+instead of failing; what must be internal (task stacks, FreeRTOS objects, DMA buffers, the flash driver's read
+buffer) depends on the small heaps and that pool. The low-point numbers (`memlow`, "min ever", the harness's floors)
+add up each heap's own low point, so they sit below any real moment (docs/DIAGNOSTICS.md §5).
 
 ## Known issues / TODO
 

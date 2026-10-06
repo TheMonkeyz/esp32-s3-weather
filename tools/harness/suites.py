@@ -569,13 +569,35 @@ def swipes(ctx):
     if places > 1:                                   # places: drawn by slide.c, vertical
         if time.localtime().tm_sec > 48:             # not across a minute change: it makes every picture out of
             time.sleep(64 - time.localtime().tm_sec)  # date (the clocks), and drag_start_ms would measure that
-        measure(ctx, 'drag_place', ['drag 233 380 233 120 400'], settle=1.5)
-        # Back ~2 s later, like a person going through their places: the pictures must still be ready. On October 2
-        # every switch redrew the pages with nothing changed, and the drag back waited 0.2-0.6 s (drag_start_ms).
-        measure(ctx, 'drag_place_back', ['drag 233 120 233 380 400'], settle=1.5)
-        # Back on the first place, the radar fetches its maps and saves them to flash (both cores pause in bursts):
-        # a tap then can go unseen and a move crawls. Wait for it, and tap twice if needed.
-        radar_settled(ctx, since)
+        # Internal RAM's low point over the switch there and back until the radar is done (console memlow): the
+        # radar's downloads and its map read from flash overlap the alerts and air-quality requests. 23-28 KB on
+        # v1.14.2-rc.1, where that read went through a 16 KB internal buffer (October 5).
+        memlow = 'memlow' in b.cmd('help', r'test: commands: (.*)').group(1)
+        if memlow:
+            b.cmd('memlow start', r'test: ok memlow start')
+        else:
+            ctx.skip('internal_min_kb.place_switch', 'firmware without the console command "memlow" (v1.14.1 and older)')
+        low = None
+        try:
+            measure(ctx, 'drag_place', ['drag 233 380 233 120 400'], settle=1.5)
+            # Back ~2 s later, like a person going through their places: the pictures must still be ready. On October
+            # 2 every switch redrew the pages with nothing changed, and the drag back waited 0.2-0.6 s (drag_start_ms).
+            measure(ctx, 'drag_place_back', ['drag 233 120 233 380 400'], settle=1.5)
+            # Back on the first place, the radar fetches its maps and saves them to flash (both cores pause in
+            # bursts): a tap then can go unseen and a move crawls. Wait for it, and tap twice if needed.
+            radar_settled(ctx, since)
+            if memlow:
+                m = b.cmd('memlow stop', r'test: memlow psram_min=(\d+) internal_min=(\d+)')
+                low = int(m.group(2))
+                ctx.metric('internal_min_kb.place_switch', low)
+                ctx.note(f'place switch there and back: internal RAM low point {low} KB, PSRAM {m.group(1)} KB '
+                         f'(memlow: each internal heap\'s own low point, added up)')
+        finally:
+            if memlow and low is None:
+                try:
+                    b.cmd('memlow stop', r'test: memlow')
+                except Fail:
+                    pass
         # A place chosen on the settings page: the pictures slide (slide_page), ~65 fps; LVGL's own scroll of the
         # place pager ran at ~10 fps and the owner found it sluggish (v1.12.0-rc.5)
         for sel in (1, 0):

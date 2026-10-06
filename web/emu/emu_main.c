@@ -16,6 +16,7 @@
 #include "services.h"
 #include "freertos/task.h"
 #include "sound.h"
+#include "radar.h"
 #include "nvs.h"
 
 #define REFRESH_US (10 * 60 * 1000000LL)          // as the display: every 10 min
@@ -67,6 +68,7 @@ static bool have[MAX_PLACES];
 static bool extras_now = true;
 static char map_key[80], map_failed[80];          // the region map shown / failed (as main.c)
 static alerts_seen_t seen;                         // alerts already heard for the place shown (as main.c)
+static location_t shown;                           // the place the radar is for (as main.c)
 
 static bool cached(int i, const location_t *loc)
 {
@@ -97,6 +99,14 @@ static void place_select(int i)                    // the pager settled on place
     memset(&seen, 0, sizeof(seen));                // the new place's current alerts don't sound
     ui_air(&no_air);
     extras_now = true;
+    // The radar follows the place shown, as main.c's follow_active(): without this the radar kept the first place's
+    // map and rain until a zoom made it look at the location again (October 5)
+    location_t loc;
+    config_get_location(&loc);
+    if (loc.lat != shown.lat || loc.lon != shown.lon) {
+        shown = loc;
+        radar_relocate();
+    }
 }
 
 static void data_refresh(void) { extras_now = true; }
@@ -125,6 +135,7 @@ int main(void)
     default_places();
     place_from_address();
     ui_init();
+    config_get_location(&shown);                   // the radar starts on the place shown
     sound_start();                                 // sound.c: alert sounds through Web Audio (emu_audio.c)
     ui_message(tr(T_WEATHER), tr(T_FETCHING));
     ui_on_place_select(place_select);

@@ -23,6 +23,10 @@ idf.py -B build\v55 -D SDKCONFIG=build\v55\sdkconfig build
 
 - **Label test builds above the current stable release** (`v1.4.0-name.N` while v1.3.1 is out). A lower label is
   offered the stable release as an update. Delete `version.txt` when done, or later builds keep the label.
+  **And above a published release candidate** when the board is on the Beta channel: `v1.14.2-ram.1` (a test label
+  counts below any rc of its version) was offered v1.14.2-rc.1 during a harness run, and the offer arriving in the
+  middle of `perf`'s place drags (release notes, the update row) made the drag back wait for a picture (177 ms,
+  October 5). Label it `v1.14.3-ram.N`; for an over-the-air test of the next rc, flash an older build first.
 - **To test a release candidate over Wi-Fi,** the board must run something *below* it. After a test build labelled
   higher (e.g. `v1.5.0-graph.3` vs `v1.4.0-rc.2`), flash an older test build from `firmware\in\` first (with a new
   unique name) and let the board offer the rc.
@@ -243,7 +247,7 @@ the window at the end.
 | `smoke` | console answers, firmware version, Wi-Fi up, settings API |
 | `navigation` | swipes and taps land on the right screen (weather ↔ extras ↔ status, radar, Settings by long-press, hourly by tapping a day); the ends bounce back, a short slow drag snaps back; places (from the first place: drag up / down, the first one bounces) and hourly days (left / right) change by one (`page`); snapshot of every screen incl. `settings1..3`, `phone`, `setup0/1`, `update`; `hourly_touches`: three quick short flicks scroll the hours list, and a day swipe made while it coasts changes the day; `alert_layout`: the alert screen with long titles in English, French and the longest a name can be (console `alert sample`), the column under a two-line title starts below it (snapshots `alert_en/fr/max.png`); `scroll_other_languages`: Settings scrolled down and back in French and Inuktitut, `pictest` after each (the language is put back); `easy_connect_fail_text`: snapshot `setup1fail` (the Easy Connect page after a failed attempt) in English, French and Inuktitut: two lines of text, none outside the round panel |
 | `web` | the Playwright suite (`tools/webtest`) and the live API on the board; the page must arrive whole; who may change things (`main/web.c`): 403 for a POST over plain HTTP, 302 to the device itself, 401 without or with a wrong key, 415 for a non-JSON POST, 421 for another Host, 401 for a snapshot without the key, 200 with it |
-| `perf` | boot stage times and internal RAM, heap low points, full-screen render bench (best of 3), radar first frame and lightning, frame rate of each move (`fps`: screen to screen, places, days, the hourly list and Settings scrolling; for drags also `drag_fps` and `drag_start_ms` from slide.c's log line, a place drag back 2 s after a switch, and a place drag 0.8 s after new data: console `dirty`); compared with `tools/harness/baseline.json`. The radar animation plays at 3 fps by design: not measured. `alert_active`: a real alert on the first place (a point under an alert in force, from Environment Canada's API on the PC; console `alert at`), then its region map, snapshots of the weather and alert screens and the place drags there and back: PSRAM's low point over the test (`memlow`, `psram_min_kb.alert`), `drag_start_ms.drag_place*_alert`, and the map not downloaded again on the way back (snapshots `alert_active_*.png`) |
+| `perf` | boot stage times and internal RAM, heap low points, full-screen render bench (best of 3), radar first frame and lightning, frame rate of each move (`fps`: screen to screen, places, days, the hourly list and Settings scrolling; for drags also `drag_fps` and `drag_start_ms` from slide.c's log line, a place drag back 2 s after a switch, and a place drag 0.8 s after new data: console `dirty`); internal RAM's low point over that switch there and back (`memlow`, `internal_min_kb.place_switch`); compared with `tools/harness/baseline.json`. The radar animation plays at 3 fps by design: not measured. `alert_active`: a real alert on the first place (a point under an alert in force, from Environment Canada's API on the PC; console `alert at`), then its region map, snapshots of the weather and alert screens and the place drags there and back: PSRAM's low point over the test (`memlow`, `psram_min_kb.alert`), `drag_start_ms.drag_place*_alert`, and the map not downloaded again on the way back (snapshots `alert_active_*.png`) |
 | `presence` | dim, off and wake with short delays set through the API (the user's put back after, even on a failure): ACTIVE → DIM → OFF → `wake`; three fades up during a swipe (the brightness command from core 0 while LVGL sends bands from core 1), and `where` must show `raw_phase=0` after each |
 | `firstrun` | `hint next-boot` + restart: the "Choose your location" settings QR comes up by itself after the first forecast, then the gesture hint; a tap closes each (places and the real once-only flags untouched) |
 | `wifi_runtime` | network lost while running: retries go on; long-press opens setup and **pauses them**; tap closes it; reconnects, and an update check follows at once; on the real Easy Connect page, `setup fail` (console) shows the failure text: 2 lines, above the page dots |
@@ -280,8 +284,8 @@ How it works:
   of date and the screen shown redrawn), `alert sample en|fr|max|off` (the alert screen laid out with long sample
   names, pill and alerts held untouched: `test: alert sample en title_y=40 title_h=62 lines=2 box_y=111`; `off` puts it
   back), `alert at LAT LON|off` (the first place's alerts looked up at that point, RAM only, §4), `memlow start` then
-  `memlow stop` (`test: memlow psram_min=N internal_min=N`: the low points in between, from ESP-IDF's local minimum;
-  meanwhile `heap` and the diag lines' "min ever" are the window's, and the since-boot ones come back after), `reboot`,
+  `memlow stop` (`test: memlow psram_min=N internal_min=N`: the low points in between, from ESP-IDF's local minimum:
+  each heap's own low point, added up, so internal_min is below the real moment, docs/DIAGNOSTICS.md §5; meanwhile `heap` and the diag lines' "min ever" are the window's, and the since-boot ones come back after), `reboot`,
   `help`. Answers are log lines `test: …`. Simulated touches enter at the
   touch controller read (`touch_inject()`), so wake-up, long-press and gestures run the real code. `wifi offline`
   points the station at a network that doesn't exist (saved credentials untouched); `offline-boot` does it for the
@@ -325,8 +329,12 @@ How it works:
   more in that case and prints so; anything else still fails with `where`'s answer.
 - **Memory floors:** `internal_min_kb` (read in `perf`, floor 25 KB; 8 KB until v1.12.0) and `internal_min_kb.reconnect`
   (read at the end of `wifi_setup`, after the reconnect path with three TLS clients and the forecast parse: floor 28
-  KB; 5 KB on October 2), `psram_min_kb` (since boot, floor 300 KB) and `psram_min_kb.alert` (over `alert_active`).
-  All since boot except the last: an alert at home makes them depend on the evening (October 5: PSRAM 11-15 KB and
+  KB; 5 KB on October 2), `internal_min_kb.place_switch` (`memlow` over `swipes`' place drags there and back until
+  the radar is done: floor 36 KB; 31 on v1.14.2-rc.1, whose map read from flash took a 16 KB internal buffer, 44-45 since),
+  `psram_min_kb` (since boot, floor 300 KB) and `psram_min_kb.alert` (over `alert_active`). Every internal number adds
+  up each internal heap's own low point (docs/DIAGNOSTICS.md, "Internal RAM at a place switch"): the real moment is
+  higher, so compare them with themselves.
+  All since boot except `.place_switch` and `.alert`: an alert at home makes them depend on the evening (October 5: PSRAM 11-15 KB and
   internal 23 KB with a frost advisory, 373-448 and 28-29 KB that morning, the same firmware). With v1.14.2 and an
   alert held, PSRAM's low point is navigation's radar snapshot (318-325 KB): the radar loads its first frames as it
   opens, the snapshot takes 434 KB on top, and the alert's map holds 117 KB; every other step stays above 400 KB, and

@@ -47,6 +47,8 @@ static time_t last_fetch;
 static volatile bool relocate_pending;
 static volatile bool loc_changed;          // relocation because the saved location changed (not a zoom)
 static volatile bool preload_req, preloading;
+static volatile bool preload_on;          // radar_preload_start() was called: a return to the first place preloads too
+                                          // (the browser emulator never calls it: it loads the zoom shown only)
 static int pre_done, pre_total;
 static int last_tiles_ok;                 // tiles that arrived in the last load_basemap()
 static int zoom = ZOOM_DEF;
@@ -143,8 +145,15 @@ static bool cache_load(void)
     if (!p || base + SLOT_SIZE > p->size) return false;
     if (esp_partition_read(p, base, &h, sizeof(h)) != ESP_OK) return false;
     if (h.magic != CACHE_MAGIC || h.zoom != zoom || h.x != (int)view_x || h.y != (int)view_y) return false;
+    // In 4 KB pieces: a flash read into PSRAM goes through an internal buffer the size of the read, up to 16 KB, taken
+    // from the 32 KB kept for internal-only and DMA memory. Read whole, the map left 15 KB of it, and internal RAM's
+    // low point at a return to the first place (alerts and air quality loading meanwhile) was this read (October 5).
+    // Costs ~20 ms per map (50 -> 70 ms), in this task.
     xSemaphoreTake(cache_mux, portMAX_DELAY);
-    bool ok = esp_partition_read(p, base + sizeof(h), base565, W * H * 2) == ESP_OK;
+    bool ok = true;
+    for (size_t off = 0; ok && off < W * H * 2; off += 4096)
+        ok = esp_partition_read(p, base + sizeof(h) + off, (uint8_t *)base565 + off,
+                                W * H * 2 - off < 4096 ? W * H * 2 - off : 4096) == ESP_OK;
     xSemaphoreGive(cache_mux);
     return ok;
 }
@@ -936,7 +945,7 @@ static void radar_task(void *arg)
             for (int i = 0; i < NFRAMES; i++) frames[i].ok = false;
             display_unlock();
             last_fetch = 0;
-            if (loc_changed && config_active_place() == 0) {   // home moved or shown again: every zoom level now
+            if (loc_changed && preload_on && config_active_place() == 0) {   // home moved or shown again: every zoom level now
                 loc_changed = false;
                 preload_all();
             } else {
@@ -1206,6 +1215,7 @@ void radar_zoom(int step)
 
 void radar_preload_start(void)
 {
+    preload_on = true;
     preload_req = true;
     if (task) xTaskNotifyGive(task);
 }

@@ -247,8 +247,8 @@ bool air_fetch(air_t *a)
              "&current=us_aqi,pm2_5,alder_pollen,birch_pollen,grass_pollen,ragweed_pollen&timezone=auto",
              loc.lat, loc.lon);
     rx_t rx = { .cap = 4096 };
-    rx.buf = calloc(1, rx.cap);
-    if (!rx.buf) return false;
+    rx.buf = heap_caps_calloc(1, rx.cap, MALLOC_CAP_SPIRAM);   // (calloc put it in internal RAM: it is under 16 KB,
+    if (!rx.buf) return false;                                 // and a place switch is internal RAM's low point)
     esp_http_client_config_t cfg = {
         .url = url, .event_handler = http_evt, .user_data = &rx,
         .crt_bundle_attach = esp_crt_bundle_attach, .timeout_ms = 15000, .buffer_size_tx = 1024,   // long URL

@@ -297,7 +297,22 @@ Windows build gets both from `main/idf_component.yml`. `components/dns_server` *
     `alert at LAT LON` (harness `perf.alert_active`); `memlow start|stop` gives one step's low points. Internal RAM
     fell too (23 KB, floor 25): its low point is a place switch, ~27 KB with or without an alert (the radar's
     downloads and the alerts and air fetches at once; `memlow`, 2 rounds each), right at the floors; before v1.14.2
-    the map's download at each return added one more TLS connection to that moment.
+    the map's download at each return added one more TLS connection to that moment. (Mostly a flash read: see 27.)
+27. **Internal RAM's "27 KB" at a place switch (v1.14.2-rc.2, October 5)** was mostly one flash read, and partly a
+    sum. Found with a throwaway probe (branch `probe/switch-ram`, local: a 100 ms timeline of the exact low point
+    tagged with the downloads running, a diff of the internal heap's used blocks at the low point, their callers from
+    `CONFIG_HEAP_USE_HOOKS`, per-heap low points). (a) `esp_partition_read()` into PSRAM borrows an internal buffer as
+    large as the read, up to 16 KB, for the whole read: `cache_load()` read the 434 KB map in one call at each return
+    to the first place, while air quality loaded. It reads 4 KB pieces now (+20 ms). Writes don't (a 32-byte stack
+    buffer). (b) Each TLS download holds ~10-15 KB internal while it runs (`esp_tls_t` 1.75 KB, the HTTP client's
+    buffers, queued Wi-Fi frames of 1.75 KB each); air quality's 4 KB reply buffer was `calloc`'d (under 16 KB =
+    internal): PSRAM now. Together 23-28 -> 42-43 KB. (c) `memlow` and the "min ever" numbers **add each internal
+    heap's own low point** (5 heaps, reached at different times): the real moment was ~15 KB higher. Main DRAM is full
+    all the time, and a plain `malloc` falls back to PSRAM when internal RAM is full (`failed_allocs` stays 0); what
+    can fail is what must be internal (task stacks, FreeRTOS objects, DMA, flash reads), served from the 32 KB
+    `CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL` pool. (d) A by-catch: OSM's zoom-4 tile `4/5/6.png` near home is a 4-bit
+    PNG that espforge's `png_rows` refuses, so that level is never cached and downloads again at every boot and return
+    home (a task for espforge). Harness: `internal_min_kb.place_switch` (`perf.swipes`, floor 36: 31 on rc.1, 44-45 since).
 
 - Internal RAM ran out silently (10 KB free, 0 KB min ever) because LVGL's small allocations went to internal RAM
   first. Fixed with `lvgl_mem.c` (LVGL heap in PSRAM). Font kerning cost 71% of render time; fonts now use

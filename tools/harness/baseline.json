@@ -158,6 +158,11 @@
   "note": "lowest internal RAM since boot, read in perf. 8-10 KB until v1.12.0 (3 KB once); 50 KB with the radar palettes and cJSON in PSRAM (rc.2), 36-40 KB since the task stacks grew ~12.7 KB in rc.3 (main, HTTPS, HTTP, ota, event task, console)",
   "ref": 38
  },
+ "internal_min_kb.place_switch": {
+  "min": 36,
+  "note": "internal RAM's low point over perf's place drags there and back until the radar is done (console memlow: each internal heap's own low point, added up; the real moment was ~15 KB higher). 31 KB on v1.14.2-rc.1 (23-28 with a 6 s wait at each place): the radar read its cached map from flash through a 16 KB internal buffer while alerts and air quality loaded; 44-45 KB with 4 KB reads and air quality's buffer in PSRAM (October 5-6)",
+  "ref": 44
+ },
  "internal_min_kb.reconnect": {
   "min": 28,
   "note": "lowest since boot after wifi_setup's reconnect path (three TLS clients + the forecast parse): 4-5 KB until v1.12.0, 76 KB in rc.2, 38-43 KB since rc.3's larger task stacks",
