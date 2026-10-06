@@ -7,16 +7,16 @@ dependencies:
   forge_core:
     git: https://github.com/TheMonkeyz/espforge.git
     path: components/forge_core
-    version: v0.2.0
+    version: v0.2.1-rc.1
   forge_net:
     git: https://github.com/TheMonkeyz/espforge.git
     path: components/forge_net
-    version: v0.2.0
+    version: v0.2.1-rc.1
   forge_ota:
     git: https://github.com/TheMonkeyz/espforge.git
     path: components/forge_ota
-    version: v0.2.0
+    version: v0.2.1-rc.1
   dns_server:
     git: https://github.com/TheMonkeyz/espforge.git
     path: components/dns_server
-    version: v0.2.0
+    version: v0.2.1-rc.1

@@ -160,7 +160,7 @@
  },
  "internal_min_kb.place_switch": {
   "min": 36,
-  "note": "internal RAM's low point over perf's place drags there and back until the radar is done (console memlow: each internal heap's own low point, added up; the real moment was ~15 KB higher). 31 KB on v1.14.2-rc.1 (23-28 with a 6 s wait at each place): the radar read its cached map from flash through a 16 KB internal buffer while alerts and air quality loaded; 44-45 KB with 4 KB reads and air quality's buffer in PSRAM (October 5-6)",
+  "note": "internal RAM's low point over perf's place drags there and back until the radar is done (console memlow: each internal heap's own low point, added up; the real moment was ~15 KB higher). 31 KB on v1.14.2-rc.1 (23-28 with a 6 s wait at each place): the radar read its cached map from flash through a 16 KB internal buffer while alerts and air quality loaded; 39-47 KB with 4 KB reads and air quality's buffer in PSRAM (October 5-6; it varies run to run)",
   "ref": 44
  },
  "internal_min_kb.reconnect": {

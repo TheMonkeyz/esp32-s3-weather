@@ -8,6 +8,7 @@
 #include "esp_timer.h"
 #include "esp_heap_caps.h"
 #include "esp_attr.h"
+#include "i18n.h"                         // LANG_IU: how far a scrolled list's text reaches
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "lvgl_private.h"                   // layers, the redraw list (inv_p), wait_until_release
@@ -174,17 +175,30 @@ bool slide_picture(lv_obj_t *scr, lv_draw_buf_t *dst) { return slide_picture_row
 // Rows y0..y1 of a screen into dst (a whole-screen RGB565 buffer): lv_snapshot_take_to_draw_buf() clipped to those
 // rows, so a picture can be rendered a strip at a time (a whole one blocks LVGL for 60-180 ms: a quick swipe that
 // started and ended meanwhile was never seen).
-// LVGL skips a label whose box misses the rows drawn, but Inuktitut's syllabics (the fallback font, drawn 5/4 larger)
-// reach a few rows above and below the box: rows y0..y1 alone lost their faint tips (pictest after a Settings scroll
-// in Inuktitut). So up to ROW_MARGIN more rows on each side are cleared and drawn too, as far as dst has room
-// (rows top..top + h - 1); they are drawn as they are now, so a whole-screen dst keeps them right.
-#define ROW_MARGIN 8
-static bool render_rows(lv_obj_t *scr, lv_draw_buf_t *dst, int top, int y0, int y1)
+// LVGL skips a label whose box misses the rows drawn (lv_draw_label returns unless the clip meets the box itself), but
+// Inuktitut's syllabics (the fallback font, drawn 5/4 larger from Montserrat's baseline) reach above and below the box:
+// rows y0..y1 alone lost their faint tips (pictest after a Settings scroll in Inuktitut). From the fonts' metrics, Noto's
+// tallest syllabic rises ROW_UP rows above the box at 28 px (7 at 20 px, 4 at 15) and its deepest goes ROW_DOWN below;
+// Montserrat's own glyphs at most LATIN_UP / LATIN_DOWN (Å, Ǻ). So up + down more rows on each side are drawn too, as far
+// as dst has room (rows top..top + h - 1), and rows y0 - up .. y1 + down come out right (see scroll_move_fill).
+#define ROW_UP 9
+#define ROW_DOWN 3
+#define ROW_MARGIN (ROW_UP + ROW_DOWN)
+#define LATIN_UP 4                        // Montserrat alone (no syllabics: lists in English or French), all its glyphs
+#define LATIN_DOWN 1
+static bool render_rows_reach(lv_obj_t *scr, lv_draw_buf_t *dst, int top, int y0, int y1, int up, int down)
 {
     lv_obj_update_layout(scr);
     int last = top + (int)dst->header.h - 1;
-    y0 = LV_MAX(LV_MAX(y0 - ROW_MARGIN, top), 0);
-    y1 = LV_MIN(LV_MIN(y1 + ROW_MARGIN, last), DISP_H - 1);
+    // Changed in dst: rows y0 - up .. y1 + down only, the rows every label reaching them was drawn for. The outer margin
+    // rows are put back as they were: a label just past them was skipped, and a whole-screen dst had that label's
+    // descender or top right (they were written as drawn until October 6)
+    int g0 = y0 - up, g1 = y1 + down, nk = 0;
+    y0 = LV_MAX(LV_MAX(y0 - up - down, top), 0);
+    y1 = LV_MIN(LV_MIN(y1 + up + down, last), DISP_H - 1);
+    static EXT_RAM_BSS_ATTR uint8_t keep[ROW_MARGIN][DISP_W * 2];
+    uint32_t st = dst->header.stride;
+    for (int y = y0; y <= y1; y++) if (y < g0 || y > g1) memcpy(keep[nk++], dst->data + (y - top) * st, DISP_W * 2);
     lv_area_t rows = {0, y0, DISP_W - 1, y1}, in_buf = {0, y0 - top, DISP_W - 1, y1 - top};
     lv_draw_buf_clear(dst, &in_buf);
     lv_layer_t layer;
@@ -205,7 +219,15 @@ static bool render_rows(lv_obj_t *scr, lv_draw_buf_t *dst, int top, int y0, int 
     }
     d->layer_head = old_head;
     lv_refr_set_disp_refreshing(old);
+    nk = 0;
+    for (int y = y0; y <= y1; y++) if (y < g0 || y > g1) memcpy(dst->data + (y - top) * st, keep[nk++], DISP_W * 2);
     return true;
+}
+
+// Whole screens: syllabics may be anywhere (place and network names), in any language
+static bool render_rows(lv_obj_t *scr, lv_draw_buf_t *dst, int top, int y0, int y1)
+{
+    return render_rows_reach(scr, dst, top, y0, y1, ROW_UP, ROW_DOWN);
 }
 
 bool slide_picture_rows(lv_obj_t *scr, lv_draw_buf_t *dst, int y0, int y1) { return render_rows(scr, dst, 0, y0, y1); }
@@ -767,6 +789,7 @@ typedef struct {
     lv_draw_buf_t *pic;                  // the screen shown
     lv_draw_buf_t *strip;                // the rows coming into view, rendered before the frame is sent
     int d, in0, in1;                     // this frame: rows move by d (> 0: up); rows in0..in1 come from the strip
+    int up, down;                        // how far its text reaches past a label's box (render_rows_reach)
     lv_area_t r;                         // the list on screen: the rows that move
     int shown;                           // the scroll position the picture shows
     int frames;
@@ -775,17 +798,21 @@ typedef struct {
 
 // One pass per frame: each row of the list area is moved within the picture (or taken from the strip) and sent.
 // Moving rows down in place needs the bottom rows first: then the bands go bottom up and each band's rows too.
+// From the strip: the rows coming in, and the s->up rows above them and s->down below. Those were drawn while the next
+// label was still past the list's edge (LVGL clips it to the list), so without its syllabics' tops, then moved: in
+// Inuktitut a slow drag left 6-7 rows off every time (pictest), a quick flick 1-2 rows one time in four (October 6).
 static void scroll_move_fill(int x0, int w, int y0, int n, void *dst, void *user)
 {
     scroller_t *s = user;
     const lv_area_t *r = &s->r;
     uint32_t st = s->pic->header.stride, lw = lv_area_get_width(r) * 2;
     uint8_t *pic = s->pic->data;
+    int s0 = s->in0 - s->up, s1 = s->in1 + s->down;   // rows taken from the strip
     for (int i = 0; i < n; i++) {
         int y = s->d < 0 ? y0 + n - 1 - i : y0 + i;
         if (y >= r->y1 && y <= r->y2) {
-            const uint8_t *src = y >= s->in0 && y <= s->in1 ? s->strip->data + (y - s->in0 + ROW_MARGIN) * s->strip->header.stride
-                                                            : pic + (y + s->d) * st;
+            const uint8_t *src = y >= s0 && y <= s1 ? s->strip->data + (y - s->in0 + ROW_MARGIN) * s->strip->header.stride
+                                                    : pic + (y + s->d) * st;
             memcpy(pic + y * st + r->x1 * 2, src + r->x1 * 2, lw);
         }
         copy_swap((uint8_t *)dst + (y - y0) * w * 2, pic + y * st + x0 * 2, w);
@@ -809,18 +836,18 @@ static void scroll_step(scroller_t *s, int want)
         s->d = d;
         s->in0 = d > 0 ? r->y2 - d + 1 : r->y1;
         s->in1 = d > 0 ? r->y2 : r->y1 - d - 1;
-        render_rows(s->scr, s->strip, s->in0 - ROW_MARGIN, s->in0, s->in1);   // the margin rows around them too
+        render_rows_reach(s->scr, s->strip, s->in0 - ROW_MARGIN, s->in0, s->in1, s->up, s->down);   // (+ margins)
         t2 = esp_timer_get_time();
         display_raw_area(r->x1, r->y1, r->x2, r->y2, d < 0, scroll_move_fill, s);
     } else {                                             // a jump (or no strip): the whole list, then send
-        if (abs(d) >= h) render_rows(s->scr, s->pic, 0, r->y1, r->y2);
+        if (abs(d) >= h) render_rows_reach(s->scr, s->pic, 0, r->y1, r->y2, s->up, s->down);
         else {
             uint8_t *base = s->pic->data + r->x1 * 2;
             uint32_t st = s->pic->header.stride, w = lv_area_get_width(r) * 2;
             if (d > 0) for (int y = r->y1; y <= r->y2 - d; y++) memcpy(base + y * st, base + (y + d) * st, w);
             else for (int y = r->y2; y >= r->y1 - d; y--) memcpy(base + y * st, base + (y + d) * st, w);
             t1 = esp_timer_get_time();
-            render_rows(s->scr, s->pic, 0, d > 0 ? r->y2 - d + 1 : r->y1, d > 0 ? r->y2 : r->y1 - d - 1);
+            render_rows_reach(s->scr, s->pic, 0, d > 0 ? r->y2 - d + 1 : r->y1, d > 0 ? r->y2 : r->y1 - d - 1, s->up, s->down);
         }
         t2 = esp_timer_get_time();
         display_raw_area(r->x1, r->y1, r->x2, r->y2, false, scroll_fill, s->pic);
@@ -834,13 +861,17 @@ static void scroll_step(scroller_t *s, int want)
 
 static void scroll_run(void *unused)
 {
-    scroller_t s = { .scr = lv_screen_active(), .list = scroll.list };
+    // Syllabics in a list only in Inuktitut (lists hold no place or network names): elsewhere Montserrat's smaller
+    // reach, fewer rows rendered a frame (Settings 3.7 ms a frame before October 6, 5.4 with Inuktitut's everywhere)
+    bool syl = i18n_lang() == LANG_IU;
+    scroller_t s = { .scr = lv_screen_active(), .list = scroll.list, .up = syl ? ROW_UP : LATIN_UP,
+                     .down = syl ? ROW_DOWN : LATIN_DOWN };
     lv_display_t *disp = lv_display_get_default();
     int e = find(key_of(s.scr));
     slide_phase = 21;
     if (e < 0 || cache[e].dirty || !lv_obj_is_valid(s.list)) { scroll.queued = false; slide_phase = 0; return; }
     s.pic = cache[e].buf;
-    s.strip = lv_draw_buf_create(DISP_W, 96 + 2 * ROW_MARGIN, LV_COLOR_FORMAT_RGB565, 0);   // 102 KB; NULL: slower path
+    s.strip = lv_draw_buf_create(DISP_W, 96 + 2 * ROW_MARGIN, LV_COLOR_FORMAT_RGB565, 0);   // 112 KB; NULL: slower path
     int64_t t0 = esp_timer_get_time();
     // LVGL lets go of the touch (the row pressed under the finger, its own scroll if it had begun) and draws that now:
     // to the panel and, through flushed(), into the picture

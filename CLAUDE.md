@@ -311,8 +311,24 @@ Windows build gets both from `main/idf_component.yml`. `components/dns_server` *
     all the time, and a plain `malloc` falls back to PSRAM when internal RAM is full (`failed_allocs` stays 0); what
     can fail is what must be internal (task stacks, FreeRTOS objects, DMA, flash reads), served from the 32 KB
     `CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL` pool. (d) A by-catch: OSM's zoom-4 tile `4/5/6.png` near home is a 4-bit
-    PNG that espforge's `png_rows` refuses, so that level is never cached and downloads again at every boot and return
-    home (a task for espforge). Harness: `internal_min_kb.place_switch` (`perf.swipes`, floor 36: 31 on rc.1, 44-45 since).
+    PNG that espforge's `png_rows` refused, so that level was never cached and downloaded again at every boot and
+    return home (espforge v0.2.1-rc.1 decodes 1/2/4-bit PNGs, its LESSONS L190). Harness:
+    `internal_min_kb.place_switch` (`perf.swipes`, floor 36: 31 on rc.1, 39-47 since).
+28. **Lesson 25's margin wasn't the whole fix (v1.14.2-rc.2, October 6):** the harness's Inuktitut `pictest` after a
+    Settings scroll failed one time in four (rc.1 too), always 1-2 rows at the same two places in the list. (a) A
+    list scroll moves the picture and renders only the new rows; the rows just before them were drawn while the next
+    label was still past the list's edge (LVGL clips children to the list, and `lv_draw_label` returns unless the clip
+    meets the label's own box), so without its syllabics' tops, then moved. A **slow drag** (2.5 s: each label comes in
+    a row at a time) made it 6/6, and the snapshot diff showed which glyph (the dot over ᓈ). `scroll_move_fill` now
+    takes the rows next to the new ones from the strip too. (b) How far: computed from the TTFs as TinyTTF places glyphs
+    (rise = `ceil(yMax x fallback scale) + 1 - Montserrat's ascent`): syllabics 9 rows up at 28 px (7 at 20), 3 down;
+    Montserrat alone 4 / 1. Lists use the syllabics' reach in Inuktitut only (Settings scrolls got faster in English:
+    render 3.7 -> 3.2 ms a frame), whole screens always. (c) `render_rows` wrote its outermost margin rows, drawn
+    without the labels past them: it puts them back now. (d) Settings re-set its labels every second (`cfg_tick`):
+    `set_text()` compares first, as 21(f) says; the redraw was the 190-200 ms `swipe_gap_max_ms.scroll_settings`.
+    An intermittent one-row miss: make it deterministic first (slowly, every time), and A/B the old firmware (it had
+    it too). The first guess (the per-second redraw erasing tips) was wrong: the misses were there from the first
+    `pictest` and didn't change across ticks.
 
 - Internal RAM ran out silently (10 KB free, 0 KB min ever) because LVGL's small allocations went to internal RAM
   first. Fixed with `lvgl_mem.c` (LVGL heap in PSRAM). Font kerning cost 71% of render time; fonts now use

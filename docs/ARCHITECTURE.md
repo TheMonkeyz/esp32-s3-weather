@@ -167,10 +167,14 @@ found no single hot spot to fix. Copying finished pictures is cheap: ~8 ms per s
 order, and ~11 ms on the bus.
 
 - **Pictures:** a screen is rendered off-display into a 466×466 RGB565 draw buffer (434 KB, PSRAM through LVGL's
-  heap). `slide_picture_rows()` renders only rows y0..y1, so a picture can be made one strip at a time. `render_rows()`
-  also clears and draws up to 8 rows on each side (`ROW_MARGIN`, as far as the buffer has room): LVGL skips a label
-  whose box misses the rows drawn, and Inuktitut's syllabics (the fallback font, 5/4 larger) reach a few rows past
-  their box, so a strip ending just above a label lost the glyphs' tips (v1.14.1). Painting saves
+  heap). `slide_picture_rows()` renders only rows y0..y1, so a picture can be made one strip at a time. LVGL skips a
+  label whose box misses the rows drawn (`lv_draw_label` returns unless the clip meets the box itself), and glyphs
+  reach past their box: Inuktitut's syllabics (the fallback font, 5/4 larger, placed from Montserrat's baseline) up to
+  9 rows above at 28 px (7 at 20) and 3 below, Montserrat's own glyphs at most 4 / 1 (computed from the TTFs as
+  TinyTTF places them). So `render_rows_reach()` draws up + down rows on each side (`ROW_MARGIN` 12 at most, as far
+  as the buffer has room) and changes only rows y0 - up .. y1 + down: the outermost margin rows are put back as they
+  were, since a label just past them was skipped (v1.14.1 drew 8 and wrote them all; v1.14.2-rc.2). Whole screens use
+  the syllabics' reach in every language (place and network names). Painting saves
   and restores the display's redraw list (`inv_p`) and ignores the invalidations it causes.
 - **Slides** (`slide_screen(to, MOVE_*, ms)`, run on the next LVGL cycle via `lv_async_call`): pictures of both
   screens, then frames sent with `display_raw_frame()`. `fill()` composes each row from the two pictures with a byte
@@ -256,9 +260,14 @@ order, and ~11 ms on the bus.
 - **List scrolls** (`slide_scroll()`, from `drag_read` for a vertical drag on a scrollable object other than the
   weather screen's places and the radar's zoom swipes: `slide_scroll_target()`): LVGL redrew all of a scrolling list
   for every frame (35–50 ms: 17–22 fps). Here each frame moves the list's rows within the picture of the screen shown
-  (which matches the panel, see Cache), has LVGL render only the rows coming into view (into a 102 KB strip buffer, 96 rows and the margins),
+  (which matches the panel, see Cache), has LVGL render only the rows coming into view (into a 112 KB strip buffer, 96 rows and the margins),
   and sends just the list's rectangle (`display_raw_area`); the move and the send are one pass
-  (`scroll_move_fill`), bottom up when the content goes down. LVGL's own scroll position is kept up to date with
+  (`scroll_move_fill`), bottom up when the content goes down. The rows next to the new ones (as far as the text
+  reaches: Inuktitut's 9 before and 3 after, Montserrat's 4 / 1 in English and French; lists hold no names) are
+  taken from the strip too: they were drawn while the next label was still past the list's edge (LVGL clips it to
+  the list), so without its tops, and moving kept them so. In Inuktitut a slow drag left 6-7 rows off every time
+  and a quick flick 1-2 rows one time in four, always at the same two places in Settings (v1.14.2-rc.2; harness
+  `scroll_other_languages` drags slowly too). LVGL's own scroll position is kept up to date with
   `lv_obj_scroll_by()` so it renders those rows right; its redraw requests are dropped at the end (`inv_p` restored:
   the panel and the picture already show the result).
   - **`lv_obj_scroll_to_y()` stops at the ends**: past them (pulled, springing back) the picture moved while the list
@@ -559,8 +568,8 @@ order, and ~11 ms on the bus.
   `cache_load()` reads a map back in 4 KB pieces (~70 ms): a flash read into PSRAM goes through an internal buffer as
   large as the read (up to 16 KB), and read whole it was internal RAM's low point at each return to the first place
   (v1.14.2-rc.2, docs/DIAGNOSTICS.md §5). A level with a tile that fails to decode is not saved: OSM's zoom-4 tile
-  `4/5/6.png` near the first place is a 4-bit PNG that `png_rows` refuses, so that level downloads again at every boot
-  and return to the first place (October 5; an espforge fix).
+  `4/5/6.png` near the first place is a 4-bit PNG that `png_rows` refused until espforge v0.2.1-rc.1, so that level
+  downloaded again at every boot and return to the first place, with a dark square (fixed in v1.14.2-rc.2).
 - **Background preload:** `radar_preload_start()` (called by `main` after Wi-Fi connects) and a change of the first
   place (the only one cached; only once `radar_preload_start()` has run, so never in the browser emulator, which loads
   the zoom shown only) run `preload_all()` in the radar task. It checks each zoom level's cache header and downloads the missing levels

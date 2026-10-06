@@ -169,6 +169,12 @@ static void set_hidden(lv_obj_t *o, bool hide)
     if (hide) lv_obj_add_flag(o, LV_OBJ_FLAG_HIDDEN); else lv_obj_remove_flag(o, LV_OBJ_FLAG_HIDDEN);
 }
 
+// A label's text, only when it changed: lv_label_set_text() redraws the label even with the same text
+static void set_text(lv_obj_t *l, const char *t)
+{
+    if (strcmp(lv_label_get_text(l), t)) lv_label_set_text(l, t);
+}
+
 // Let presses on decorative children reach the screen (long-press, swipe)
 static void passthrough(lv_obj_t *o)
 {
@@ -2377,6 +2383,9 @@ static void cfg_open_state(void)
     lv_obj_scroll_to_y(lv_obj_get_parent(cfg_row[0]), 0, LV_ANIM_OFF);
 }
 
+// Every second while Settings is shown (cfg_tick) and after each change: only what changed is set, a label set to its
+// own text or a row hidden again redrew it each second (a frame 200 ms before a scroll's first, harness
+// swipe_gap_max_ms.scroll_settings 190-200 ms, October 6)
 static void cfg_refresh(void)                      // display lock held
 {
     presence_cfg_t c;
@@ -2389,20 +2398,20 @@ static void cfg_refresh(void)                      // display lock held
     ota_get_status(&o);
     cfg_switch(R_DIM, c.enabled);
     cfg_switch(R_MOTION, presence_motion_wake());
-    if (st.imu_ok) lv_obj_remove_flag(cfg_row[R_MOTION], LV_OBJ_FLAG_HIDDEN);
-    else lv_obj_add_flag(cfg_row[R_MOTION], LV_OBJ_FLAG_HIDDEN);
+    set_hidden(cfg_row[R_MOTION], !st.imu_ok);
     int p = cfg_preset(&c);
-    lv_label_set_text(cfg_val[R_TIMING], tr(p < 0 ? T_T_CUSTOM : cfg_presets[p].name));
-    lv_label_set_text(cfg_val[R_TEMP], u.fahrenheit ? "°F" : "°C");
-    lv_label_set_text(cfg_val[R_WIND], u.wind == WIND_MPH ? "mph" : u.wind == WIND_MS ? "m/s" : "km/h");
-    lv_label_set_text(cfg_val[R_CLOCK], u.h12 ? "12 h" : "24 h");
-    lv_label_set_text(cfg_val[R_LANG], i18n_name(i18n_lang()));   // (Inuktitut: "draft" in its name, i18n.c)
+    set_text(cfg_val[R_TIMING], tr(p < 0 ? T_T_CUSTOM : cfg_presets[p].name));
+    set_text(cfg_val[R_TEMP], u.fahrenheit ? "°F" : "°C");
+    set_text(cfg_val[R_WIND], u.wind == WIND_MPH ? "mph" : u.wind == WIND_MS ? "m/s" : "km/h");
+    set_text(cfg_val[R_CLOCK], u.h12 ? "12 h" : "24 h");
+    set_text(cfg_val[R_LANG], i18n_name(i18n_lang()));   // (Inuktitut: "draft" in its name, i18n.c)
     sound_cfg_t sc;
     sound_get_config(&sc);
     static const tid_t lvl[4] = { T_CHIME_OFF, T_CHIME_RED, T_CHIME_ORANGE, T_CHIME_ALL };
-    lv_label_set_text(cfg_val[R_CHIME], tr(lvl[sc.level & 3]));
-    lv_label_set_text_fmt(cfg_val[R_VOLUME], "%d%%", sc.volume);
+    set_text(cfg_val[R_CHIME], tr(lvl[sc.level & 3]));
     char b[48];
+    snprintf(b, sizeof(b), "%d%%", sc.volume);
+    set_text(cfg_val[R_VOLUME], b);
     bool just_checked = check_tapped && lv_tick_elaps(check_tapped) < 6000;
     if (o.state == OTA_AVAILABLE) snprintf(b, sizeof(b), "%s >", o.latest);             // tap: update screen
     else if (o.state == OTA_CHECKING) snprintf(b, sizeof(b), "%s", tr(T_CHECKING));
@@ -2410,12 +2419,13 @@ static void cfg_refresh(void)                      // display lock held
     else if (just_checked && o.state == OTA_UP_TO_DATE) snprintf(b, sizeof(b), "%s", tr(T_UP_TO_DATE));
     else if (just_checked && o.state == OTA_FAILED) snprintf(b, sizeof(b), "%s", tr(T_FAILED));
     else snprintf(b, sizeof(b), "%s", tr(T_CHECK_NOW));
-    lv_label_set_text(cfg_val[R_UPDATE], b);
+    set_text(cfg_val[R_UPDATE], b);
     bool armed = restart_armed && lv_tick_elaps(restart_armed) < 4000;
-    lv_label_set_text(cfg_val[R_RESTART], armed ? tr(T_TAP_AGAIN) : "");
+    set_text(cfg_val[R_RESTART], armed ? tr(T_TAP_AGAIN) : "");
     if (!lv_obj_has_state(cfg_zone, LV_STATE_PRESSED)) {
-        lv_arc_set_value(cfg_arc, c.bright_pct);
-        lv_label_set_text_fmt(cfg_bright, tr(T_BRIGHTNESS), c.bright_pct);
+        lv_arc_set_value(cfg_arc, c.bright_pct);                   // (returns at once when the value is the same)
+        snprintf(b, sizeof(b), tr(T_BRIGHTNESS), c.bright_pct);
+        set_text(cfg_bright, b);
     }
 }
 

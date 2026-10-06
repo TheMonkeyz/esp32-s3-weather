@@ -187,7 +187,10 @@ def easy_connect_fail_text(ctx):
 def scroll_other_languages(ctx):
     """Settings scrolled in French and Inuktitut: the picture still equals the screen. Inuktitut's syllabics (a
     fallback font drawn 5/4 larger) reach above their label's box, and a strip of rows ending just above a label lost
-    their tips (pictest 1 row off, October 5): slide.c's render_rows draws a margin of rows around each strip."""
+    their tips (pictest 1 row off, October 5): slide.c's render_rows draws a margin of rows around each strip. A slow
+    drag too (2.5 s, ~1 px a frame): rows drawn while the next label was still past the list's edge were moved up
+    without its tops, 6-7 rows off every time in Inuktitut, where the quick flick showed it one time in four (October
+    6); slide.c now takes the rows next to the new ones from the strip as well."""
     b = ctx.board
     was = b.api('/api/config')['units']['lang']
     try:
@@ -205,6 +208,12 @@ def scroll_other_languages(ctx):
             b.cmd('drag 233 130 233 330 300')       # and back to the top
             time.sleep(2.5)
             pictest(ctx, f'Settings scrolled back in {lang}')
+            b.cmd('drag 233 330 233 130 2500', timeout=20)   # slowly: each label comes in a row at a time
+            time.sleep(1.5)
+            pictest(ctx, f'Settings scrolled slowly in {lang}')
+            b.cmd('drag 233 130 233 330 2500', timeout=20)
+            time.sleep(1.5)
+            pictest(ctx, f'Settings scrolled back slowly in {lang}')
             b.cmd('tap 233 45')
             b.wait_screen('weather', 6)
     finally:
