@@ -275,6 +275,11 @@ def hourly_touches(ctx):
              f'{" (handed over by the coasting list)" if handed else " (the list had stopped)"}')
     b.cmd('drag 80 300 400 300 250')
     time.sleep(1)
+    # Tomorrow's list back to the top: perf's render bench draws that page as it was left, and scrolled down (the graph
+    # gone, more rows) it took 46 ms instead of 38 (October 5): render_ms.hourly failed by where a flick had coasted
+    for _ in range(2):
+        b.cmd('drag 233 160 233 420 300')
+        time.sleep(1.2)
     b.cmd('tap 233 233')
     b.wait_screen('weather', 6)
 

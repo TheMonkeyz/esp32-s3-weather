@@ -373,6 +373,9 @@ Pitfalls met while building it:
   data: 30 fps for a 57 fps drag). `drag_fps` (from the first frame) and `drag_start_ms` are the drag alone.
   `drag_start_ms` is checked right after the minute too: the minute tick only marks the places' clock rows,
   rendered at once (in v1.11.0 the harness skipped the check for 6 s after the minute).
+- **The render bench draws tomorrow's hourly page as it was left** (`ui_bench_screens`): with its list scrolled down
+  (the graph gone, more rows) `render_ms.hourly` was 46 ms instead of 38, and full runs failed by where a flick in
+  `hourly_touches` had coasted (42-47 ms, October 5; perf alone ~35-38). `hourly_touches` puts the list back at the top.
 - List scrolls: `scroll_frame_ms` (from slide.c's `scroll:` line: render + move + send per frame) is the number to
   watch; their `swipe_fps` includes the slow end of the flick (less than a pixel per frame). After the drags and
   each list scroll the harness runs `pictest`: the picture of the screen must equal the screen.
