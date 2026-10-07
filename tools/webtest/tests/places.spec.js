@@ -33,6 +33,8 @@ test('add a place by tapping the map suggests its name', async ({ page, request 
   expect(lat).toBeGreaterThan(46.8139);
   expect(lon).toBeGreaterThan(-71.208);
   await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(page.locator('#editor')).toBeHidden();               // the save has been answered
+  await expect(page.locator('#places')).toContainText('Lac-Beauport');
   const s = await state(request);
   expect(s.places[1]).toMatchObject({ name: 'Lac-Beauport' });
   expect(s.places[1].lat).toBeCloseTo(lat, 3);
@@ -48,6 +50,7 @@ test('edit a place: tap it, move the pin, keep its name', async ({ page, request
   await page.mouse.click(box.x + box.width * 0.3, box.y + box.height * 0.7);
   await expect(page.locator('#name')).toHaveValue('Québec');       // a place's own name isn't replaced
   await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(page.locator('#editor')).toBeHidden();               // the save has been answered
   const s = await state(request);
   expect(s.places).toHaveLength(1);
   expect(s.places[0].name).toBe('Québec');
