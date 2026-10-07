@@ -10,6 +10,11 @@ their own `## vX.Y.Z-rc.N` section. Those are shown only to Beta users, while th
 list everything again. (Three tags have no section: v1.3.0-rc.1; and v1.12.0-rc.1 and v1.12.1-rc.2, whose builds failed and were published
 as v1.12.0-rc.2 and v1.12.1-rc.3.)
 
+## v1.14.3 - 2026-10-06
+- The radar's last three hours load faster: the next picture now downloads while the previous one is being prepared, and a lightning map without any lightning is no longer unpacked (14 past pictures in about 5 s instead of 8 on a quiet day).
+- Try it in your browser (on the display's website): the display's settings page now sits below it and changes the screen as on the real display; the brightness shows, the screen can dim when the room is quiet using your computer's or phone's microphone (the sound stays in your browser), moving a phone (or the Pick it up button) wakes it, and Restart works.
+- Behind the scenes: an automatic test now times how long the radar's past pictures take to load.
+
 ## v1.14.3-rc.2 - 2026-10-06
 - Try it in your browser (on the display's website): the display's settings page now sits below it and changes the screen as on the real display; the brightness shows, the screen can dim when the room is quiet using your computer's or phone's microphone (the sound stays in your browser), moving a phone (or the Pick it up button) wakes it, and Restart works.
 
