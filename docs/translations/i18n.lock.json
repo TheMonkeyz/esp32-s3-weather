@@ -1,5 +1,18 @@
 {
  "about": "Written by tools/i18n_check.py --update. For each translated key: a hash of the English text it was translated from (sha256, 12 hex digits). Do not edit by hand.",
+ "guide": {
+  "fr": {
+   "Changing settings later": "9229e01deff3",
+   "Data sources": "facd8199b007",
+   "First-time setup": "617a766df77e",
+   "Install": "99248c70431d",
+   "Languages": "aa24cffdbd4f",
+   "Presence dimming (microphones)": "69a0b59c8b1c",
+   "Updates over Wi-Fi": "4478d760ee29",
+   "Using it": "6712ed42a5e4",
+   "What you need": "54d75ef1ac3f"
+  }
+ },
  "site": {
   "fr": {
    "altExtras": "58e78b028ef0",

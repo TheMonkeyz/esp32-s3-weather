@@ -11,7 +11,7 @@ be released as finished until someone fluent has read [iu-review.md](iu-review.m
 | `iu-review.md` | Generated review sheet: every string with syllabics, romanization, confidence and the reasoning. |
 | `../../tools/i18n_iu.py` | The generator. `skeleton` adds new or changed English strings to the TSV and keeps translations. `build` writes the syllabics into `main/i18n_strings.h` (3rd argument of each `X()` line), `main/web/index.html` and `web/flash/index.html` (the `iu:` block of `I18N`), then rewrites the review sheet. `test` checks the Latin→syllabics converter on known words. |
 | `i18n.lock.json` | For each French and Inuktitut text of the web flasher, a hash of the English it was translated from. Written by `tools/i18n_check.py site --update`; don't edit it. |
-| `../../tools/i18n_check.py` | Sync check (CI runs `site`). `site` fails when a flasher text is missing in French or Inuktitut, unknown, or written in the page outside a translated element (names kept in every language carry `translate="no"`), or when the page's HTML and `I18N.en` disagree; it lists the translations whose English changed since. |
+| `../../tools/i18n_check.py` | Sync check (CI runs `site`). `site` fails when a flasher text is missing in French or Inuktitut, unknown, or written in the page outside a translated element (names kept in every language carry `translate="no"`), or when the page's HTML and `I18N.en` disagree; it lists the translations whose English changed since. `guide` lists the README sections that changed since the French owner's guide (`docs/guide.fr.md`) was last brought up to date; after updating the guide, run `guide --update`. |
 
 Run them with `export PYTHONIOENCODING=utf-8` (the Windows console is cp1252):
 
