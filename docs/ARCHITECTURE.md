@@ -268,7 +268,15 @@ order, and ~11 ms on the bus.
   taken from the strip too: they were drawn while the next label was still past the list's edge (LVGL clips it to
   the list), so without its tops, and moving kept them so. In Inuktitut a slow drag left 6-7 rows off every time
   and a quick flick 1-2 rows one time in four, always at the same two places in Settings (v1.14.2-rc.2; harness
-  `scroll_other_languages` drags slowly too). LVGL's own scroll position is kept up to date with
+  `scroll_other_languages` drags slowly too). The other edge, the one the content moves away from, is the same
+  thing the other way: a label whose box has just gone past it is skipped from then on, while the moved rows still
+  hold what its text reached past the box (a syllabic's top above a label gone out at the bottom, a descender below
+  one gone out at the top). Moving the other way takes those rows from the strip, so only the last move's edge can
+  be left off: `scroll_settle()` renders its rows again once the list has stopped and sends them (6-9 ms, once, in
+  Inuktitut, 2-5 in English and French; not in the per-frame times). Found October 6 on v1.14.3-rc.1: one faint
+  pixel in row 359 (Settings' last) after a scroll back ending at exactly position 16, 3 times in 3, never at 11-15
+  or 17-29 (one harness run in 8).
+  LVGL's own scroll position is kept up to date with
   `lv_obj_scroll_by()` so it renders those rows right; its redraw requests are dropped at the end (`inv_p` restored:
   the panel and the picture already show the result).
   - **`lv_obj_scroll_to_y()` stops at the ends**: past them (pulled, springing back) the picture moved while the list

@@ -332,6 +332,21 @@ Windows build gets both from `main/idf_component.yml`. `components/dns_server` *
     An intermittent one-row miss: make it deterministic first (slowly, every time), and A/B the old firmware (it had
     it too). The first guess (the per-second redraw erasing tips) was wrong: the misses were there from the first
     `pictest` and didn't change across ticks.
+29. **28 fixed the edge labels come in by, not the one they leave by (October 6):** v1.14.3-rc.1 failed
+    `scroll_other_languages` once (1 row, 359, after the slow scroll back in Inuktitut; ~1 run in 8 since 28). Row 359
+    is the Settings list's last (`ui.c`: box at y 70, 290 high). A label whose box has just gone past the edge the
+    content moves away from is skipped by LVGL from then on, but the rows moved within the picture still hold its
+    syllabic's top: one faint pixel (0,4,0). `scroll_settle()` renders that edge's rows again after the last frame
+    (6-9 ms once, in Inuktitut). **The variable was the scroll's end position, not the speed or the history:** 40
+    random slow scrolls and a sweep of scrolls back ending at 6-29 passed; scrolls aimed at exactly 16 (the failed
+    run's end; a probe script corrected the drag length by each miss of the target) missed 3 times in 3, and 0 in 9
+    with the fix. The 1-in-8 rate was the chance that the harness's slow scroll back (ends at ~12-20) landed there.
+    **The browser emulator runs the same `slide.c`:** a throwaway copy of `web/emu` exporting `pictest` and the
+    language, driven by JS through `_emu_touch` (11 px drags held still before the lift: the list moves 1 px, no
+    coast), checked every end position in Inuktitut: old code 29 of 578 scrolls back off (rows 354-359, windows of
+    1-6 positions), 0 of 578 down; fixed 0 and 0. Its layout differs a little from the board's (range 0..578, not
+    0..636). For a miss that depends on where something stops, scan the positions; and when you fix one edge of a
+    moving picture, check the other.
 
 29. **Measure before parallelising** (v1.14.3, October 6): "load the radar frames in parallel" looked like the fix;
     a timing build showed half of each frame was decoding (GeoMet sends only RGBA PNGs: 868 KB to inflate each) on a
