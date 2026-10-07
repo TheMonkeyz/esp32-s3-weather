@@ -208,6 +208,8 @@ npm test
   `t` in `fwShow`) and 13 of its 17 tests fail (checked October 4).
 - Every test saves a full-page screenshot in `tools/webtest/shots/`; the `review:` test saves the Places card (list
   and editor) for design review. Look at them before flashing a page change.
+  Shots go through `reviewShot()` (`tests/fixtures.js`): a
+  screenshot Chromium can't capture is retried once, then only warned about (the test still fails on page errors).
 - Node.js is installed on the PC (`C:\Program Files\nodejs`); in PowerShell put it first in `PATH` if a shell
   started before the install doesn't find `npx`.
 - Don't name a custom fixture option `offline`: it's Playwright's own option and takes the whole browser offline,

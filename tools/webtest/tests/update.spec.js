@@ -1,5 +1,5 @@
 // Firmware card: an offered update with release notes, Install, the download, a language switch meanwhile
-const { test, expect, state } = require('./fixtures');
+const { test, expect, state, reviewShot } = require('./fixtures');
 
 // ota.c's notes: "vX|date" header lines, one line per change, a blank line between releases
 const NOTES = 'v1.12.0|October 3, 2026\nThe Install button shows again.\nRed warnings first.\n\n' +
@@ -19,7 +19,7 @@ test('an offered update shows its notes and the Install button', async ({ page, 
   await expect(notes).toContainText('v1.11.1 · October 2, 2026');
   await expect(notes.locator('li')).toHaveCount(3);
   await expect(page.locator('#msg')).not.toHaveClass('err');           // window.onerror writes page errors there
-  await page.locator('#fwCard').screenshot({ path: 'shots/review_update_card.png' });
+  await reviewShot(page.locator('#fwCard'), 'shots/review_update_card.png');
 });
 
 test('Install asks first, then the display downloads and restarts', async ({ page, request }) => {
@@ -55,7 +55,7 @@ test('switching language while an update is offered', async ({ page, request }) 
   await expect(page.locator('#fwInstall')).toHaveText('Installer v1.12.0');
   await expect(page.locator('#fwNotes div').first()).toHaveText('Nouveautés');
   await expect(page.locator('#msg')).not.toHaveClass('err');
-  await page.locator('#fwCard').screenshot({ path: 'shots/review_update_card_fr.png' });
+  await reviewShot(page.locator('#fwCard'), 'shots/review_update_card_fr.png');
 });
 
 // ---- every state the updater can report (web.c ota_state_name), not only "available" ----
