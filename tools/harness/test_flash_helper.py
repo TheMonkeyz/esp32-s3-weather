@@ -121,6 +121,77 @@ class Reopen(unittest.TestCase):
         self.assertLess(time.time() - t0, 3)
 
 
+class FakeBoard:
+    """A port whose board answers the console's `reboot` with a boot log (answers=True), or ignores it."""
+    BOOT = (b'I (227945) test: ok restarting\r\nESP-ROM:esp32s3-20210327\r\n'
+            b'rst:0xc (RTC_SW_CPU_RST),boot:0x2b (SPI_FAST_FLASH_BOOT)\r\n'
+            b'I (39) boot.esp32s3: SPI Mode       : QIO\r\nI (2969) test: console ready on USB\r\n')
+
+    def __init__(self, answers):
+        self.answers, self.pending, self.written = answers, b'', b''
+
+    def write(self, data):
+        self.written += data
+        if self.answers and data == b'reboot\n':
+            self.pending += self.BOOT
+
+    def read(self, n):
+        out, self.pending = self.pending[:n], self.pending[n:]
+        if not out:
+            time.sleep(0.05)
+        return out
+
+    def close(self):
+        pass
+
+
+@unittest.skipIf(fh is None, 'pyserial missing (run from an ESP-IDF shell)')
+class ConsoleReboot(unittest.TestCase):
+    """reboot.request restarts through the test console, so the boot's first lines are kept (the flash mode, the reset
+    reason: the harness printed "flash ?" after esptool's reset), and falls back to esptool without a console."""
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp()
+        self.old = fh.ROOT, fh.open_port, fh.esptool
+        fh.ROOT = self.root
+        self.esptool_calls = []
+
+        def fake_esptool(args):
+            self.esptool_calls.append(args)
+            return 1, ['A fatal error occurred: no board (test)'], None
+        fh.esptool = fake_esptool
+
+    def tearDown(self):
+        fh.ROOT, fh.open_port, fh.esptool = self.old
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    def read(self, name):
+        with open(os.path.join(self.root, name), encoding='utf-8') as f:
+            return f.read()
+
+    def test_boot_log_kept_from_its_first_line(self):
+        board = FakeBoard(answers=True)
+        fh.open_port = lambda *a, **k: board
+        rc = fh.run_request('reboot', 1, port_opt='COM-test', echo=False)
+        self.assertEqual(rc, 0)
+        self.assertEqual(self.esptool_calls, [], 'esptool reset the board although the console did')
+        self.assertEqual(board.written, b'reboot\n')
+        log = self.read('serial_log.txt')
+        for line in ('ESP-ROM:esp32s3', 'rst:0xc', 'SPI Mode       : QIO', 'console ready'):
+            self.assertIn(line, log)
+        self.assertIn('SPI Mode       : QIO', self.read('serial_live.txt'))
+        self.assertIn(' resets=0 ', self.read('flash.done'), 'the restart asked for counted as an unexpected reset')
+
+    def test_falls_back_to_esptool_without_a_console(self):
+        fh.open_port = lambda *a, **k: FakeBoard(answers=False)
+        t0 = time.time()
+        rc = fh.run_request('reboot', 1, port_opt='COM-test', echo=False)
+        self.assertEqual(len(self.esptool_calls), 1, 'no esptool reset after the console did not restart the board')
+        self.assertIn('chip_id', self.esptool_calls[0])
+        self.assertNotEqual(rc, 0)                     # (the fake esptool fails)
+        self.assertLess(time.time() - t0, 8)
+
+
 @unittest.skipIf(fh is None, 'pyserial missing (run from an ESP-IDF shell)')
 class Requests(unittest.TestCase):
     def setUp(self):

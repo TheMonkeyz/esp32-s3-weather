@@ -233,9 +233,39 @@ def open_port(port, url=False, wait=10.0):
                     port = ports[0][0]
 
 
-def monitor(port, seconds, url=False, echo=True):
+BOOTED = (b'ESP-ROM:', b'rst:0x')                 # the first lines of a boot (ROM banner, reset reason)
+
+
+def console_reboot(port, wait=4.0):
+    """Restart the board with its test console's `reboot` (main/testcon.c), keeping the port open: a software restart
+    leaves the S3's USB connected, so the boot log is kept from its first line. esptool's hard reset re-enumerates the
+    USB, and the ~2.5 s before the port is back are lost (the flash mode, the reset reason; the harness printed
+    "flash ?"). Returns (open port, bytes read since the command), or None when no boot follows (firmware without the
+    console, a hung board): then use esptool."""
+    import serial
+    s = open_port(port, wait=3)
+    if s is None:
+        return None
+    buf, end = b'', time.time() + wait
+    try:
+        s.write(b'reboot\n')
+        while time.time() < end:
+            buf += s.read(4096)
+            if any(m in buf for m in BOOTED):
+                return s, buf
+    except (OSError, serial.SerialException):
+        pass                                        # the USB went away after all: not a console restart
+    try:
+        s.close()
+    except Exception:
+        pass
+    return None
+
+
+def monitor(port, seconds, url=False, echo=True, opened=None):
     """Log the board for `seconds` into serial_live.txt (line by line) and serial_log.txt (at the end); pass each line
-    of serial.send to the board. Returns (lines, stopped_early, error)."""
+    of serial.send to the board. `opened`: (port already open, bytes already read), from console_reboot().
+    Returns (lines, stopped_early, error)."""
     import serial
     remove('serial.send')                           # stale commands from an earlier run
     out = []
@@ -249,15 +279,21 @@ def monitor(port, seconds, url=False, echo=True):
         if echo:
             print(line, flush=True)
 
-    if not url:
-        time.sleep(2)                               # let USB re-enumerate after the reset
-    s = open_port(port, url)
+    if opened:
+        s, buf = opened
+    else:
+        if not url:
+            time.sleep(2)                           # let USB re-enumerate after the reset
+        s, buf = open_port(port, url), b''
     if s is None:
         live.close()
         keys.close()
         write('serial_log.txt', f'Could not open {port}\n')
         return [], False, f'could not open {port}'
-    end, buf, stopped, next_check, reopened = time.time() + seconds, b'', False, 0.0, 0
+    end, stopped, next_check, reopened = time.time() + seconds, False, 0.0, 0
+    *done, buf = buf.split(b'\n')                   # what console_reboot() already read
+    for raw in done:
+        emit(raw.decode('utf-8', errors='replace').rstrip('\r'))
     try:
         while time.time() < end:
             try:
@@ -327,7 +363,13 @@ def run_request(kind, seconds, port_opt=None, echo=True):
     say(f'=== {"Reboot request, no flashing" if kind == "reboot" else "Flash request"} (serial log: {seconds} s) ===')
     write('flash.status', 'flashing\n')
     port = find_port(port_opt)
-    if kind == 'flash':
+    opened = None
+    if kind == 'reboot' and port:
+        opened = console_reboot(port)
+    if opened:
+        rc, lines, used = 0, [], port
+        say('Restarted through the test console (the port stays open: the boot log is kept from its first line)')
+    elif kind == 'flash':
         app = p('firmware/weather_amoled.bin')
         if os.path.exists(app):
             say(f'Firmware: {os.path.getsize(app):,} bytes, built {time.strftime("%H:%M:%S", time.localtime(os.path.getmtime(app)))}')
@@ -354,12 +396,13 @@ def run_request(kind, seconds, port_opt=None, echo=True):
     say(f'{kind.upper()} OK on {port} in {flash_s} s - board is restarting')
     write('flash.status', 'logging\n')
     say(f'Logging serial output for {seconds} s (saved to serial_log.txt). Press q or Esc to stop early ...')
-    log, early, err = monitor(port, seconds, echo=echo)
+    log, early, err = monitor(port, seconds, echo=echo, opened=opened)
     if early:
         say('Serial log stopped early')
     errs = sum(1 for l in log if l.startswith('E ('))
     warns = sum(1 for l in log if l.startswith('W ('))
-    resets = sum(1 for l in log if 'rst:0x' in l)
+    # "resets" are the unexpected ones: not the restart asked for (an esptool reset's own line is never in the log)
+    resets = max(0, sum(1 for l in log if 'rst:0x' in l) - (1 if opened else 0))
     say(f'Serial log saved: {len(log)} lines, {errs} errors, {warns} warnings, {resets} resets' +
         (f' ({err})' if err else ''))
     total = int(time.time() - start)
