@@ -23,7 +23,8 @@
 </p>
 
 <p align="center">
-  🇨🇦 <a href="https://themonkeyz.github.io/esp32-s3-weather/?lang=fr">Outil d'installation en français</a> ·
+  🇨🇦 Français : <a href="docs/guide.fr.md">guide</a> et
+  <a href="https://themonkeyz.github.io/esp32-s3-weather/?lang=fr">outil d'installation</a> ·
   ᐃᓄᒃᑎᑐᑦ: <a href="https://themonkeyz.github.io/esp32-s3-weather/?lang=iu">web flasher in Inuktitut (draft)</a>
 </p>
 
@@ -236,7 +237,8 @@ movement meter). How it works: [Presence dimming (microphones)](#-presence-dimmi
 ## 🌍 Languages
 
 The display and the settings page come in **English**, **French** (Canadian French) and **Inuktitut** (syllabics).
-The [web flasher](https://themonkeyz.github.io/esp32-s3-weather/) page comes in English, French and Inuktitut too.
+The [web flasher](https://themonkeyz.github.io/esp32-s3-weather/) page comes in English, French and Inuktitut too,
+and there's a [French owner's guide](docs/guide.fr.md).
 
 <table align="center">
   <tr>
@@ -536,6 +538,7 @@ docs/ARCHITECTURE.md  how the pieces fit together, memory budget, known issues
 docs/DIAGNOSTICS.md   how to measure memory/CPU/render speed, reference numbers, findings
 docs/TESTING.md       how changes are tested on the board: test builds, flash helper, logs, screenshots
 docs/IDEAS.md         feature ideas / backlog
+docs/guide.fr.md      French owner's guide: this README's owner sections, translated (Canadian French)
 docs/HISTORY.md       how the project grew, how the work is done, lessons and open threads (start here)
 docs/translations/    Inuktitut draft: iu.tsv (the source) and the review sheet
 docs/img/hero.png     the picture at the top of this README (tools/make_hero.js)

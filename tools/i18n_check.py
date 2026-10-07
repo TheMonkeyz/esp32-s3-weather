@@ -26,8 +26,9 @@ them (fr: in the page; iu: the site:* row of docs/translations/iu.tsv, then `pyt
 `guide` reads the README sections named in the guide's first line,
 `<!-- source: README.md @ <commit>; sections: What you need, Install, ... -->`, and lists those whose English changed
 since the guide was last brought up to date (same lock file, one hash per section). A named section missing from the
-README is an error. `--update` records the current sections and writes the current commit into that line, so
-`git diff <commit> -- README.md` shows what changed next time.
+README is an error. `--update` records the current sections and writes the last commit shared with origin/main into
+that line (a branch's own commits vanish in a squash merge), so `git diff <commit> -- README.md` shows what changed
+next time.
 
 Adding another document: write a function that reads its English and translations as {key: text} dicts, pass them to
 compare() with the command's name (its section of the lock file), and add the function to COMMANDS. Standard library
@@ -302,11 +303,15 @@ def check_guide(args, lock, report):
     en = {n: sections[n] for n in names if n in sections}
     print(f'{path}: {len(names)} README sections, translated from {m.group(1)[:7]}')
     compare('guide', en, {'fr': {n: '' for n in en}}, lock, report, update=args.update)
+    known = subprocess.run(['git', 'cat-file', '-e', m.group(1) + '^{commit}'], cwd=ROOT,
+                           capture_output=True).returncode == 0
     if report.stale and not args.update:
-        report.stale.append(f'see what changed: git diff {m.group(1)[:7]} -- README.md')
+        report.stale.append(f'see what changed: git diff {m.group(1)[:7]} -- README.md' if known else
+                            f'{m.group(1)[:7]} is not in this repository (a branch commit lost to a squash merge?): '
+                            f'compare with git log -p -- README.md')
     if args.update and not report.errors:
-        try:
-            head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
+        try:   # the last commit on main: a branch commit disappears when the pull request is squash-merged
+            head = subprocess.check_output(['git', 'merge-base', 'HEAD', 'origin/main'], cwd=ROOT, text=True).strip()
         except Exception:
             return
         line = m.group(0).replace(m.group(1), head)
