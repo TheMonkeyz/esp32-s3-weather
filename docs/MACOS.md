@@ -237,9 +237,12 @@ change it on purpose, but say what changes.
 2. **DTR/RTS when the port opens.** The helper opens with DTR and RTS low, as ESP-IDF's monitor does. If the board
    resets every time the log starts, or stays in `waiting for download`, that's it. Compare with
    `idf.py -p <port> monitor` (it works on macOS).
-3. **The first seconds of log after a reset** are missed (2 s pause, then the port reopens). The harness waits for
-   `test: console ready|ota: Running ` (30 s), which comes later. If it times out, look at what
-   `serial_live.txt` does contain.
+3. **The first seconds of log after a reset.** A restart request (`reboot.request`, the harness's start) goes through
+   the test console's `reboot` with the port kept open, so the boot log is whole from `ESP-ROM` on (checked on the
+   board, Windows, October 6). After a **flash**, esptool's reset re-enumerates the USB and the first ~2.5 s are lost;
+   the harness then prints `flash ?` instead of `flash QIO` (harmless: QIO limits apply). If a restart request falls
+   back to esptool (`flash_helper.log` lacks "Restarted through the test console"), the console didn't answer: a hung
+   board, or firmware without it.
 4. **Local Network permission** (macOS 15+): HTTPS to the display (snapshots, harness API) fails from an app that
    wasn't allowed. `curl -sk https://<ip>/api/config` from her terminal tells.
 5. **Performance limits.** `baseline.json` came from the owner's board. Hers is the same model, so they should hold.
