@@ -22,6 +22,11 @@
   <a href="docs">Docs</a>
 </p>
 
+<p align="center">
+  🇨🇦 <a href="https://themonkeyz.github.io/esp32-s3-weather/?lang=fr">Outil d'installation en français</a> ·
+  ᐃᓄᒃᑎᑐᑦ: <a href="https://themonkeyz.github.io/esp32-s3-weather/?lang=iu">web flasher in Inuktitut (draft)</a>
+</p>
+
 <table align="center">
   <tr>
     <td align="center"><img src="web/flash/img/weather.png" width="200" alt="Weather screen: clock, city, 15° and clear sky, feels-like, humidity and wind, and a 3-day forecast"><br><a href="#weather-screen"><b>Weather</b></a><br><sub>Now, the next 2 h and 3 days</sub></td>
@@ -231,6 +236,7 @@ movement meter). How it works: [Presence dimming (microphones)](#-presence-dimmi
 ## 🌍 Languages
 
 The display and the settings page come in **English**, **French** (Canadian French) and **Inuktitut** (syllabics).
+The [web flasher](https://themonkeyz.github.io/esp32-s3-weather/) page comes in English, French and Inuktitut too.
 
 <table align="center">
   <tr>

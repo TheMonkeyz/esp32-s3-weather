@@ -22,6 +22,9 @@
   --font:"Montserrat",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   --syl:"Montserrat",Gadugi,"Euphemia UCAS",Euphemia,"Noto Sans Canadian Aboriginal",system-ui,sans-serif;
   color-scheme:dark}
+/* Montserrat has no syllabics: Inuktitut text uses the system's syllabics font (Windows, Apple, Android/Linux) */
+html[lang|=iu]{--font:var(--syl)}
+[lang|=iu]{font-family:var(--syl)}
 *{box-sizing:border-box}
 html{font-synthesis-weight:none;-webkit-text-size-adjust:100%}
 body{margin:0;background:var(--bg);color:var(--body);font:500 16px/1.6 var(--font);overflow-x:hidden}
@@ -49,6 +52,17 @@ kbd{font:inherit;font-size:13px;color:var(--text);background:#1a222c;border:1px 
 .top a.gh{display:inline-flex;align-items:center;gap:8px;font-size:14px;color:var(--dim);text-decoration:none;white-space:nowrap;
   padding:6px 12px;border:1px solid var(--line2);border-radius:999px}
 .top a.gh:hover{color:var(--text);border-color:#3c4a5b}
+
+/* language picker: each language in its own name */
+.lang-switch{display:flex;gap:2px;margin-left:auto;padding:3px;background:#06090d;border:1px solid var(--line);border-radius:999px}
+.lang-switch a{padding:4px 12px;border-radius:999px;color:var(--dim);font-size:14px;line-height:1.5;text-align:center;
+  text-decoration:none;white-space:nowrap}
+.lang-switch a:hover{color:var(--text)}
+.lang-switch a[aria-current=true]{background:#13243a;color:var(--text);box-shadow:inset 0 0 0 1px rgba(90,176,255,.55)}
+.lang-switch a:focus-visible{border-radius:999px}
+.iu-note{margin-top:-8px;margin-bottom:0;font-size:13.5px;line-height:1.5;color:var(--dim)}
+.iu-note .draft{margin:0 4px 0 0}
+#iuNote:not([hidden])~main .hero::before{top:-170px}  /* the glow still reaches the top of the page */
 
 /* hero */
 .hero{position:relative;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,440px);gap:64px;align-items:center;
@@ -104,10 +118,10 @@ h1{font-size:clamp(40px,6.2vw,64px);line-height:1.05;letter-spacing:-.025em;marg
   border:1px solid var(--line);border-radius:14px}
 .channels label{position:relative;cursor:pointer;min-width:0}
 .channels input{position:absolute;opacity:0;width:1px;height:1px;margin:0;pointer-events:none}
-.channels span{display:flex;flex-wrap:wrap;align-items:center;column-gap:8px;padding:10px 14px;border-radius:10px;
+.channels input+span{display:flex;flex-wrap:wrap;align-items:center;column-gap:8px;padding:10px 14px;border-radius:10px;
   color:var(--dim);font-size:15px;border:1px solid transparent;transition:background-color .2s,border-color .2s,color .2s}
-.channels span::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--ok)}
-.channels label+label span::before{background:var(--sun)}
+.channels input+span::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--ok)}
+.channels label+label input+span::before{background:var(--sun)}
 .channels small{flex-basis:100%;font-size:12.5px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
   padding-left:16px}
 .channels label:hover input:not(:disabled)+span{color:var(--text)}
@@ -146,6 +160,7 @@ esp-web-install-button:not(:defined) [slot=unsupported],esp-web-install-button:n
 .notes h2{font-size:26px;letter-spacing:-.01em;overflow-wrap:anywhere}
 .notes h2 .eyebrow{margin-bottom:6px}
 .notes-meta{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;margin-top:12px;font-size:14px;color:var(--dim)}
+.notes-lang{flex-basis:100%;font-size:13px}
 .pill{display:inline-block;font-size:12px;letter-spacing:.06em;text-transform:uppercase;padding:3px 10px;border-radius:999px;
   color:#8ee0a6;background:#0f2418;border:1px solid #1d4a2e}
 .pill.beta{color:#ffd36b;background:#2a2208;border-color:#5a4610}
@@ -178,9 +193,9 @@ esp-web-install-button:not(:defined) [slot=unsupported],esp-web-install-button:n
 .timeline p{margin:0}
 .timeline p+p{margin-top:8px}
 .erase{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
-.erase span{display:inline-flex;align-items:center;gap:9px;font-size:13.5px;padding:6px 12px 6px 8px;border-radius:10px;
+.erase>span{display:inline-flex;align-items:center;gap:9px;font-size:13.5px;padding:6px 12px 6px 8px;border-radius:10px;
   background:#0a0e13;border:1px solid var(--line2);color:var(--dim)}
-.erase span b{color:var(--text)}
+.erase b{color:var(--text)}
 .box{position:relative;width:16px;height:16px;border-radius:4px;border:1.5px solid #5b6878;flex:none}
 .box.on{background:var(--accent);border-color:var(--accent)}
 .box.on::after{content:"";position:absolute;left:4.5px;top:1px;width:4px;height:8px;border:solid #03101d;
@@ -224,12 +239,11 @@ esp-web-install-button:not(:defined) [slot=unsupported],esp-web-install-button:n
 .lang img{transition:opacity .35s ease,box-shadow .4s ease}
 .lang img.loading{opacity:.25}
 .lang.missing img{visibility:hidden}
-.lang.missing .pic::after{content:"Picture not available";position:absolute;inset:0;display:grid;place-items:center;
+.lang.missing .pic::after{content:attr(data-missing);position:absolute;inset:0;display:grid;place-items:center;
   border-radius:50%;color:var(--dim);font-size:14px;background:#06090d;
   box-shadow:0 0 0 7px #0d1218,0 0 0 8px #252f3b}
 .lang figcaption{font-size:20px;color:var(--text)}
 .lang figcaption small{display:block;font-size:13px;color:var(--dim);margin-top:2px}
-.lang [lang|=iu]{font-family:var(--syl)}
 .draft{display:inline-block;margin-left:6px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#ffd36b;
   border:1px solid #5a4610;background:#2a2208;border-radius:999px;padding:1px 8px;vertical-align:2px}
 .lang-note{margin:32px 0 0;color:var(--dim);font-size:15px;max-width:52em}
@@ -256,15 +270,23 @@ footer p{max-width:62em}
 @media (max-width:720px){
   .notes{grid-template-columns:1fr;padding:22px 20px}
   .uses{grid-template-columns:1fr}
+  .top .long{display:none}
+}
+@media (max-width:680px){
+  .top{flex-wrap:wrap;row-gap:12px}
+  .lang-switch{order:3;flex-basis:100%;display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}
+  .lang-switch a{padding:6px 4px}
+  .iu-note{margin-top:0}
 }
 @media (max-width:600px){
   .wrap{padding:0 16px}
   .top{padding-top:14px;padding-bottom:6px}
+  .iu-note{padding-top:8px}
   .hero{padding-bottom:24px}
   .device{max-width:300px}
   .lead{font-size:17px}
   .install{padding:20px 16px 16px}
-  .channels span{padding:9px 10px}
+  .channels input+span{padding:9px 10px}
   .section{margin-top:72px}
   .section-head{margin-bottom:28px}
   .card{padding:22px 18px}
@@ -283,7 +305,6 @@ footer p{max-width:62em}
     padding-left:16px;padding-right:16px;scrollbar-width:none}
   .langs::-webkit-scrollbar{display:none}
   .langs>li{flex:0 0 70%;scroll-snap-align:center}
-  .top .long{display:none}
   .uses li{padding:16px}
   footer.wrap{margin-top:80px}
 }
@@ -294,111 +315,119 @@ footer p{max-width:62em}
 </head>
 <body>
 <header class="wrap top">
-  <a class="brand" href="#top">Weather Display</a>
+  <a class="brand" href="#top" data-i18n="brand">Weather Display</a>
+  <nav class="lang-switch" id="langSwitch" aria-label="Language" data-i18n-aria="langLabel">
+    <a href="?lang=en" hreflang="en" lang="en" data-lang="en" translate="no" aria-current="true">English</a>
+    <a href="?lang=fr" hreflang="fr" lang="fr" data-lang="fr" translate="no">Français</a>
+    <a href="?lang=iu" hreflang="iu" lang="iu-Cans" data-lang="iu" translate="no">ᐃᓄᒃᑎᑐᑦ</a>
+  </nav>
   <a class="gh" href="https://github.com/TheMonkeyz/esp32-s3-weather">
     <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 19c-4 1.3-4-2-6-2.5M15 21v-3.5c0-1 .1-1.4-.5-2 2.8-.3 5.5-1.4 5.5-6a4.6 4.6 0 0 0-1.3-3.2 4.2 4.2 0 0 0-.1-3.2s-1-.3-3.4 1.3a11.6 11.6 0 0 0-6 0C6.8 2.8 5.8 3.1 5.8 3.1a4.2 4.2 0 0 0-.1 3.2A4.6 4.6 0 0 0 4.4 9.5c0 4.6 2.7 5.7 5.5 6-.6.6-.6 1.2-.5 2V21"/></svg>
-    <span><span class="long">Source on </span>GitHub</span></a>
+    <span data-i18n-html="ghLink"><span class="long">Source on </span>GitHub</span></a>
 </header>
+<p class="wrap iu-note" id="iuNote" hidden><span class="draft" data-i18n="draft">Draft</span>
+  <span data-i18n-html="iuNote">The Inuktitut text is a first draft that a fluent speaker hasn't reviewed yet. <a href="https://github.com/TheMonkeyz/esp32-s3-weather/tree/main/docs/translations">Help review it</a>.</span></p>
 
 <main id="top">
   <section class="wrap hero">
     <div class="hero-text">
-      <span class="eyebrow">For the Waveshare <span class="nw">ESP32-S3-Touch-AMOLED-1.75</span></span>
-      <h1>Weather Display</h1>
-      <p class="lead">Current weather, a 3-day and hourly forecast, and an animated rain radar on a round AMOLED screen.
+      <span class="eyebrow" data-i18n-html="eyebrow">For the Waveshare <span class="nw">ESP32-S3-Touch-AMOLED-1.75</span></span>
+      <h1 data-i18n="brand">Weather Display</h1>
+      <p class="lead" data-i18n="lead">Current weather, a 3-day and hourly forecast, and an animated rain radar on a round AMOLED screen.
         Install it straight from this page.</p>
       <ul class="chips">
-        <li>No API keys</li>
-        <li>Updates over Wi-Fi</li>
-        <li>English, French, Inuktitut</li>
+        <li data-i18n="chipKeys">No API keys</li>
+        <li data-i18n="chipOta">Updates over Wi-Fi</li>
+        <li data-i18n="chipLangs">English, French, Inuktitut</li>
       </ul>
 
       <section class="install" id="install" aria-labelledby="installTitle">
         <h2 id="installTitle"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>
-          Install the firmware</h2>
-        <div class="channels" role="radiogroup" aria-label="Firmware channel">
-          <label><input type="radio" name="ch" value="stable" checked><span>Stable<small id="verStable">…</small></span></label>
-          <label><input type="radio" name="ch" value="beta" disabled><span>Beta<small id="verBeta">none right now</small></span></label>
+          <span data-i18n="installTitle">Install the firmware</span></h2>
+        <div class="channels" role="radiogroup" aria-label="Firmware channel" data-i18n-aria="chLabel">
+          <label><input type="radio" name="ch" value="stable" checked><span><span data-i18n="chStable">Stable</span><small id="verStable">…</small></span></label>
+          <label><input type="radio" name="ch" value="beta" disabled><span><span data-i18n="chBeta">Beta</span><small id="verBeta" data-i18n="verNone">none right now</small></span></label>
         </div>
-        <div class="ver" id="ver">Loading version…</div>
-        <div class="beta-warn" id="betaWarn">Beta builds are release candidates for testing the next version and may have
+        <div class="ver" id="ver" data-i18n="verLoading">Loading version…</div>
+        <div class="beta-warn" id="betaWarn" data-i18n-html="betaWarn">Beta builds are release candidates for testing the next version and may have
           bugs. You can go back to Stable at any time the same way (leave <i>Erase device</i> unticked).</div>
         <esp-web-install-button id="installBtn" manifest="stable/manifest.json">
           <button slot="activate"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 2v5M15 2v5M6 7h12v3a6 6 0 0 1-12 0zM12 16v6"/></svg>
-            Connect &amp; install</button>
-          <span slot="unsupported" class="esp-msg">Your browser can't talk to USB devices. Use <b>Chrome</b> or <b>Edge</b> on a computer.</span>
-          <span slot="not-allowed" class="esp-msg">This page must be opened over HTTPS (or on localhost) to flash.</span>
+            <span data-i18n="installBtn">Connect &amp; install</span></button>
+          <span slot="unsupported" class="esp-msg" data-i18n-html="unsupported">Your browser can't talk to USB devices. Use <b>Chrome</b> or <b>Edge</b> on a computer.</span>
+          <span slot="not-allowed" class="esp-msg" data-i18n="notAllowed">This page must be opened over HTTPS (or on localhost) to flash.</span>
         </esp-web-install-button>
-        <p class="req"><span>Chrome or Edge on a computer</span><span>USB-C data cable</span><span><a href="#steps">See the steps</a></span></p>
+        <p class="req"><span data-i18n="reqBrowser">Chrome or Edge on a computer</span><span data-i18n="reqCable">USB-C data cable</span><span><a href="#steps" data-i18n="reqSteps">See the steps</a></span></p>
       </section>
     </div>
 
     <div class="device-wrap">
-      <div class="device" id="device" role="img" aria-label="The round display, showing its weather, hourly, radar and extras screens in turn">
+      <div class="device" id="device" role="img" aria-label="The round display, showing its weather, hourly, radar and extras screens in turn" data-i18n-aria="deviceAria">
         <div class="bezel"><div class="screen">
-          <img class="on" src="img/weather.png" width="466" height="466" alt="" data-name="Weather" data-glow="rgba(255,200,61,.30)">
-          <img src="img/hourly.png" width="466" height="466" alt="" decoding="async" data-name="Hourly" data-glow="rgba(90,176,255,.32)">
-          <img src="img/radar.png" width="466" height="466" alt="" decoding="async" data-name="Radar" data-glow="rgba(90,200,140,.26)">
-          <img src="img/extras.png" width="466" height="466" alt="" decoding="async" data-name="Extras" data-glow="rgba(255,170,60,.28)">
+          <img class="on" src="img/weather.png" width="466" height="466" alt="" data-shot="weather" data-key="scrWeather" data-glow="rgba(255,200,61,.30)">
+          <img src="img/hourly.png" width="466" height="466" alt="" decoding="async" data-shot="hourly" data-key="scrHourly" data-glow="rgba(90,176,255,.32)">
+          <img src="img/radar.png" width="466" height="466" alt="" decoding="async" data-shot="radar" data-key="scrRadar" data-glow="rgba(90,200,140,.26)">
+          <img src="img/extras.png" width="466" height="466" alt="" decoding="async" data-shot="extras" data-key="scrExtras" data-glow="rgba(255,170,60,.28)">
         </div></div>
       </div>
       <div class="device-nav">
-        <span class="shot-name" id="shotName">Weather</span>
-        <div class="dots" id="dots" role="group" aria-label="Show a screen">
-          <button type="button" aria-pressed="true" aria-label="Weather screen"></button>
-          <button type="button" aria-pressed="false" aria-label="Hourly view"></button>
-          <button type="button" aria-pressed="false" aria-label="Radar screen"></button>
-          <button type="button" aria-pressed="false" aria-label="Extras screen"></button>
+        <span class="shot-name" id="shotName" data-i18n="scrWeather">Weather</span>
+        <div class="dots" id="dots" role="group" aria-label="Show a screen" data-i18n-aria="dotsLabel">
+          <button type="button" aria-pressed="true" aria-label="Weather screen" data-i18n-aria="dotWeather"></button>
+          <button type="button" aria-pressed="false" aria-label="Hourly view" data-i18n-aria="dotHourly"></button>
+          <button type="button" aria-pressed="false" aria-label="Radar screen" data-i18n-aria="dotRadar"></button>
+          <button type="button" aria-pressed="false" aria-label="Extras screen" data-i18n-aria="dotExtras"></button>
         </div>
       </div>
       <a class="try" id="tryLink" href="try/" hidden><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
-        Try it in your browser</a>
+        <span data-i18n="tryIt">Try it in your browser</span></a>
     </div>
   </section>
 
   <div class="wrap">
     <section class="notes" id="notes" aria-labelledby="notesTitle" hidden>
       <div>
-        <h2 id="notesTitle"><span class="eyebrow">What's new in</span> <span id="notesVer"></span></h2>
-        <p class="notes-meta"><span class="pill" id="notesChan"></span><time id="notesDate"></time></p>
+        <h2 id="notesTitle"><span class="eyebrow" data-i18n="notesIn">What's new in</span> <span id="notesVer"></span></h2>
+        <p class="notes-meta"><span class="pill" id="notesChan"></span><time id="notesDate"></time>
+          <span class="notes-lang" id="notesLang" data-i18n="notesLang" hidden>Release notes are in English only.</span></p>
       </div>
-      <ul id="notesList"></ul>
+      <ul id="notesList" lang="en"></ul>
     </section>
 
     <section class="section" id="steps" aria-labelledby="stepsTitle">
       <div class="section-head">
-        <h2 id="stepsTitle">Install in five steps</h2>
+        <h2 id="stepsTitle" data-i18n="stepsTitle">Install in five steps</h2>
       </div>
       <div class="steps-grid">
         <ol class="timeline" role="list">
-          <li><h3>Plug it in</h3>
-            <p>Plug the board into this computer with a USB-C <b>data</b> cable.</p></li>
-          <li><h3>Connect</h3>
-            <p>Click <b>Connect &amp; install</b> and pick the port named <i>USB JTAG/serial debug unit</i> (or the COM port
+          <li><h3 data-i18n="step1T">Plug it in</h3>
+            <p data-i18n-html="step1">Plug the board into this computer with a USB-C <b>data</b> cable.</p></li>
+          <li><h3 data-i18n="step2T">Connect</h3>
+            <p data-i18n-html="step2">Click <b>Connect &amp; install</b> and pick the port named <i>USB JTAG/serial debug unit</i> (or the COM port
               that appears when you plug it in).</p></li>
-          <li><h3>Erase, or keep your settings</h3>
-            <p>First install: tick <b>Erase device</b>. Updating: leave it unticked to keep your <span class="nw">Wi-Fi</span> and settings.</p>
+          <li><h3 data-i18n="step3T">Erase, or keep your settings</h3>
+            <p data-i18n-html="step3">First install: tick <b>Erase device</b>. Updating: leave it unticked to keep your <span class="nw">Wi-Fi</span> and settings.</p>
             <div class="erase" aria-hidden="true">
-              <span><i class="box on"></i><b>Erase device</b> first install</span>
-              <span><i class="box"></i><b>Erase device</b> update</span>
+              <span><i class="box on"></i><b translate="no">Erase device</b> <span data-i18n="eraseFirst">first install</span></span>
+              <span><i class="box"></i><b translate="no">Erase device</b> <span data-i18n="eraseUpd">update</span></span>
             </div></li>
-          <li><h3>Join your Wi-Fi</h3>
-            <p>When it's done the display restarts and shows a <b class="nw">Wi-Fi setup</b> QR code. Scan it with your phone: it joins
+          <li><h3 data-i18n="step4T">Join your Wi-Fi</h3>
+            <p data-i18n-html="step4">When it's done the display restarts and shows a <b class="nw">Wi-Fi setup</b> QR code. Scan it with your phone: it joins
               the display's <i class="nw">Weather-Setup</i> network and the setup page opens by itself. Pick your home <span class="nw">Wi-Fi.</span></p>
-            <p><b class="nw">Android 10+:</b> nothing to type. Swipe the setup screen left to its <b class="nw">Easy Connect</b> code
+            <p data-i18n-html="step4b"><b class="nw">Android 10+:</b> nothing to type. Swipe the setup screen left to its <b class="nw">Easy Connect</b> code
               and scan it with the phone (the camera or any QR scanner) while the phone is on your <span class="nw">Wi-Fi.</span> The phone sends
               the network and its password.</p></li>
-          <li><h3>Set your location</h3>
-            <p>Later, long-press the weather screen, tap <b>More on your phone</b> and scan the settings QR code.</p></li>
+          <li><h3 data-i18n="step5T">Set your location</h3>
+            <p data-i18n-html="step5">Later, long-press the weather screen, tap <b>More on your phone</b> and scan the settings QR code.</p></li>
         </ol>
         <aside class="card trouble" aria-labelledby="troubleTitle">
           <h3 id="troubleTitle"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2 20h20L12 3zM12 10v4M12 17.2v.1"/></svg>
-            If it doesn't connect</h3>
+            <span data-i18n="troubleTitle">If it doesn't connect</span></h3>
           <ul>
-            <li>No port listed: try another cable or USB port; some cables only charge.</li>
-            <li>Still nothing: hold <kbd>BOOT</kbd>, tap <kbd>RESET</kbd>, release <kbd>BOOT</kbd>, then try again.</li>
-            <li>Close other programs using the port (serial monitors, the flash helper).</li>
-            <li>After flashing in BOOT mode, tap <kbd>RESET</kbd> once to start the firmware.</li>
+            <li data-i18n="trouble1">No port listed: try another cable or USB port; some cables only charge.</li>
+            <li data-i18n-html="trouble2">Still nothing: hold <kbd>BOOT</kbd>, tap <kbd>RESET</kbd>, release <kbd>BOOT</kbd>, then try again.</li>
+            <li data-i18n-html="trouble3">Close other programs using the port (serial monitors, the flash helper).</li>
+            <li data-i18n-html="trouble4">After flashing in BOOT mode, tap <kbd>RESET</kbd> once to start the firmware.</li>
           </ul>
         </aside>
       </div>
@@ -406,116 +435,118 @@ footer p{max-width:62em}
 
     <section class="section" id="screens" aria-labelledby="screensTitle">
       <div class="section-head">
-        <h2 id="screensTitle">What it shows</h2>
-        <p>Screenshots from the display itself.</p>
+        <h2 id="screensTitle" data-i18n="screensTitle">What it shows</h2>
+        <p data-i18n="screensSub">Screenshots from the display itself.</p>
       </div>
+      <!-- Each picture is img/<screen>.png in English, img/<screen>-fr.png / -iu.png in French / Inuktitut
+           (the English one while a translated picture is missing). -->
       <ul class="gallery" role="list">
         <li class="shot">
-          <img src="img/weather.png" width="466" height="466" loading="lazy" decoding="async"
+          <img src="img/weather.png" width="466" height="466" loading="lazy" decoding="async" data-shot="weather" data-i18n-alt="altWeather"
             alt="Weather screen: 18:13 in Quebec, 15 degrees and clear sky, with the forecast for today, Saturday and Sunday">
-          <div><span class="tag">Main screen</span><h3>Forecast and places</h3>
-            <p>Time, temperature and conditions, rain or snow starting or stopping within 2 hours, and 3 days ahead.
+          <div><span class="tag" data-i18n="tagWeather">Main screen</span><h3 data-i18n="h3Weather">Forecast and places</h3>
+            <p data-i18n="pWeather">Time, temperature and conditions, rain or snow starting or stopping within 2 hours, and 3 days ahead.
               Up to 4 places: drag up or down to switch. Environment Canada alerts show in place of the city.</p></div>
         </li>
         <li class="shot">
-          <img src="img/hourly.png" width="466" height="466" loading="lazy" decoding="async"
+          <img src="img/hourly.png" width="466" height="466" loading="lazy" decoding="async" data-shot="hourly" data-i18n-alt="altHourly"
             alt="Hourly view for Friday: a temperature graph from 0 to 24 h, then one row per hour with temperature, chance of rain and wind">
-          <div><span class="tag">Tap a day</span><h3>Hourly view</h3>
-            <p>7 days, each with a temperature graph and one row per hour: temperature, chance of rain and wind.
+          <div><span class="tag" data-i18n="tagHourly">Tap a day</span><h3 data-i18n="h3Hourly">Hourly view</h3>
+            <p data-i18n="pHourly">7 days, each with a temperature graph and one row per hour: temperature, chance of rain and wind.
               Drag sideways to change day.</p></div>
         </li>
         <li class="shot">
-          <img src="img/radar.png" width="466" height="466" loading="lazy" decoding="async"
+          <img src="img/radar.png" width="466" height="466" loading="lazy" decoding="async" data-shot="radar" data-i18n-alt="altRadar"
             alt="Radar screen: rain over a map of the Quebec City area, with a 100 km ring and the radar time">
-          <div><span class="tag">Swipe left</span><h3>Rain radar with lightning</h3>
-            <p>Environment Canada radar on an OpenStreetMap map, with lightning from the last 10 minutes. Tap to play the
+          <div><span class="tag" data-i18n="tagRadar">Swipe left</span><h3 data-i18n="h3Radar">Rain radar with lightning</h3>
+            <p data-i18n="pRadar">Environment Canada radar on an OpenStreetMap map, with lightning from the last 10 minutes. Tap to play the
               last 3 hours; swipe down or up to zoom.</p></div>
         </li>
         <li class="shot">
-          <img src="img/extras.png" width="466" height="466" loading="lazy" decoding="async"
+          <img src="img/extras.png" width="466" height="466" loading="lazy" decoding="async" data-shot="extras" data-i18n-alt="altExtras"
             alt="Extras screen: the sun's arc from 06:45 to 18:22, UV index low, moon in last quarter 61% lit, air quality good">
-          <div><span class="tag">Swipe right</span><h3>Sun, UV, moon and air</h3>
-            <p>The sun's arc from sunrise to sunset, the UV index now and today's high, the moon phase, and the air
+          <div><span class="tag" data-i18n="tagExtras">Swipe right</span><h3 data-i18n="h3Extras">Sun, UV, moon and air</h3>
+            <p data-i18n="pExtras">The sun's arc from sunrise to sunset, the UV index now and today's high, the moon phase, and the air
               quality.</p></div>
         </li>
         <li class="shot">
-          <img src="img/status.png" width="466" height="466" loading="lazy" decoding="async"
+          <img src="img/status.png" width="466" height="466" loading="lazy" decoding="async" data-shot="status" data-i18n-alt="altStatus"
             alt="Status page: firmware version, Wi-Fi signal and a list of online services, each with a green dot and its response time">
-          <div><span class="tag">Swipe right twice</span><h3>Status page</h3>
-            <p>Firmware version, <span class="nw">Wi-Fi</span> signal, and every online service the display uses: when it last answered, and how
+          <div><span class="tag" data-i18n="tagStatus">Swipe right twice</span><h3 data-i18n="h3Status">Status page</h3>
+            <p data-i18n-html="pStatus">Firmware version, <span class="nw">Wi-Fi</span> signal, and every online service the display uses: when it last answered, and how
               fast.</p></div>
         </li>
         <li class="shot">
-          <img src="img/settings.png" width="466" height="466" loading="lazy" decoding="async"
+          <img src="img/settings.png" width="466" height="466" loading="lazy" decoding="async" data-shot="settings" data-i18n-alt="altSettings"
             alt="Settings screen: dim when quiet and wake on pick-up switched on, timing Short, temperature in °C, brightness 83%">
-          <div><span class="tag">Long-press</span><h3>Settings on the display</h3>
-            <p>Dimming, wake on pick-up, brightness, units and language. Location and places are set on your phone,
+          <div><span class="tag" data-i18n="tagSettings">Long-press</span><h3 data-i18n="h3Settings">Settings on the display</h3>
+            <p data-i18n="pSettings">Dimming, wake on pick-up, brightness, units and language. Location and places are set on your phone,
               from a QR code.</p></div>
         </li>
       </ul>
       <p class="note" id="radarNote"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><path d="M12 12l6.4-6.4"/></svg>
-        <span>The rain radar uses Environment Canada data, so it covers Canada and the northern US border region.</span></p>
+        <span data-i18n="radarNote">The rain radar uses Environment Canada data, so it covers Canada and the northern US border region.</span></p>
     </section>
 
     <section class="section" id="languages" aria-labelledby="langTitle">
       <div class="section-head">
-        <h2 id="langTitle">In three languages</h2>
-        <p>The display and its phone settings page speak English, French or Inuktitut.</p>
+        <h2 id="langTitle" data-i18n="langTitle">In three languages</h2>
+        <p data-i18n="langSub">The display and its phone settings page speak English, French or Inuktitut.</p>
       </div>
       <div class="lang-tools">
-        <div class="seg" id="langPick" role="group" aria-label="Screen to compare">
-          <button type="button" aria-pressed="true" data-screen="weather">Weather</button>
-          <button type="button" aria-pressed="false" data-screen="extras">Extras</button>
-          <button type="button" aria-pressed="false" data-screen="settings">Settings</button>
+        <div class="seg" id="langPick" role="group" aria-label="Screen to compare" data-i18n-aria="langPickLabel">
+          <button type="button" aria-pressed="true" data-screen="weather" data-i18n="scrWeather">Weather</button>
+          <button type="button" aria-pressed="false" data-screen="extras" data-i18n="scrExtras">Extras</button>
+          <button type="button" aria-pressed="false" data-screen="settings" data-i18n="scrSettings">Settings</button>
         </div>
       </div>
       <ul class="langs" role="list">
         <li><figure class="lang">
-          <div class="pic"><img src="img/weather-en.png" width="466" height="466" loading="lazy" decoding="async"
-            data-suffix="-en" data-lang="English" alt="The weather screen in English"></div>
-          <figcaption lang="en">English</figcaption>
+          <div class="pic" data-missing="Picture not available"><img src="img/weather-en.png" width="466" height="466" loading="lazy" decoding="async"
+            data-suffix="-en" data-lname="lnEn" alt="The weather screen in English"></div>
+          <figcaption lang="en" translate="no">English</figcaption>
         </figure></li>
         <li><figure class="lang">
-          <div class="pic"><img src="img/weather-fr.png" width="466" height="466" loading="lazy" decoding="async"
-            data-suffix="-fr" data-lang="French" alt="The weather screen in French"></div>
-          <figcaption><span lang="fr">Français</span><small>French (Canada)</small></figcaption>
+          <div class="pic" data-missing="Picture not available"><img src="img/weather-fr.png" width="466" height="466" loading="lazy" decoding="async"
+            data-suffix="-fr" data-lname="lnFr" alt="The weather screen in French"></div>
+          <figcaption><span lang="fr" translate="no">Français</span><small data-i18n="capFr">French (Canada)</small></figcaption>
         </figure></li>
         <li><figure class="lang">
-          <div class="pic"><img src="img/weather-iu.png" width="466" height="466" loading="lazy" decoding="async"
-            data-suffix="-iu" data-lang="Inuktitut" alt="The weather screen in Inuktitut syllabics"></div>
-          <figcaption><span lang="iu-Cans">ᐃᓄᒃᑎᑐᑦ</span><small>Inuktitut <span class="draft">Draft</span></small></figcaption>
+          <div class="pic" data-missing="Picture not available"><img src="img/weather-iu.png" width="466" height="466" loading="lazy" decoding="async"
+            data-suffix="-iu" data-lname="lnIu" alt="The weather screen in Inuktitut syllabics"></div>
+          <figcaption><span lang="iu-Cans" translate="no">ᐃᓄᒃᑎᑐᑦ</span><small><span data-i18n="capIu">Inuktitut</span> <span class="draft" data-i18n="draft">Draft</span></small></figcaption>
         </figure></li>
       </ul>
-      <p class="lang-note">Switch the language in the <b>Language</b> row of the display's Settings screen (long-press the
+      <p class="lang-note" data-i18n-html="langNote">Switch the language in the <b>Language</b> row of the display's Settings screen (long-press the
         weather screen), or in the Units card of the phone settings page. The Inuktitut text is a first draft that a
-        fluent speaker hasn't reviewed yet.</p>
+        fluent speaker hasn't reviewed yet: <a href="https://github.com/TheMonkeyz/esp32-s3-weather/tree/main/docs/translations">corrections are welcome</a>.</p>
     </section>
 
     <section class="section" id="using" aria-labelledby="usingTitle">
       <div class="section-head">
-        <h2 id="usingTitle">Using it</h2>
+        <h2 id="usingTitle" data-i18n="usingTitle">Using it</h2>
       </div>
       <ul class="uses" role="list">
         <li><span class="ic"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="2.5"/><circle cx="12" cy="12" r="7" opacity=".5"/></svg></span>
-          <p>Tap a forecast day for its hourly view; drag sideways for other days.</p></li>
+          <p data-i18n="use1">Tap a forecast day for its hourly view; drag sideways for other days.</p></li>
         <li><span class="ic"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12H5M10 7l-5 5 5 5"/><circle cx="20" cy="12" r="1.2"/></svg></span>
-          <p>Swipe left for the radar; tap to animate the last 3 hours, swipe down or up to zoom.</p></li>
+          <p data-i18n="use2">Swipe left for the radar; tap to animate the last 3 hours, swipe down or up to zoom.</p></li>
         <li><span class="ic"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="2"/><circle cx="12" cy="12" r="5.5"/><circle cx="12" cy="12" r="9.5" stroke-dasharray="2.5 3"/></svg></span>
-          <p>Long-press for Settings: screen dimming, units, <span class="nw">Wi-Fi,</span> and the QR code for the phone page (location).</p></li>
+          <p data-i18n-html="use3">Long-press for Settings: screen dimming, units, <span class="nw">Wi-Fi,</span> and the QR code for the phone page (location).</p></li>
         <li><span class="ic"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg></span>
-          <p>The microphones dim the screen when the room is quiet and wake it on sustained sound.</p></li>
+          <p data-i18n="use4">The microphones dim the screen when the room is quiet and wake it on sustained sound.</p></li>
       </ul>
     </section>
   </div>
 </main>
 
 <footer class="wrap">
-  <p>Source code, releases and documentation:
+  <p data-i18n-html="foot1">Source code, releases and documentation:
     <a href="https://github.com/TheMonkeyz/esp32-s3-weather">github.com/TheMonkeyz/esp32-s3-weather</a>.
     Downloads for other tools: <a href="https://github.com/TheMonkeyz/esp32-s3-weather/releases">releases</a>.</p>
-  <p>Weather: Open-Meteo. Radar: Environment and Climate Change Canada (GeoMet). Map © OpenStreetMap contributors.
+  <p data-i18n="foot2">Weather: Open-Meteo. Radar: Environment and Climate Change Canada (GeoMet). Map © OpenStreetMap contributors.
     Flashing by ESP Web Tools.</p>
-  <p>Firmware © 2026 Laurent Mathieu, <a href="https://github.com/TheMonkeyz/esp32-s3-weather/blob/main/LICENSE">MIT license</a>
+  <p data-i18n-html="foot3">Firmware © 2026 Laurent Mathieu, <a href="https://github.com/TheMonkeyz/esp32-s3-weather/blob/main/LICENSE">MIT license</a>
     (<a href="https://github.com/TheMonkeyz/esp32-s3-weather/blob/main/THIRD_PARTY_NOTICES.md">third-party notices</a>).
     Set in Montserrat, the display's font (<a href="fonts/montserrat-OFL.txt">SIL Open Font License</a>).</p>
 </footer>
@@ -523,36 +554,337 @@ footer p{max-width:62em}
 <script>
 const $ = id => document.getElementById(id);
 
+// Texts in English, Canadian French (Québec usage) and Inuktitut (a draft). The English is also written in the
+// HTML (for a first paint without scripts); tools/i18n_check.py site checks that both agree, that fr and iu have
+// every key, and lists translations whose English changed since (docs/translations/i18n.lock.json).
+// Static elements carry data-i18n (text), data-i18n-html (trusted markup from this table), data-i18n-aria
+// (aria-label) or data-i18n-alt (alt); scripts call t('key', args...) ({0}, {1}...). A missing key shows the English.
+// The iu block is generated: edit the site:* rows of docs/translations/iu.tsv, then run tools/i18n_iu.py build.
+const I18N = {
+ en: {
+  pageTitle: 'Weather Display – Web Flasher',
+  pageDesc: 'Install the weather display firmware on a Waveshare ESP32-S3-Touch-AMOLED-1.75 from your browser.',
+  brand: 'Weather Display', langLabel: 'Language', ghLink: '<span class="long">Source on </span>GitHub', draft: 'Draft',
+  iuNote: 'The Inuktitut text is a first draft that a fluent speaker hasn\'t reviewed yet. <a href="https://github.com/TheMonkeyz/esp32-s3-weather/tree/main/docs/translations">Help review it</a>.',
+  eyebrow: 'For the Waveshare <span class="nw">ESP32-S3-Touch-AMOLED-1.75</span>',
+  lead: 'Current weather, a 3-day and hourly forecast, and an animated rain radar on a round AMOLED screen. Install it straight from this page.',
+  chipKeys: 'No API keys', chipOta: 'Updates over Wi-Fi', chipLangs: 'English, French, Inuktitut',
+  installTitle: 'Install the firmware', chLabel: 'Firmware channel', chStable: 'Stable', chBeta: 'Beta',
+  verNone: 'none right now', verLoading: 'Loading version…', verFw: 'Firmware {0}', verBuilt: 'built {0}',
+  verFail: 'Firmware version unavailable',
+  betaWarn: 'Beta builds are release candidates for testing the next version and may have bugs. You can go back to Stable at any time the same way (leave <i>Erase device</i> unticked).',
+  installBtn: 'Connect & install', tryIt: 'Try it in your browser',
+  unsupported: "Your browser can't talk to USB devices. Use <b>Chrome</b> or <b>Edge</b> on a computer.",
+  notAllowed: 'This page must be opened over HTTPS (or on localhost) to flash.',
+  reqBrowser: 'Chrome or Edge on a computer', reqCable: 'USB-C data cable', reqSteps: 'See the steps',
+  deviceAria: 'The round display, showing its weather, hourly, radar and extras screens in turn',
+  dotsLabel: 'Show a screen', scrWeather: 'Weather', scrHourly: 'Hourly', scrRadar: 'Radar', scrExtras: 'Extras',
+  scrSettings: 'Settings', dotWeather: 'Weather screen', dotHourly: 'Hourly view', dotRadar: 'Radar screen',
+  dotExtras: 'Extras screen',
+  notesIn: "What's new in", notesLang: 'Release notes are in English only.',
+  months: 'January February March April May June July August September October November December', dateFmt: '{1} {0}, {2}',
+  stepsTitle: 'Install in five steps',
+  step1T: 'Plug it in', step1: 'Plug the board into this computer with a USB-C <b>data</b> cable.',
+  step2T: 'Connect',
+  step2: 'Click <b>Connect &amp; install</b> and pick the port named <i>USB JTAG/serial debug unit</i> (or the COM port that appears when you plug it in).',
+  step3T: 'Erase, or keep your settings',
+  step3: 'First install: tick <b>Erase device</b>. Updating: leave it unticked to keep your <span class="nw">Wi-Fi</span> and settings.',
+  eraseFirst: 'first install', eraseUpd: 'update',
+  step4T: 'Join your Wi-Fi',
+  step4: 'When it\'s done the display restarts and shows a <b class="nw">Wi-Fi setup</b> QR code. Scan it with your phone: it joins the display\'s <i class="nw">Weather-Setup</i> network and the setup page opens by itself. Pick your home <span class="nw">Wi-Fi.</span>',
+  step4b: '<b class="nw">Android 10+:</b> nothing to type. Swipe the setup screen left to its <b class="nw">Easy Connect</b> code and scan it with the phone (the camera or any QR scanner) while the phone is on your <span class="nw">Wi-Fi.</span> The phone sends the network and its password.',
+  step5T: 'Set your location',
+  step5: 'Later, long-press the weather screen, tap <b>More on your phone</b> and scan the settings QR code.',
+  troubleTitle: "If it doesn't connect",
+  trouble1: 'No port listed: try another cable or USB port; some cables only charge.',
+  trouble2: 'Still nothing: hold <kbd>BOOT</kbd>, tap <kbd>RESET</kbd>, release <kbd>BOOT</kbd>, then try again.',
+  trouble3: 'Close other programs using the port (serial monitors, the flash helper).',
+  trouble4: 'After flashing in BOOT mode, tap <kbd>RESET</kbd> once to start the firmware.',
+  screensTitle: 'What it shows', screensSub: 'Screenshots from the display itself.',
+  altWeather: 'Weather screen: 18:13 in Quebec, 15 degrees and clear sky, with the forecast for today, Saturday and Sunday',
+  tagWeather: 'Main screen', h3Weather: 'Forecast and places',
+  pWeather: 'Time, temperature and conditions, rain or snow starting or stopping within 2 hours, and 3 days ahead. Up to 4 places: drag up or down to switch. Environment Canada alerts show in place of the city.',
+  altHourly: 'Hourly view for Friday: a temperature graph from 0 to 24 h, then one row per hour with temperature, chance of rain and wind',
+  tagHourly: 'Tap a day', h3Hourly: 'Hourly view',
+  pHourly: '7 days, each with a temperature graph and one row per hour: temperature, chance of rain and wind. Drag sideways to change day.',
+  altRadar: 'Radar screen: rain over a map of the Quebec City area, with a 100 km ring and the radar time',
+  tagRadar: 'Swipe left', h3Radar: 'Rain radar with lightning',
+  pRadar: 'Environment Canada radar on an OpenStreetMap map, with lightning from the last 10 minutes. Tap to play the last 3 hours; swipe down or up to zoom.',
+  altExtras: "Extras screen: the sun's arc from 06:45 to 18:22, UV index low, moon in last quarter 61% lit, air quality good",
+  tagExtras: 'Swipe right', h3Extras: 'Sun, UV, moon and air',
+  pExtras: "The sun's arc from sunrise to sunset, the UV index now and today's high, the moon phase, and the air quality.",
+  altStatus: 'Status page: firmware version, Wi-Fi signal and a list of online services, each with a green dot and its response time',
+  tagStatus: 'Swipe right twice', h3Status: 'Status page',
+  pStatus: 'Firmware version, <span class="nw">Wi-Fi</span> signal, and every online service the display uses: when it last answered, and how fast.',
+  altSettings: 'Settings screen: dim when quiet and wake on pick-up switched on, timing Short, temperature in °C, brightness 83%',
+  tagSettings: 'Long-press', h3Settings: 'Settings on the display',
+  pSettings: 'Dimming, wake on pick-up, brightness, units and language. Location and places are set on your phone, from a QR code.',
+  radarNote: 'The rain radar uses Environment Canada data, so it covers Canada and the northern US border region.',
+  langTitle: 'In three languages',
+  langSub: 'The display and its phone settings page speak English, French or Inuktitut.',
+  langPickLabel: 'Screen to compare', capFr: 'French (Canada)', capIu: 'Inuktitut', picMissing: 'Picture not available',
+  langAltWeather: 'The weather screen in {0}', langAltExtras: 'The extras screen in {0}',
+  langAltSettings: 'The Settings screen in {0}', lnEn: 'English', lnFr: 'French', lnIu: 'Inuktitut syllabics',
+  langNote: 'Switch the language in the <b>Language</b> row of the display\'s Settings screen (long-press the weather screen), or in the Units card of the phone settings page. The Inuktitut text is a first draft that a fluent speaker hasn\'t reviewed yet: <a href="https://github.com/TheMonkeyz/esp32-s3-weather/tree/main/docs/translations">corrections are welcome</a>.',
+  usingTitle: 'Using it',
+  use1: 'Tap a forecast day for its hourly view; drag sideways for other days.',
+  use2: 'Swipe left for the radar; tap to animate the last 3 hours, swipe down or up to zoom.',
+  use3: 'Long-press for Settings: screen dimming, units, <span class="nw">Wi-Fi,</span> and the QR code for the phone page (location).',
+  use4: 'The microphones dim the screen when the room is quiet and wake it on sustained sound.',
+  foot1: 'Source code, releases and documentation: <a href="https://github.com/TheMonkeyz/esp32-s3-weather">github.com/TheMonkeyz/esp32-s3-weather</a>. Downloads for other tools: <a href="https://github.com/TheMonkeyz/esp32-s3-weather/releases">releases</a>.',
+  foot2: 'Weather: Open-Meteo. Radar: Environment and Climate Change Canada (GeoMet). Map © OpenStreetMap contributors. Flashing by ESP Web Tools.',
+  foot3: 'Firmware © 2026 Laurent Mathieu, <a href="https://github.com/TheMonkeyz/esp32-s3-weather/blob/main/LICENSE">MIT license</a> (<a href="https://github.com/TheMonkeyz/esp32-s3-weather/blob/main/THIRD_PARTY_NOTICES.md">third-party notices</a>). Set in Montserrat, the display\'s font (<a href="fonts/montserrat-OFL.txt">SIL Open Font License</a>).',
+ },
+ fr: {
+  pageTitle: "Afficheur météo – Outil d'installation Web",
+  pageDesc: "Installez le micrologiciel de l'afficheur météo sur un afficheur Waveshare ESP32-S3-Touch-AMOLED-1.75 à partir de votre navigateur.",
+  brand: 'Afficheur météo', langLabel: 'Langue', ghLink: '<span class="long">Code source sur </span>GitHub', draft: 'Ébauche',
+  iuNote: 'Le texte en inuktitut est une première ébauche, pas encore révisée par une personne qui parle couramment la langue. <a href="https://github.com/TheMonkeyz/esp32-s3-weather/tree/main/docs/translations">Aidez-nous à la réviser</a>.',
+  eyebrow: 'Pour l\'afficheur Waveshare <span class="nw">ESP32-S3-Touch-AMOLED-1.75</span>',
+  lead: "La météo actuelle, les prévisions sur 3 jours et heure par heure, et un radar météo animé, sur un écran AMOLED rond. Le tout s'installe directement à partir de cette page.",
+  chipKeys: "Aucune clé d'API", chipOta: 'Mises à jour par Wi-Fi', chipLangs: 'Anglais, français, inuktitut',
+  installTitle: 'Installer le micrologiciel', chLabel: 'Version à installer', chStable: 'Stable', chBeta: 'Bêta',
+  verNone: "aucune pour l'instant", verLoading: 'Chargement de la version…', verFw: 'Micrologiciel {0}', verBuilt: 'compilé le {0}',
+  verFail: 'Version du micrologiciel non disponible',
+  betaWarn: 'Les versions bêta sont des versions candidates qui servent à essayer la prochaine version; elles peuvent contenir des bogues. Vous pouvez revenir à la version stable en tout temps de la même façon (laissez la case <i lang="en">Erase device</i> décochée).',
+  installBtn: 'Connecter et installer', tryIt: 'Essayer dans le navigateur',
+  unsupported: 'Votre navigateur ne peut pas communiquer avec les appareils USB. Utilisez <b>Chrome</b> ou <b>Edge</b> sur un ordinateur.',
+  notAllowed: 'Pour installer, cette page doit être ouverte en HTTPS (ou sur localhost).',
+  reqBrowser: 'Chrome ou Edge sur un ordinateur', reqCable: 'Câble de données USB-C', reqSteps: 'Voir les étapes',
+  deviceAria: "L'afficheur rond, qui montre tour à tour ses écrans Météo, Vue horaire, Radar et Extras",
+  dotsLabel: 'Afficher un écran', scrWeather: 'Météo', scrHourly: 'Vue horaire', scrRadar: 'Radar',
+  scrExtras: 'Extras', scrSettings: 'Réglages', dotWeather: 'Écran météo', dotHourly: 'Vue horaire',
+  dotRadar: 'Écran radar', dotExtras: 'Écran Extras',
+  notesIn: 'Nouveautés de la version', notesLang: 'Notes de version en anglais seulement.',
+  months: 'janvier février mars avril mai juin juillet août septembre octobre novembre décembre', dateFmt: '{0} {1} {2}',
+  stepsTitle: 'Installation en cinq étapes',
+  step1T: "Branchez l'afficheur", step1: 'Branchez l\'afficheur à cet ordinateur avec un câble USB-C de <b>données</b>.',
+  step2T: 'Établissez la connexion',
+  step2: 'Cliquez sur <b>Connecter et installer</b> et choisissez le port nommé <i lang="en">USB JTAG/serial debug unit</i> (ou le port COM qui apparaît quand vous branchez l\'afficheur). La fenêtre d\'installation (ESP Web Tools) est en anglais.',
+  step3T: 'Effacez ou gardez vos réglages',
+  step3: 'Première installation : cochez <b lang="en">Erase device</b> (effacer l\'appareil). Mise à jour : laissez la case décochée pour garder votre <span class="nw">Wi-Fi</span> et vos réglages.',
+  eraseFirst: 'première installation', eraseUpd: 'mise à jour',
+  step4T: "Reliez l'afficheur au Wi-Fi",
+  step4: 'Une fois l\'installation terminée, l\'afficheur redémarre et montre l\'écran <b class="nw">Configuration Wi-Fi</b> et son code QR. Balayez le code avec votre téléphone : il se connecte au réseau <i class="nw">Weather-Setup</i> de l\'afficheur et la page de configuration s\'ouvre automatiquement. Choisissez le <span class="nw">Wi-Fi</span> de la maison.',
+  step4b: '<b class="nw">Android 10+ :</b> rien à taper. Glissez l\'écran de configuration vers la gauche jusqu\'au code <b class="nw">Easy Connect</b> et balayez-le avec le téléphone (la caméra ou un lecteur QR) pendant qu\'il est connecté à votre <span class="nw">Wi-Fi</span>. Le téléphone envoie le réseau et son mot de passe.',
+  step5T: 'Indiquez votre endroit',
+  step5: "Ensuite, appuyez longuement sur l'écran météo, touchez <b>Réglages sur téléphone</b> et balayez le code QR des réglages.",
+  troubleTitle: 'Si la connexion échoue',
+  trouble1: 'Aucun port dans la liste : essayez un autre câble ou un autre port USB; certains câbles servent seulement à la recharge.',
+  trouble2: 'Toujours rien : maintenez <kbd>BOOT</kbd> enfoncé, appuyez sur <kbd>RESET</kbd>, relâchez <kbd>BOOT</kbd>, puis réessayez.',
+  trouble3: 'Fermez les autres programmes qui utilisent le port (moniteurs série, <i lang="en">flash helper</i>).',
+  trouble4: 'Après une installation en mode BOOT, appuyez une fois sur <kbd>RESET</kbd> pour démarrer le micrologiciel.',
+  screensTitle: "Ce que montre l'afficheur", screensSub: "Captures d'écran de l'afficheur lui-même.",
+  altWeather: "Écran météo : 19 h 12 à Québec, 13 degrés et ciel dégagé, avec les prévisions pour aujourd'hui, samedi et dimanche",
+  tagWeather: 'Écran principal', h3Weather: 'Prévisions et endroits',
+  pWeather: "L'heure, la température et les conditions actuelles, la pluie ou la neige qui commence ou cesse dans les 2 prochaines heures, et les 3 prochains jours. Jusqu'à 4 endroits : glissez vers le haut ou le bas pour changer d'endroit. Les alertes d'Environnement Canada s'affichent à la place du nom de la ville.",
+  altHourly: 'Vue horaire du vendredi : un graphique de la température de 0 h à 24 h, puis une ligne par heure avec la température, la probabilité de pluie et le vent',
+  tagHourly: 'Touchez un jour', h3Hourly: 'Vue horaire',
+  pHourly: '7 jours, chacun avec un graphique de la température et une ligne par heure : température, probabilité de pluie et vent. Glissez de côté pour changer de jour.',
+  altRadar: "Écran radar : de la pluie sur une carte de la région de Québec, avec un cercle de 100 km et l'heure du radar",
+  tagRadar: 'Glissez à gauche', h3Radar: 'Radar météo et foudre',
+  pRadar: "Le radar d'Environnement Canada sur une carte OpenStreetMap, avec la foudre des 10 dernières minutes. Touchez pour animer les 3 dernières heures; glissez vers le bas ou le haut pour zoomer.",
+  altExtras: "Écran Extras : la course du soleil de 6 h 45 à 18 h 22, indice UV faible, lune au dernier quartier éclairée à 61 %, qualité de l'air bonne",
+  tagExtras: 'Glissez à droite', h3Extras: 'Soleil, UV, lune et air',
+  pExtras: "La course du soleil du lever au coucher, l'indice UV actuel et le maximum du jour, la phase de la lune et la qualité de l'air.",
+  altStatus: "Page d'état : version du micrologiciel, signal Wi-Fi et liste des services en ligne, chacun avec un point vert et son temps de réponse",
+  tagStatus: 'Glissez deux fois à droite', h3Status: "Page d'état",
+  pStatus: 'La version du micrologiciel, le signal <span class="nw">Wi-Fi</span> et chaque service en ligne qu\'utilise l\'afficheur : sa dernière réponse et sa rapidité.',
+  altSettings: 'Écran Réglages : « Tamiser si calme » et « Réveil si soulevé » activés, délais courts, température en °C, luminosité 83 %',
+  tagSettings: 'Appuyez longuement', h3Settings: "Réglages sur l'afficheur",
+  pSettings: 'Tamisage, réveil si soulevé, luminosité, unités et langue. La position et les endroits se règlent sur votre téléphone, à partir d\'un code QR.',
+  radarNote: "Le radar utilise les données d'Environnement Canada : il couvre donc le Canada et la région frontalière du nord des États-Unis.",
+  langTitle: 'En trois langues',
+  langSub: "L'afficheur et sa page de réglages sur téléphone sont offerts en anglais, en français ou en inuktitut.",
+  langPickLabel: 'Écran à comparer', capFr: 'Canada', capIu: 'Inuktitut', picMissing: 'Image non disponible',
+  langAltWeather: "L'écran météo en {0}", langAltExtras: "L'écran Extras en {0}",
+  langAltSettings: "L'écran Réglages en {0}", lnEn: 'anglais', lnFr: 'français', lnIu: 'inuktitut (écriture syllabique)',
+  langNote: 'Changez de langue à la ligne <b>Langue</b> de l\'écran Réglages de l\'afficheur (appuyez longuement sur l\'écran météo) ou dans la section <b>Unités</b> de la page de réglages sur téléphone. Le texte en inuktitut est une première ébauche, pas encore révisée par une personne qui parle couramment la langue : <a href="https://github.com/TheMonkeyz/esp32-s3-weather/tree/main/docs/translations">les corrections sont les bienvenues</a>.',
+  usingTitle: 'Utilisation',
+  use1: 'Touchez un jour des prévisions pour ouvrir sa vue horaire; glissez de côté pour voir les autres jours.',
+  use2: 'Glissez à gauche pour le radar; touchez pour animer les 3 dernières heures, glissez vers le bas ou le haut pour zoomer.',
+  use3: 'Appuyez longuement pour les réglages : tamisage de l\'écran, unités, <span class="nw">Wi-Fi</span> et le code QR de la page sur téléphone (position).',
+  use4: 'Les micros tamisent l\'écran quand la pièce est calme et le rallument quand le bruit se prolonge.',
+  foot1: 'Code source, versions et documentation : <a href="https://github.com/TheMonkeyz/esp32-s3-weather">github.com/TheMonkeyz/esp32-s3-weather</a>. Fichiers pour d\'autres outils : <a href="https://github.com/TheMonkeyz/esp32-s3-weather/releases">versions publiées</a>.',
+  foot2: "Météo : Open-Meteo. Radar : Environnement et Changement climatique Canada (GeoMet). Carte © les contributeurs d'OpenStreetMap. Installation par ESP Web Tools.",
+  foot3: 'Micrologiciel © 2026 Laurent Mathieu, <a href="https://github.com/TheMonkeyz/esp32-s3-weather/blob/main/LICENSE">licence MIT</a> (<a href="https://github.com/TheMonkeyz/esp32-s3-weather/blob/main/THIRD_PARTY_NOTICES.md">licences des composants tiers</a>). Texte en Montserrat, la police de l\'afficheur (<a href="fonts/montserrat-OFL.txt">SIL Open Font License</a>).',
+ },
+ iu: {
+  pageTitle: 'ᓯᓚᒧᑦ ᓴᖅᑭᔭᐅᑦ – ᐃᓕᓕ',
+  pageDesc: 'ᓯᓚᒧᑦ ᓴᖅᑭᔭᐅᑦ: Waveshare ESP32-S3-Touch-AMOLED-1.75-ᒧᑦ ᐃᓕᓕ ᒫᓂ.',
+  brand: 'ᓯᓚᒧᑦ ᓴᖅᑭᔭᐅᑦ',
+  langLabel: 'ᐅᖃᐅᓯᖅ',
+  ghLink: '<span class="long">ᐱᓕᕆᔾᔪᑎᑦ </span>GitHub',
+  draft: 'ᐃᓱᓕᙱᑦᑐᖅ',
+  iuNote: 'ᐃᓄᒃᑎᑐᑦ ᓱᓕ ᖃᐅᔨᒋᐊᖅᑕᐅᙱᑦᑐᖅ. <a href="https://github.com/TheMonkeyz/esp32-s3-weather/tree/main/docs/translations">ᐃᑲᔪᕐᓕ</a>.',
+  eyebrow: 'Waveshare <span class="nw">ESP32-S3-Touch-AMOLED-1.75-ᒧᑦ</span>',
+  lead: 'ᓯᓚ ᒫᓐᓇ, 3 ᐅᓪᓗᐃᑦ ᐃᑲᕐᕌᓪᓗ, Radar-ᓗ. ᐃᒐᓚᐅᔭᖅ ᐊᖕᒪᓗᖅᑐᖅ. ᒫᓂ ᐃᓕᓕ.',
+  chipKeys: 'API ᐃᓯᕈᑦ ᐱᔭᕆᐊᖃᙱᑦᑐᖅ',
+  chipOta: 'ᓄᑖᕈᕆᐊᕐᓃᑦ Wi-Fi-ᒃᑯᑦ',
+  chipLangs: 'ᖃᓪᓗᓈᑎᑐᑦ, ᐅᐃᕕᑎᑐᑦ, ᐃᓄᒃᑎᑐᑦ',
+  installTitle: 'ᖃᕋᓴᐅᔭᐅᑉ ᐱᓕᕆᔾᔪᑎᖓ ᐃᓕᓕ',
+  chLabel: 'ᓄᑖᕈᕆᐊᕐᓃᑦ',
+  chStable: 'ᐊᐅᓚᔾᔪᐃᑦᑐᖅ',
+  chBeta: 'Beta',
+  verNone: 'ᐱᖃᙱᑦᑐᖅ',
+  verLoading: 'ᐅᑕᖅᑭᕆᑦᓯ…',
+  verFw: 'ᖃᕋᓴᐅᔭᐅᑉ ᐱᓕᕆᔾᔪᑎᖓ {0}',
+  verBuilt: 'ᓴᓇᔭᐅᔪᖅ {0}',
+  verFail: 'ᖃᕋᓴᐅᔭᐅᑉ ᐱᓕᕆᔾᔪᑎᖓ ᐊᑐᐃᓐᓇᐅᙱᑦᑐᖅ',
+  betaWarn: 'Beta: ᐆᒃᑑᑦ. ᑕᒻᒪᕐᓂᖃᖅᓯᓐᓇᖅᑐᖅ. ᐊᐅᓚᔾᔪᐃᑦᑐᒧᑦ ᐅᑎᕈᓐᓇᖅᑐᑎᑦ: <i>Erase device</i> ᓇᕿᓐᓇᒍ.',
+  installBtn: 'ᑲᓱᕐᓕ ᐊᒻᒪᓗ ᐃᓕᓕ',
+  tryIt: 'ᒫᓂ ᐆᒃᑐᕐᓕ',
+  unsupported: 'USB ᑲᓱᕈᓐᓇᙱᑦᑐᖅ. <b>Chrome</b> ᐅᕝᕙᓘᓐᓃᑦ <b>Edge</b> ᖃᕋᓴᐅᔭᒥ ᐱᔭᕆᐊᖃᖅᑐᖅ.',
+  notAllowed: 'ᒪᑉᐱᒐᖅ HTTPS-ᒃᑯᑦ ᒪᑐᐃᕐᑕᐅᔭᕆᐊᖃᖅᑐᖅ (ᐅᕝᕙᓘᓐᓃᑦ localhost).',
+  reqBrowser: 'Chrome ᐅᕝᕙᓘᓐᓃᑦ Edge, ᖃᕋᓴᐅᔭᒥ',
+  reqCable: 'USB-C ᐊᒃᓗᓈᖅ',
+  reqSteps: 'ᒪᓕᒃᑕᒃᓴᑦ',
+  deviceAria: 'ᓴᖅᑭᔭᐅᑦ: ᓯᓚ, ᐃᑲᕐᕌᑦ, Radar, ᓯᕿᓂᖅ ᑕᖅᑭᕐᓗ',
+  dotsLabel: 'ᐃᒐᓚᐅᔭᖅ ᓴᖅᑭᓪᓕ',
+  scrWeather: 'ᓯᓚ',
+  scrHourly: 'ᐃᑲᕐᕌᑦ',
+  scrRadar: 'Radar',
+  scrExtras: 'ᓯᕿᓂᖅ ᑕᖅᑭᕐᓗ',
+  scrSettings: 'ᐋᖅᑭᔅᓯᒪᐅᑎᑦ',
+  dotWeather: 'ᓯᓚᐅᑉ ᐃᒐᓚᐅᔮ',
+  dotHourly: 'ᐃᑲᕐᕌᑦ',
+  dotRadar: 'Radar',
+  dotExtras: 'ᓯᕿᓂᖅ ᑕᖅᑭᕐᓗ',
+  notesIn: 'ᓄᑖᑦ',
+  notesLang: 'ᖃᓪᓗᓈᑎᑐᑦ ᑭᓯᐊᓂ.',
+  months: 'ᔮᓐᓄᐊᕆ ᕖᕝᕗᐊᕆ ᒫᑦᓯ ᐄᐳᕆ ᒪᐃ ᔫᓂ ᔪᓚᐃ ᐋᒡᒌᓯ ᓯᑎᐱᕆ ᐅᑐᐱᕆ ᓄᕕᐱᕆ ᑎᓯᐱᕆ',
+  dateFmt: '{1} {0}, {2}',
+  stepsTitle: '5 ᒪᓕᒃᑕᒃᓴᑦ',
+  step1T: 'USB-C ᐊᒃᓗᓈᖅ',
+  step1: 'ᓴᖅᑭᔭᐅᑦ ᖃᕋᓴᐅᔭᒧᑦ ᑲᓱᕐᓕ USB-C ᐊᒃᓗᓈᕐᒥᒃ.',
+  step2T: 'ᑲᓱᕐᓕ',
+  step2: '<b>ᑲᓱᕐᓕ ᐊᒻᒪᓗ ᐃᓕᓕ</b> ᓇᕿᓪᓕ. <i>USB JTAG/serial debug unit</i> ᓂᕈᐊᕐᓕ (ᐅᕝᕙᓘᓐᓃᑦ COM ᓄᑖᖅ). ESP Web Tools ᖃᓪᓗᓈᑎᑐᑦ.',
+  step3T: 'ᐲᕐᓕ ᐅᕝᕙᓘᓐᓃᑦ ᐋᖅᑭᔅᓯᒪᐅᑎᑦ ᐱᒋᓗᒋᑦ',
+  step3: 'ᓯᕗᓪᓕᖅ: <b>Erase device</b> ᓇᕿᓪᓕ. ᓄᑖᕈᕆᐊᕐᓂᖅ: ᓇᕿᓐᓇᒍ; <span class="nw">Wi-Fi</span> ᐋᖅᑭᔅᓯᒪᐅᑎᓪᓗ ᐱᒋᔭᐅᔪᑦ.',
+  eraseFirst: 'ᓯᕗᓪᓕᖅ',
+  eraseUpd: 'ᓄᑖᕈᕆᐊᕐᓂᖅ',
+  step4T: 'Wi-Fi-ᒧᑦ ᑲᓱᕐᓕ',
+  step4: 'ᐃᓕᑕᐅᔪᖅ: ᓴᖅᑭᔭᐅᑦ ᐃᑭᑎᒃᑲᓐᓂᕐᑐᖅ. <b class="nw">Wi-Fi ᐋᖅᑭᔅᓯᒪᐅᑎᑦ</b>: QR. ᐊᔾᔨᓕᐅᕐᓕ ᐅᖄᓚᐅᑎᕋᓛᕐᒧᑦ. ᐅᖄᓚᐅᑎᕋᓛᖅ <i class="nw">Weather-Setup-ᒧᑦ</i> ᑲᓱᖅᑐᖅ. ᐊᖏᕐᕋᒥ Wi-Fi ᓂᕈᐊᕐᓕ.',
+  step4b: '<b class="nw">Android 10+:</b> ᐃᓯᕈᑦ ᐱᔭᕆᐊᖃᙱᑦᑐᖅ. ᓂᕈᓗᓪᓕ ᓴᐅᒥᒧᑦ: <b class="nw">Easy Connect</b>. ᐊᔾᔨᓕᐅᕐᓕ ᐅᖄᓚᐅᑎᕋᓛᕐᒧᑦ Wi-Fi-ᒦᑦᑐᒧᑦ. ᐅᖄᓚᐅᑎᕋᓛᖅ ᑲᓱᖃᑎᒌᓐᓂᒃ ᑐᓃᔪᖅ.',
+  step5T: 'ᐃᓂ ᐃᓚᓕ',
+  step5: 'ᓯᓚᐅᑉ ᐃᒐᓚᐅᔮ ᓇᕿᓪᓗᒍ ᓇᕿᒻᒥᓕ. <b>ᓱᓕ ᐅᖄᓚᐅᑎᕋᓛᕐᒥ</b> ᓇᕿᓪᓕ. QR ᐊᔾᔨᓕᐅᕐᓕ.',
+  troubleTitle: 'ᑲᓱᕈᓐᓇᙱᑉᐸᑦ',
+  trouble1: 'ᐱᖃᙱᑉᐸᑦ: ᐊᓯᐊᒥᒃ ᐊᒃᓗᓈᕐᒥᒃ ᐅᕝᕙᓘᓐᓃᑦ USB-ᒥᒃ ᐆᒃᑐᕐᓕ. ᐃᓚᖏᑦ ᐊᒃᓗᓈᑦ ᐊᑐᖅᑕᐅᔪᓐᓇᙱᑦᑐᑦ.',
+  trouble2: 'ᓱᓕ ᐱᖃᙱᑉᐸᑦ: <kbd>BOOT</kbd> ᓇᕿᓪᓗᒍ ᓇᕿᒻᒥᓕ, <kbd>RESET</kbd> ᓇᕿᓪᓕ, <kbd>BOOT</kbd> ᓇᕿᓐᓇᒍ. ᐆᒃᑐᒃᑲᓐᓂᕐᓕ.',
+  trouble3: 'ᐊᓯᖏᑦ ᐱᓕᕆᔾᔪᑎᑦ ᒪᑐᓕ.',
+  trouble4: 'BOOT: ᐃᓕᑕᐅᒑᖓᑦ, <kbd>RESET</kbd> ᐊᑕᐅᓯᐊᖅ ᓇᕿᓪᓕ.',
+  screensTitle: 'ᐃᒐᓚᐅᔭᐃᑦ',
+  screensSub: 'ᓴᖅᑭᔭᐅᒻᒥᑦ ᐊᔾᔨᓕᐊᑦ.',
+  altWeather: 'ᓯᓚᐅᑉ ᐃᒐᓚᐅᔮ: 13°, ᓯᓚᖅᑭᖅᑐᖅ. ᐅᓪᓗᒥ, ᓯᕙᑖᕐᕕᒃ, ᓈᑦᓰᖑᔭᖅ.',
+  tagWeather: 'ᓯᕗᓪᓕᖅ ᐃᒐᓚᐅᔭᖅ',
+  h3Weather: 'ᓯᓚ ᐊᒻᒪᓗ ᐃᓃᑦ',
+  pWeather: 'ᐃᑲᕐᕌᑦ, ᐆᓇᕐᓂᖅ ᐊᒻᒪᓗ ᓯᓚ. ᓯᓚᓗᑦᑐᖅ ᐅᕝᕙᓘᓐᓃᑦ ᖃᓐᓂᖅᑐᖅ: 2 ᐃᑲᕐᕌᓂ. 3 ᐅᓪᓗᐃᑦ. 4 ᐃᓃᑦ: ᓄᓱᐊᕐᓕ ᖁᓕᒧᑦ ᐅᕝᕙᓘᓐᓃᑦ ᐊᑎᒧᑦ. Environment Canada ᐃᓂᕐᑎᕈᑎᖏᑦ ᓴᖅᑭᖅᑐᑦ.',
+  altHourly: 'ᐃᑲᕐᕌᑦ: ᐆᓇᕐᓂᖅ, ᓯᓚᓗᒃ, ᐊᓄᕆ.',
+  tagHourly: 'ᐅᓪᓗᖅ ᓇᕿᓪᓕ',
+  h3Hourly: 'ᐃᑲᕐᕌᑦ',
+  pHourly: '7 ᐅᓪᓗᐃᑦ. ᐃᑲᕐᕌᖅ ᑕᒫᓐ: ᐆᓇᕐᓂᖅ, ᓯᓚᓗᒃ, ᐊᓄᕆ. ᓄᓱᐊᕐᓕ ᓴᐅᒥᒧᑦ ᐅᕝᕙᓘᓐᓃᑦ ᑕᓕᖅᐱᒧᑦ: ᐅᓪᓗᖅ ᐊᓯᖅ.',
+  altRadar: 'Radar: ᓯᓚᓗᒃ ᓄᓇᙳᐊᕐᒥ.',
+  tagRadar: 'ᓂᕈᓗᓪᓕ ᓴᐅᒥᒧᑦ',
+  h3Radar: 'Radar ᐊᒻᒪᓗ ᑲᓪᓕᖅ',
+  pRadar: 'Environment Canada Radar, OpenStreetMap ᓄᓇᙳᐊᕐᒥ. ᑲᓪᓕᖅ: 10 min. ᓇᕿᓪᓕ: 3 ᐃᑲᕐᕌᑦ ᖄᖏᖅᑐᑦ. ᓂᕈᓗᓪᓕ ᐊᑎᒧᑦ: ᐊᖏᓪᓕᒋᐊᕐᓕ. ᖁᓕᒧᑦ: ᒥᑭᓪᓕᒋᐊᕐᓕ.',
+  altExtras: 'ᓯᕿᓂᖅ: 06:45 – 18:22. UV ᒥᑭᔪᖅ. ᑕᖅᑭᖅ: ᐊᕝᕙᖓ ᑭᖑᓪᓕᖅ, 61%. ᐊᓂᕐᓴᖅ ᐱᐅᔪᖅ.',
+  tagExtras: 'ᓂᕈᓗᓪᓕ ᑕᓕᖅᐱᒧᑦ',
+  h3Extras: 'ᓯᕿᓂᖅ, UV, ᑕᖅᑭᖅ, ᐊᓂᕐᓴᖅ',
+  pExtras: 'ᓯᕿᓂᖅ ᓄᐃᔪᖅ, UV ᒫᓐᓇ ᐊᒻᒪᓗ ᐊᖏᓂᕐᐹᖅ, ᑕᖅᑭᖅ ᐊᒻᒪᓗ ᐊᓂᕐᓴᖅ.',
+  altStatus: 'ᖃᓄᐃᓕᖓᓂᖓ: ᖃᕋᓴᐅᔭᐅᑉ ᐱᓕᕆᔾᔪᑎᖓ, Wi-Fi ᐊᒻᒪᓗ API-ᐃᑦ.',
+  tagStatus: 'ᓂᕈᓗᓪᓕ ᑕᓕᖅᐱᒧᑦ (2)',
+  h3Status: 'ᖃᓄᐃᓕᖓᓂᖓ',
+  pStatus: 'ᖃᕋᓴᐅᔭᐅᑉ ᐱᓕᕆᔾᔪᑎᖓ, <span class="nw">Wi-Fi</span>, ᐊᒻᒪᓗ API-ᐃᑦ ᑭᐅᔾᔪᑎᖏᑦ.',
+  altSettings: 'ᐋᖅᑭᔅᓯᒪᐅᑎᑦ: ᑖᓂᑭᓪᓕᖅ, ᑭᕕᑦᑕᐅᒑᖓᑦ, ᓇᐃᑦᑐᑦ, °C, 83%.',
+  tagSettings: 'ᓇᕿᓪᓗᒍ ᓇᕿᒻᒥᓕ',
+  h3Settings: 'ᐋᖅᑭᔅᓯᒪᐅᑎᑦ',
+  pSettings: 'ᑖᓂᑭᓪᓕᖅ, ᑭᕕᑦᑕᐅᒑᖓᑦ, ᖃᐅᒪᓂᖓ, ᐆᒃᑑᑎᑦ ᐊᒻᒪᓗ ᐅᖃᐅᓯᖅ. ᐃᓃᑦ: ᐅᖄᓚᐅᑎᕋᓛᕐᒥ, QR-ᒥᑦ.',
+  radarNote: 'Radar: Environment Canada. ᑲᓇᑕ ᐊᒻᒪᓗ USA ᑭᓪᓕᖓ.',
+  langTitle: 'ᐅᖃᐅᓰᑦ ᐱᖓᓱᑦ',
+  langSub: 'ᓴᖅᑭᔭᐅᑦ: ᖃᓪᓗᓈᑎᑐᑦ, ᐅᐃᕕᑎᑐᑦ, ᐃᓄᒃᑎᑐᑦ.',
+  langPickLabel: 'ᐃᒐᓚᐅᔭᖅ',
+  capFr: 'ᐅᐃᕕᑎᑐᑦ (ᑲᓇᑕ)',
+  capIu: 'ᖃᓂᐅᔮᖅᐸᐃᑦ',
+  picMissing: 'ᐊᔾᔨᓕᐊᖅ ᐊᑐᐃᓐᓇᐅᙱᑦᑐᖅ',
+  langAltWeather: 'ᓯᓚᐅᑉ ᐃᒐᓚᐅᔮ: {0}',
+  langAltExtras: 'ᓯᕿᓂᖅ ᑕᖅᑭᕐᓗ: {0}',
+  langAltSettings: 'ᐋᖅᑭᔅᓯᒪᐅᑎᑦ: {0}',
+  lnEn: 'ᖃᓪᓗᓈᑎᑐᑦ',
+  lnFr: 'ᐅᐃᕕᑎᑐᑦ',
+  lnIu: 'ᐃᓄᒃᑎᑐᑦ ᖃᓂᐅᔮᖅᐸᐃᑦ',
+  langNote: 'ᐅᖃᐅᓯᖅ ᐊᓯᔾᔨᕐᓗᒍ: ᓴᖅᑭᔭᐅᒻᒥ <b>ᐋᖅᑭᔅᓯᒪᐅᑎᑦ</b> → <b>ᐅᖃᐅᓯᖅ</b> (ᓯᓚᐅᑉ ᐃᒐᓚᐅᔮ ᓇᕿᓪᓗᒍ ᓇᕿᒻᒥᓕ), ᐅᕝᕙᓘᓐᓃᑦ ᐅᖄᓚᐅᑎᕋᓛᕐᒥ <b>ᐆᒃᑑᑎᑦ</b>. ᐃᓄᒃᑎᑐᑦ ᐃᓱᓕᙱᑦᑐᖅ: <a href="https://github.com/TheMonkeyz/esp32-s3-weather/tree/main/docs/translations">ᐃᑲᔪᕐᓕ</a>.',
+  usingTitle: 'ᖃᓄᖅ ᐊᑐᖅᑕᐅᔪᖅ',
+  use1: 'ᐅᓪᓗᖅ ᓇᕿᓪᓕ: ᐃᑲᕐᕌᑦ. ᓄᓱᐊᕐᓕ ᓴᐅᒥᒧᑦ ᐅᕝᕙᓘᓐᓃᑦ ᑕᓕᖅᐱᒧᑦ: ᐅᓪᓗᐃᑦ ᐊᓯᖏᑦ.',
+  use2: 'ᓂᕈᓗᓪᓕ ᓴᐅᒥᒧᑦ: Radar. ᓇᕿᓪᓕ: 3 ᐃᑲᕐᕌᑦ ᖄᖏᖅᑐᑦ. ᓂᕈᓗᓪᓕ ᐊᑎᒧᑦ: ᐊᖏᓪᓕᒋᐊᕐᓕ. ᖁᓕᒧᑦ: ᒥᑭᓪᓕᒋᐊᕐᓕ.',
+  use3: 'ᓇᕿᓪᓗᒍ ᓇᕿᒻᒥᓕ: ᐋᖅᑭᔅᓯᒪᐅᑎᑦ. ᑖᓂᑭᓪᓕᖅ, ᐆᒃᑑᑎᑦ, <span class="nw">Wi-Fi</span>, QR ᐅᖄᓚᐅᑎᕋᓛᕐᒧᑦ.',
+  use4: 'ᓂᐸᐃᑦᑐᒥ ᐃᒐᓚᐅᔭᖅ ᑖᓂᑭᓪᓕᖅᑐᖅ. ᓂᐱᖃᖅᐸᑦ ᐃᑭᑦᑐᖅ.',
+  foot1: 'ᐱᓕᕆᔾᔪᑎᑦ ᐊᒻᒪᓗ ᑎᑎᕋᖅᓯᒪᔪᑦ: <a href="https://github.com/TheMonkeyz/esp32-s3-weather">github.com/TheMonkeyz/esp32-s3-weather</a>. ᒥᓇᐃᑦ: <a href="https://github.com/TheMonkeyz/esp32-s3-weather/releases">ᓄᑖᑦ</a>.',
+  foot2: 'ᓯᓚ: Open-Meteo. Radar: Environment and Climate Change Canada (GeoMet). ᓄᓇᙳᐊᖅ © OpenStreetMap contributors. ESP Web Tools-ᒃᑯᑦ ᐃᓕᑕᐅᔪᖅ.',
+  foot3: 'ᖃᕋᓴᐅᔭᐅᑉ ᐱᓕᕆᔾᔪᑎᖓ © 2026 Laurent Mathieu, <a href="https://github.com/TheMonkeyz/esp32-s3-weather/blob/main/LICENSE">MIT</a> (<a href="https://github.com/TheMonkeyz/esp32-s3-weather/blob/main/THIRD_PARTY_NOTICES.md">ᐊᓯᖏᑦ</a>). Montserrat (<a href="fonts/montserrat-OFL.txt">SIL Open Font License</a>).',
+ },
+};
+const LANGS = ['en', 'fr', 'iu'], HTML_LANG = {en: 'en', fr: 'fr-CA', iu: 'iu-Cans'};
+const LANG_KEY = 'weatherDisplay.lang';               // the visitor's choice, remembered in this browser
+let LANG = 'en';
+function t(k, ...a) {
+  let s = (I18N[LANG] && I18N[LANG][k]) ?? I18N.en[k] ?? k;
+  if (a.length) s = s.replace(/\{(\d)\}/g, (m, i) => a[i] ?? m);
+  // French: no-break spaces (written as plain spaces in the table) before a colon, inside « », and after a number
+  // (61 %, 100 km, 6 h 45, 4 endroits, 1er octobre), so that lines don't break there
+  return LANG !== 'fr' ? s : s.replace(/ ([:»])/g, '\u00a0$1').replace(/« /g, '«\u00a0')
+    .replace(/(\d(?:er|re|e)?) (?=[\p{L}%°])/gu, '$1\u00a0').replace(/(\d\u00a0h) (?=\d)/g, '$1\u00a0');
+}
+function fill(tpl, ...parts) {                          // 'Firmware {0}' + node -> ['Firmware ', node]
+  return tpl.split(/\{(\d)\}/).map((s, i) => i % 2 ? parts[+s] : s).filter(x => x !== '');
+}
+// ?lang=, else the remembered choice, else the browser's languages, else English
+function startLang() {
+  const code = s => String(s || '').toLowerCase().split(/[-_]/)[0];
+  const q = code(new URLSearchParams(location.search).get('lang'));
+  if (LANGS.includes(q)) return q;
+  try { const s = localStorage.getItem(LANG_KEY); if (LANGS.includes(s)) return s; } catch (e) {}
+  for (const l of navigator.languages || [navigator.language]) if (LANGS.includes(code(l))) return code(l);
+  return 'en';
+}
+
 // Channels and release notes. channels.json and notes.json are written by tools/make_flasher_site.py:
 // channels.json = {stable:{version,built,manifest}, beta:{...}|null}, notes.json = {releases:[{version,date,notes:[str]}]}
-let channels = null, releases = null, current = 'stable';
+let channels = null, releases = null, current = 'stable', verFailed = false;
 function pick(name) {
   const c = channels && channels[name];
   if (!c) return;
   current = name;
   $('installBtn').setAttribute('manifest', c.manifest);
+  $('betaWarn').classList.toggle('on', name === 'beta');
+  renderVer();
+  showNotes();
+}
+function renderVer() {
+  const c = channels && channels[current];
+  if (!c) { $('ver').textContent = t(verFailed ? 'verFail' : 'verLoading'); return; }
   const v = document.createElement('b'), built = document.createElement('span');
   v.textContent = c.version;
   built.className = 'nw';
-  built.textContent = 'built ' + c.built;
-  $('ver').replaceChildren('Firmware ', v, ' · ', built);
-  $('betaWarn').classList.toggle('on', name === 'beta');
-  showNotes();
+  built.append(...fill(t('verBuilt'), c.built));
+  $('ver').replaceChildren(...fill(t('verFw'), v), ' · ', built);
 }
-function niceDate(d) {
-  const t = new Date(d + 'T12:00:00Z');
-  return isNaN(t) ? d : t.toLocaleDateString('en-US', {year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC'});
+function niceDate(d) {                                  // 2026-10-01 -> October 1, 2026 / 1er octobre 2026
+  const m = /^(\d{4})-(\d\d)-(\d\d)$/.exec(d), month = m && t('months').split(' ')[m[2] - 1];
+  if (!month) return d;
+  const day = +m[3];
+  return t('dateFmt', LANG === 'fr' && day === 1 ? '1er' : String(day), month, m[1]);
 }
 function showNotes() {
   const c = channels && channels[current];
   const r = c && Array.isArray(releases) && releases.find(x => x && x.version === c.version);
   if (!r || !Array.isArray(r.notes) || !r.notes.length) { $('notes').hidden = true; return; }
   $('notesVer').textContent = r.version;
-  $('notesChan').textContent = current === 'beta' ? 'Beta' : 'Stable';
+  $('notesChan').textContent = t(current === 'beta' ? 'chBeta' : 'chStable');
   $('notesChan').className = 'pill ' + current;
-  const t = $('notesDate');
-  t.hidden = !r.date;
-  if (r.date) { t.dateTime = r.date; t.textContent = niceDate(r.date); }
+  $('notesLang').hidden = LANG === 'en';               // the notes come from CHANGELOG.md, in English
+  const d = $('notesDate');
+  d.hidden = !r.date;
+  if (r.date) { d.dateTime = r.date; d.textContent = niceDate(r.date); }
   $('notesList').replaceChildren(...r.notes.map(n => {
     const li = document.createElement('li');
     li.textContent = String(n);
@@ -565,18 +897,33 @@ fetch('channels.json', {cache: 'no-store'}).then(r => r.json()).then(ch => {
   $('tryLink').hidden = !ch.try;                       // the display in the browser, when the site has it (try/)
   $('verStable').textContent = ch.stable.version;
   if (ch.beta) {
+    delete $('verBeta').dataset.i18n;
     $('verBeta').textContent = ch.beta.version;
     document.querySelector('input[value=beta]').disabled = false;
   }
   const want = new URLSearchParams(location.search).get('channel') === 'beta' && ch.beta ? 'beta' : 'stable';
   document.querySelector(`input[value=${want}]`).checked = true;
   pick(want);
-}).catch(() => { $('ver').textContent = 'Firmware version unavailable'; });
+}).catch(() => { verFailed = true; renderVer(); });
 fetch('notes.json', {cache: 'no-store'}).then(r => r.json()).then(n => {
   releases = n && n.releases;
   showNotes();
 }).catch(() => {});
 document.querySelectorAll('input[name=ch]').forEach(r => r.addEventListener('change', () => pick(r.value)));
+
+// Screenshots in the page's language: img/<screen>-fr.png or -iu.png, else the English img/<screen>.png
+const shotImgs = [...document.querySelectorAll('img[data-shot]')], noShot = new Set();
+function shotSrc(name) {
+  const own = `img/${name}-${LANG}.png`;
+  return LANG === 'en' || noShot.has(own) ? `img/${name}.png` : own;
+}
+function setShots() {
+  shotImgs.forEach(img => { const s = shotSrc(img.dataset.shot); if (img.getAttribute('src') !== s) img.src = s; });
+}
+shotImgs.forEach(img => img.addEventListener('error', () => {
+  const src = img.getAttribute('src'), en = `img/${img.dataset.shot}.png`;
+  if (src !== en) { noShot.add(src); img.src = en; }
+}));
 
 // Hero: slow crossfade between screens. No auto-cycling with reduced motion; a click on a dot stops it.
 const device = $('device'), shots = [...device.querySelectorAll('img')], dots = [...$('dots').children];
@@ -586,7 +933,7 @@ function show(i) {
   idx = i;
   shots.forEach((s, k) => s.classList.toggle('on', k === i));
   dots.forEach((d, k) => d.setAttribute('aria-pressed', k === i));
-  $('shotName').textContent = shots[i].dataset.name;
+  $('shotName').textContent = t(shots[i].dataset.key);
   device.style.setProperty('--glow', shots[i].dataset.glow);
 }
 function run() {
@@ -601,10 +948,18 @@ run();
 
 // Languages: the same screen in English, French and Inuktitut.
 const langImgs = [...document.querySelectorAll('.lang img')];
-const screenNames = {weather: 'weather screen', extras: 'extras screen', settings: 'Settings screen'};
+const LANG_ALT = {weather: 'langAltWeather', extras: 'langAltExtras', settings: 'langAltSettings'};
+let langScreen = 'weather';
 function langState(img, missing) {
   img.classList.remove('loading');
   img.closest('.lang').classList.toggle('missing', missing);
+}
+function langShow() {
+  langImgs.forEach(img => {
+    const src = `img/${langScreen}${img.dataset.suffix}.png`;
+    if (img.getAttribute('src') !== src) { img.classList.add('loading'); img.src = src; }
+    img.alt = t(LANG_ALT[langScreen], t(img.dataset.lname));
+  });
 }
 langImgs.forEach(img => {
   img.addEventListener('load', () => langState(img, false));
@@ -612,16 +967,50 @@ langImgs.forEach(img => {
   if (img.complete && !img.naturalWidth) langState(img, true);
 });
 document.querySelectorAll('#langPick button').forEach(btn => btn.addEventListener('click', () => {
-  const s = btn.dataset.screen;
+  langScreen = btn.dataset.screen;
   document.querySelectorAll('#langPick button').forEach(b => b.setAttribute('aria-pressed', b === btn));
-  langImgs.forEach(img => {
-    const src = `img/${s}${img.dataset.suffix}.png`;
-    if (img.getAttribute('src') === src) return;
-    img.classList.add('loading');
-    img.src = src;
-    img.alt = `The ${screenNames[s]} in ${img.dataset.lang}${img.dataset.suffix === '-iu' ? ' syllabics' : ''}`;
-  });
+  langShow();
 }));
+
+// Page language
+function applyLang() {
+  document.documentElement.lang = HTML_LANG[LANG];
+  document.title = t('pageTitle');
+  document.querySelector('meta[name=description]').content = t('pageDesc');
+  document.querySelectorAll('[data-i18n]').forEach(e => { e.textContent = t(e.dataset.i18n); });
+  document.querySelectorAll('[data-i18n-html]').forEach(e => { e.innerHTML = t(e.dataset.i18nHtml); });
+  document.querySelectorAll('[data-i18n-aria]').forEach(e => { e.setAttribute('aria-label', t(e.dataset.i18nAria)); });
+  document.querySelectorAll('[data-i18n-alt]').forEach(e => { e.alt = t(e.dataset.i18nAlt); });
+  document.querySelectorAll('.lang .pic').forEach(e => { e.dataset.missing = t('picMissing'); });
+  document.querySelectorAll('#langSwitch a').forEach(a => {
+    const u = new URL(location.href);
+    u.searchParams.set('lang', a.dataset.lang);
+    a.href = u.search;                                  // keeps ?channel=beta
+    if (a.dataset.lang === LANG) a.setAttribute('aria-current', 'true'); else a.removeAttribute('aria-current');
+  });
+  $('iuNote').hidden = LANG !== 'iu';
+  setShots();
+  show(idx);
+  renderVer();
+  showNotes();
+  langShow();
+}
+function setLang(l, remember) {
+  LANG = l;
+  if (remember) {
+    try { localStorage.setItem(LANG_KEY, l); } catch (e) {}
+    const u = new URL(location.href);
+    u.searchParams.set('lang', l);
+    history.replaceState(null, '', u);
+  }
+  applyLang();
+}
+document.querySelectorAll('#langSwitch a').forEach(a => a.addEventListener('click', e => {
+  if (e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;   // let "open in a new tab" work
+  e.preventDefault();
+  setLang(a.dataset.lang, true);
+}));
+setLang(startLang(), false);
 </script>
 </body>
 </html>

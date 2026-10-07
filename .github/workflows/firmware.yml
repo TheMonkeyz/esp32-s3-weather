@@ -115,6 +115,8 @@ jobs:
         run: make -C tests/host CJSON="$PWD/cjson"
       - name: Harness unit tests
         run: python3 -m unittest discover -s tools/harness -p "test_*.py"
+      - name: Translations (the web flasher's texts all in French and Inuktitut, none outside I18N)
+        run: python3 tools/i18n_check.py site
 
   emulator:
     # The display in the browser (web/emu): LVGL and the firmware's screens built to WebAssembly, for the site's try/.

@@ -1,19 +1,22 @@
 #!/usr/bin/env python3
-"""Inuktitut translation: one editable source, generated into the firmware and the settings page.
+"""Inuktitut translation: one editable source, generated into the firmware, the settings page and the web flasher.
 
 Source: docs/translations/iu.tsv, one row per string (tab-separated):
     key  english  inuktitut  confidence  note
-  key         fw:T_ID (display, main/i18n_strings.h) or web:key (settings page, main/web/index.html)
+  key         fw:T_ID (display, main/i18n_strings.h), web:key (settings page, main/web/index.html) or
+              site:key (web flasher, web/flash/index.html)
   english     the English text (for the reviewer; refreshed by `skeleton`)
   inuktitut   Inuktitut in Latin letters (ICI standard roman orthography), or already in syllabics.
               Latin is converted to syllabics. Keep unchanged: %d %s %% \\n, digits, punctuation, and anything in
               `backticks` (product names, units: `Wi-Fi`, `km/h`, `OK`). {0} {1} are the page's placeholders.
+              HTML tags (<b>, <a href="...">) and entities (&amp;) are kept as written; Latin words between tags
+              still need backticks.
   confidence  high (from a dictionary / Microsoft terminology), medium (built from dictionary words), low (guess)
   note        source or what a reviewer should check
 
     python tools/i18n_iu.py skeleton   add rows for new strings (keeps translations), refresh the English column
-    python tools/i18n_iu.py build      write the Inuktitut column into i18n_strings.h and index.html, and
-                                       docs/translations/iu-review.md (a table for a fluent reviewer)
+    python tools/i18n_iu.py build      write the Inuktitut column into i18n_strings.h and the iu block of I18N in
+                                       both pages, and docs/translations/iu-review.md (a table for a fluent reviewer)
     python tools/i18n_iu.py test       check the Latin -> syllabics converter on known dictionary words
 
 Standard library only.
@@ -26,6 +29,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TSV = os.path.join(ROOT, 'docs', 'translations', 'iu.tsv')
 STRINGS = os.path.join(ROOT, 'main', 'i18n_strings.h')
 PAGE = os.path.join(ROOT, 'main', 'web', 'index.html')
+SITE = os.path.join(ROOT, 'web', 'flash', 'index.html')
+PAGES = (('web:', PAGE), ('site:', SITE))    # key prefix, page with an I18N = {en, fr, iu} table
 REVIEW = os.path.join(ROOT, 'docs', 'translations', 'iu-review.md')
 
 # ---------------- Latin -> syllabics (Inuktitut, ICI / Nunavut orthography) ----------------
@@ -79,7 +84,7 @@ def word_to_syl(w):
     return ''.join(out)
 
 
-TOKEN = re.compile(r"(`[^`]*`|%%|%[0-9]*[sd]|\\n|\{\d\}|[A-Za-zł']+)")
+TOKEN = re.compile(r"(`[^`]*`|<[^<>]*>|&#?\w+;|%%|%[0-9]*[sd]|\\n|\{\d\}|[A-Za-zł']+)")
 
 
 def latin_to_syl(text):
@@ -91,6 +96,8 @@ def latin_to_syl(text):
             continue
         if tok.startswith('`'):
             parts.append(tok[1:-1])
+        elif tok[0] in '<&' and len(tok) > 1:     # an HTML tag or entity
+            parts.append(tok)
         elif re.fullmatch(r"[A-Za-zł']+", tok) and not re.fullmatch(r'%[0-9]*[sd]|%%', tok):
             parts.append(word_to_syl(tok.replace("'", '')))
         else:
@@ -152,8 +159,9 @@ def sources():
     items = []
     for tid, args, _, _ in parse_x_entries(open(STRINGS, encoding='utf-8').read()):
         items.append(('fw:' + tid, c_strings(args[0]).replace('\t', ' ')))
-    for k, v in page_dict(open(PAGE, encoding='utf-8').read(), 'en').items():
-        items.append(('web:' + k, v.replace('\t', ' ')))
+    for prefix, path in PAGES:
+        for k, v in page_dict(open(path, encoding='utf-8').read(), 'en').items():
+            items.append((prefix + k, v.replace('\t', ' ')))
     return items
 
 
@@ -194,6 +202,25 @@ def c_escape(s):
         s.replace('"', '\\"')
 
 
+def write_page_iu(path, prefix, rows, syl):
+    """Replace the iu block of the page's I18N table (or add it after fr). Returns the number of strings."""
+    html = open(path, encoding='utf-8').read()
+    lines = []
+    for key, en, iu, conf, note in rows:
+        if key.startswith(prefix) and key in syl:
+            v = syl[key].replace('\\', '\\\\').replace("'", "\\'")
+            lines.append(f"  {key[len(prefix):]}: '{v}',")
+    block = ' iu: {\n' + '\n'.join(lines) + '\n },\n'
+    if ' iu: {' in html:
+        i = html.index(' iu: {')
+        html = html[:i] + block + html[html.index('\n },', i) + 4:].lstrip('\n')
+    else:
+        end = html.index('\n },', html.index(' fr: {')) + 4
+        html = html[:end] + '\n' + block.rstrip('\n') + html[end:]
+    open(path, 'w', encoding='utf-8', newline='').write(html)
+    return len(lines)
+
+
 def build():
     rows = read_tsv()
     syl = {}
@@ -218,22 +245,8 @@ def build():
         pos = b
     out.append(src[pos:])
     open(STRINGS, 'w', encoding='utf-8', newline='').write(''.join(out))
-    # page: the iu block of I18N
-    html = open(PAGE, encoding='utf-8').read()
-    lines = []
-    for key, en, iu, conf, note in rows:
-        if key.startswith('web:') and key in syl:
-            v = syl[key].replace('\\', '\\\\').replace("'", "\\'")
-            lines.append(f"  {key[4:]}: '{v}',")
-    block = ' iu: {\n' + '\n'.join(lines) + '\n },\n'
-    start, end = html.index(' fr: {'), html.index('\n },', html.index(' fr: {')) + 4
-    if ' iu: {' in html:
-        i = html.index(' iu: {')
-        html = html[:i] + block + html[html.index('\n },', i) + 4:].lstrip('\n')
-        html = html.replace(block, block, 1)
-    else:
-        html = html[:end] + '\n' + block.rstrip('\n') + html[end:]
-    open(PAGE, 'w', encoding='utf-8', newline='').write(html)
+    # pages: the iu block of each I18N table
+    counts = {prefix: write_page_iu(path, prefix, rows, syl) for prefix, path in PAGES}
     # review sheet
     with open(REVIEW, 'w', encoding='utf-8', newline='\n') as f:
         f.write('# Inuktitut translation: review sheet\n\n'
@@ -247,7 +260,8 @@ def build():
             cell = lambda s: s.replace('|', '\\|').replace('\\n', ' ⏎ ')
             f.write(f'| `{key}` | {cell(en)} | {cell(syl.get(key, ""))} | {cell(iu if iu and not any(chr(0x1400) <= ch <= chr(0x167f) for ch in iu) else "")} | {conf} | {cell(note)} |\n')
     missing = [r[0] for r in rows if not r[2]]
-    print(f'firmware strings: {n}, page strings: {len(lines)}, untranslated: {len(missing)}')
+    print(f'firmware strings: {n}, settings page strings: {counts["web:"]}, flasher site strings: {counts["site:"]}, '
+          f'untranslated: {len(missing)}')
     if missing:
         print('untranslated:', ', '.join(missing))
 
