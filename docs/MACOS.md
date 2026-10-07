@@ -113,12 +113,14 @@ cd tools/webtest && npm test
 
 ### C. On the display
 
-1. **Label your build** above the newest release. Otherwise the display offers to "update" back to the release and
-   replaces your work. The newest release is v1.13.x, so use `v1.14.0-design.1`, then `.2`, `.3`… (if the owner releases
-   v1.14 meanwhile, go to `v1.15.0-design.N`):
+1. **Label your build `v1.99.0-design.N`** (`.1`, then `.2`, `.3`… for each build you flash). A build labelled
+   below the newest release is offered that release as an update, and installing it replaces your work. Releases
+   come often (v1.14.2 two days after v1.12.3), so a label like "the next version up" goes stale within days;
+   v1.99 stays above every release for a long time (`tests/host/test_version.c` checks it):
    ```bash
-   printf v1.14.0-design.1 > version.txt && touch CMakeLists.txt
+   printf v1.99.0-design.1 > version.txt && touch CMakeLists.txt
    ```
+   It only labels the build on your display: the owner picks the real version number when your work is released.
 2. **Build** (the first time ~5-10 min, then ~1 min):
    ```bash
    get_idf
@@ -208,7 +210,7 @@ progress note before anything long (a build, a flash, a harness run).
 | `flash.bat auto 90` | `python tools/flash_helper.py stage build/v55 && python tools/flash_helper.py flash 90` (only while no helper runs) |
 | `wsl … make` (host tests, emulator) | Directly: `make -C tests/host`, `make -C web/emu -j8` (after export.sh; emulator also `source ~/emsdk/emsdk_env.sh`) |
 | `"/c/Program Files/GitHub CLI/gh.exe"` | `gh` |
-| `Set-Content version.txt …` | `printf v1.14.0-design.N > version.txt && touch CMakeLists.txt` |
+| `Set-Content version.txt …` | `printf v1.99.0-design.N > version.txt && touch CMakeLists.txt` (fixed label, section 2C) |
 | Lesson 17 (curl mangles non-ASCII in Git Bash) | Not a problem on a Mac |
 | adb at `C:\…\platform-tools` (Easy Connect phone log) | `brew install android-platform-tools`; rarely needed for UI work |
 

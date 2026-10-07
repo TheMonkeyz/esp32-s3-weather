@@ -28,6 +28,8 @@ int main(void)
         { "v1.12.0-3-g1a2b3c4", "v1.12.1-rc.1", -1 },
         { "v1.12.0-dirty", "v1.12.0-rc.1", -1 },// "-dirty" is just another suffix
         { "1.12.0", "v1.12.0", 0 },             // the v is optional
+        { "v1.99.0-design.1", "v1.14.3-rc.2", 1 },  // docs/MACOS.md's test label: above every release and rc
+        { "v1.99.0-design.1", "v1.98.9", 1 },       // up to v1.99, so nothing is offered over a designer's build
     };
     for (unsigned i = 0; i < sizeof(pairs) / sizeof(pairs[0]); i++)
         CHECK(cmp(pairs[i].a, pairs[i].b) == pairs[i].want, "%s vs %s: %d, expected %d", pairs[i].a, pairs[i].b,
