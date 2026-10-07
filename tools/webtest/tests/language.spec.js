@@ -1,5 +1,5 @@
 // Language: the page follows the display's language and changes it
-const { test, expect, state } = require('./fixtures');
+const { test, expect, state, reviewShot } = require('./fixtures');
 
 test('switching to French translates the page and the display', async ({ page, request }) => {
   await page.goto('/');
@@ -11,7 +11,7 @@ test('switching to French translates the page and the display', async ({ page, r
   await expect(page.locator('#umsg')).toHaveText('Enregistré');
   expect((await state(request)).units.lang).toBe('fr');
   await expect(page.locator('#pMvTxt')).toHaveText('Mouvement 0,01 g · réveil à 0,10 g');   // decimal comma
-  await page.locator('#presCard').screenshot({ path: 'shots/review_fr_presence.png' });
+  await reviewShot(page.locator('#presCard'), 'shots/review_fr_presence.png');
 });
 
 test('a French display opens the page in French', async ({ page, request }) => {
@@ -23,7 +23,7 @@ test('a French display opens the page in French', async ({ page, request }) => {
   await expect(page.locator('#edTitle')).toHaveText('Nouvel endroit');
   await expect(page.locator('#name')).toHaveAttribute('placeholder', 'ex. : Chalet');
   await expect(page.locator('#map .leaflet-marker-icon')).toBeVisible();
-  await page.locator('#locCard').screenshot({ path: 'shots/review_fr_editor.png' });
+  await reviewShot(page.locator('#locCard'), 'shots/review_fr_editor.png');
   await page.getByRole('button', { name: 'Annuler' }).click();
   await page.locator('#fwCard').scrollIntoViewIfNeeded();
   await expect(page.locator('#fwState')).toContainText('À jour');
@@ -56,5 +56,5 @@ test('the page in Inuktitut fits', async ({ page, request }) => {
   expect(report.latin).toEqual([]);
   expect(report.overflow).toEqual([]);
   expect(report.pageWider).toBe(false);
-  await page.screenshot({ path: 'shots/review_iu_page.png', fullPage: true });
+  await reviewShot(page, 'shots/review_iu_page.png', { fullPage: true });
 });

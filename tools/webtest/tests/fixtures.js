@@ -27,6 +27,28 @@ function greyTile() {                              // 256x256 grey PNG
 }
 const TILE = greyTile();
 
+// A screenshot for people to look at (shots/, docs/TESTING.md §5), never a check: Chromium sometimes answers
+// "Unable to capture screenshot" (seen in CI). Try again once after a moment (a full page then only the viewport),
+// and if that fails too, warn and go on: the test's result must not depend on it.
+async function reviewShot(target, file, options = {}) {
+  fs.mkdirSync(path.dirname(path.resolve(file)), { recursive: true });
+  try {
+    await target.screenshot({ ...options, path: file });
+    return;
+  } catch (e) {
+    try {
+      await new Promise(r => setTimeout(r, 500));
+      await target.screenshot({ ...options, fullPage: undefined, path: file });
+      return;
+    } catch (e2) {
+      const msg = `review screenshot ${path.basename(file)} not saved: ${e2.message.split('\n')[0]}`;
+      console.warn('warning: ' + msg);
+      try { base.test.info().annotations.push({ type: 'warning', description: msg }); } catch (_) { /* outside a test */ }
+    }
+  }
+}
+exports.reviewShot = reviewShot;
+
 exports.test = base.test.extend({
   noInternet: [false, { option: true }],           // true: the phone has no internet (map, search unavailable)
   page: async ({ page, request, noInternet }, use, testInfo) => {
@@ -49,9 +71,8 @@ exports.test = base.test.extend({
         r.fulfill({ json: { address: { town: 'Lac-Beauport' } } }));
     }
     await use(page);
-    fs.mkdirSync(path.join(__dirname, '..', 'shots'), { recursive: true });
-    await page.screenshot({ path: path.join(__dirname, '..', 'shots', testInfo.title.replace(/[^a-z0-9]+/gi, '_') + '.png'),
-                            fullPage: true });
+    await reviewShot(page, path.join(__dirname, '..', 'shots', testInfo.title.replace(/[^a-z0-9]+/gi, '_') + '.png'),
+                     { fullPage: true });
     base.expect(errors, 'errors in the page').toEqual([]);
   },
 });

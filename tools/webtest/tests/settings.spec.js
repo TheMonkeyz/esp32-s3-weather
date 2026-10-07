@@ -1,5 +1,5 @@
 // Settings page: loads, units
-const { test, expect, state } = require('./fixtures');
+const { test, expect, state, reviewShot } = require('./fixtures');
 
 test('page loads with the display settings', async ({ page }) => {
   await page.goto('/');
@@ -43,7 +43,7 @@ test('pick-up sensitivity is saved, the meter shows the threshold', async ({ pag
   await expect(page.locator('#pmsg')).toHaveText('Saved.');
   expect((await state(request)).presence.motion_thr).toBe(0.2);
   await page.locator('#locCard').scrollIntoViewIfNeeded();
-  await page.locator('#presCard').screenshot({ path: 'shots/review_presence_card.png' });
+  await reviewShot(page.locator('#presCard'), 'shots/review_presence_card.png');
 });
 
 test('the 10-second "Testing" timings only with ?test', async ({ page }) => {

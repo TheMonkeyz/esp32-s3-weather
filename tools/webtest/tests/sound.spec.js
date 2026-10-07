@@ -1,5 +1,5 @@
 // Sound card: alert chime level, volume, quiet hours, test
-const { test, expect, state } = require('./fixtures');
+const { test, expect, state, reviewShot } = require('./fixtures');
 
 test('sound settings are saved and the test chime is requested', async ({ page, request }) => {
   await page.goto('/');
@@ -14,7 +14,7 @@ test('sound settings are saved and the test chime is requested', async ({ page, 
   const s = (await state(request)).sound;
   expect(s.level).toBe(1);
   expect(s.quiet_from).toBe('21:30');
-  await page.locator('#soundCard').screenshot({ path: 'shots/review_sound_card.png' });
+  await reviewShot(page.locator('#soundCard'), 'shots/review_sound_card.png');
 });
 
 test('the sound card in French', async ({ page, request }) => {
@@ -22,5 +22,5 @@ test('the sound card in French', async ({ page, request }) => {
   await page.goto('/');
   await expect(page.locator('#soundCard h2')).toHaveText('Son');
   await expect(page.locator('#sLevel option[value="2"]')).toHaveText('Alertes orange et rouges');
-  await page.locator('#soundCard').screenshot({ path: 'shots/review_sound_card_fr.png' });
+  await reviewShot(page.locator('#soundCard'), 'shots/review_sound_card_fr.png');
 });

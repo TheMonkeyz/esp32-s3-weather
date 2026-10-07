@@ -1,5 +1,5 @@
 // Places card: list, editor with map, add / edit / show / delete
-const { test, expect, state, addPlace } = require('./fixtures');
+const { test, expect, state, addPlace, reviewShot } = require('./fixtures');
 
 const mapReady = page => expect(page.locator('#map .leaflet-marker-icon')).toBeVisible();
 
@@ -120,8 +120,8 @@ test('review: the Places card, list and editor', async ({ page, request }) => {
   await addPlace(request, 'Bureau', 46.81, -71.22, 2);
   await page.goto('/');
   await expect(page.locator('#places .pl')).toHaveCount(3);
-  await page.locator('#locCard').screenshot({ path: 'shots/review_places_list.png' });
+  await reviewShot(page.locator('#locCard'), 'shots/review_places_list.png');
   await page.locator('#places .pl', { hasText: 'Chalet' }).click();
   await mapReady(page);
-  await page.locator('#locCard').screenshot({ path: 'shots/review_places_editor.png' });
+  await reviewShot(page.locator('#locCard'), 'shots/review_places_editor.png');
 });

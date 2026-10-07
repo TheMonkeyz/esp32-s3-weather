@@ -1,5 +1,5 @@
 // The display's key (web.c, "Who may change things"): from the settings QR code (#k=...), kept by the phone
-const { test, expect, state } = require('./fixtures');
+const { test, expect, state, reviewShot } = require('./fixtures');
 
 const KEY = '0123456789abcdef';
 
@@ -27,7 +27,7 @@ test('without the key a change is refused and the page says how to get it', asyn
   await expect(page.locator('#keyNote')).toBeVisible();
   await expect(page.locator('#keyNote')).toContainText('scan the code on the display');
   expect((await state(request)).units.temp).toBe('c');
-  await page.locator('#keyNote').screenshot({ path: 'shots/review_key_note.png' });
+  await reviewShot(page.locator('#keyNote'), 'shots/review_key_note.png');
 });
 
 test('a refused Wi-Fi save says so (it said "restarting")', async ({ page, request }) => {
@@ -52,7 +52,7 @@ test('on the setup network: no key needed, places listed without their coordinat
   await expect(page.locator('#places')).toContainText('Québec');
   await expect(page.locator('#setupNote')).toContainText('no internet');     // why the map and search won't load
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.locator('#locCard').screenshot({ path: 'shots/setup_places_note.png' });
+  await reviewShot(page.locator('#locCard'), 'shots/setup_places_note.png');
   await expect(page.locator('#places .muted')).toHaveText('');
   await page.locator('#places .pl').first().click();
   await expect(page.locator('#lat')).toHaveValue('');              // not moved by a save without a new spot
