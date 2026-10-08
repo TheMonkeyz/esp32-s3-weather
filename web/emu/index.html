@@ -211,7 +211,7 @@ addEventListener('message', e => {
     motionAsked = true;
     DeviceMotionEvent.requestPermission().catch(() => {});
   }
-  // "Pick it up": tilted for a moment, then put back, as a hand lifting the display (presence.c wakes above 0.10 g)
+  // "Pick it up": tilted for a moment, then put back, as a hand lifting the display (forge_presence wakes above 0.10 g)
   let lifting = false;
   document.getElementById('pickup').addEventListener('click', () => {
     askMotion();

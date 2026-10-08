@@ -3,6 +3,8 @@
 // GET /__state returns it (tests check what the page sent); POST /__update {state, latest, notes, progress, error,
 // rolled_back, channel, check_result} sets the updater's state (ota.c) for the firmware card: every state the page can
 // show must be scriptable here (a page bug hid the Install button in two releases, and nothing tested "available").
+// POST /__presence {...} sets screen dimming's state (espforge's forge_presence): {state, mic_ok, imu_ok, level_db,
+// calibrating, cal, ...}; {calibrating: false, cal: 'noisy'} ends a calibration as a noisy room would.
 //   node mock-server.js [port]     (default 8099)
 const http = require('http');
 const fs = require('fs');
@@ -23,7 +25,8 @@ function fresh() {
     update: { current: 'v1.5.0-test', latest: '', channel: 'stable', state: 'up_to_date', progress: 0, error: '',
               notes: '', pending_verify: false, uptime_s: 300, rolled_back: '' },
     checkResult: 'up_to_date',                // what a check ends in (POST /__update {check_result})
-    presence: { enabled: true, state: 'active', mic_ok: true, calibrating: false, calib_left_s: 0, brightness: 100,
+    presence: { ok: true, enabled: true, state: 'active', mic_ok: true, calibrating: false, calib_left_s: 0,
+                cal: 'none', cal_spread_db: 0, brightness: 100,
                 level_db: -48, threshold_db: -55, baseline_db: -60, margin_db: 5, wake_progress: 0, wake_s: 3,
                 quiet_s: 12, dim_s: 600, off_s: 3000, bright_pct: 100, dim_pct: 20,
                 imu_ok: true, motion_g: 0.01, motion_wake: true, motion_thr: 0.1 },
@@ -108,9 +111,36 @@ const routes = {
     if (!out.rolled_back) delete out.rolled_back;
     return [200, out];
   },
-  'GET /api/presence': () => [200, st.presence],
-  'POST /api/presence': b => { Object.assign(st.presence, b || {}); return [200, { ok: true }]; },
-  'POST /api/calibrate': () => [200, { ok: true }],
+  // forge_presence's presence_web.c: GET's answer is the settings, then the live state, with "ok", "cal" (the last
+  // calibration's verdict) and "cal_spread_db"
+  'GET /api/presence': () => {
+    const p = st.presence;
+    if (p.calibrating && --p.calib_left_s <= 0) {            // 1 s a poll; a quiet room: the new baseline
+      Object.assign(p, { calibrating: false, calib_left_s: 0, cal: 'ok', cal_spread_db: 2, baseline_db: -66 });
+      p.threshold_db = p.baseline_db + p.margin_db;
+    }
+    return [200, { ...p, ok: true }];
+  },
+  'POST /api/presence': b => {                    // as presence_set_config(): clamped, baseline kept
+    if (!b) return [400, 'bad json'];
+    const p = st.presence;
+    const num = (k, lo, hi) => { if (typeof b[k] === 'number') p[k] = Math.min(hi, Math.max(lo, b[k])); };
+    if (typeof b.enabled === 'boolean') p.enabled = b.enabled;
+    if (typeof b.motion_wake === 'boolean') p.motion_wake = b.motion_wake;
+    num('margin_db', 1, 60); num('wake_s', 0.2, 60); num('dim_s', 1, 86400); num('off_s', 1, 86400);
+    num('bright_pct', 5, 100); num('dim_pct', 1, 100); num('motion_thr', 0.02, 0.5);
+    p.threshold_db = p.baseline_db + p.margin_db;
+    p.state = 'active'; p.brightness = p.bright_pct;
+    return [200, { ...p, ok: !st.presenceNotSaved }];    // "ok":false: applied, not saved (NVS refused)
+  },
+  'POST /api/calibrate': b => {                   // a refusal is an answer: 200 {ok: false, why}
+    const p = st.presence;
+    if (!p.mic_ok) return [200, { ok: false, why: 'no_mic' }];
+    if (p.calibrating) return [200, { ok: false, why: 'busy' }];
+    p.calibrating = true;
+    p.calib_left_s = (b && b.seconds) || 5;
+    return [200, { ...p, ok: true }];
+  },
   'GET /api/scan': () => [200, [{ ssid: 'HomeNet', rssi: -50, secure: true }, { ssid: 'Cafe', rssi: -75, secure: false }]],
   'POST /api/wifi': b => { st.wifi = b; return [200, { ok: true }]; },
   'GET /api/sound': () => [200, st.sound],
@@ -128,6 +158,12 @@ http.createServer(async (req, res) => {
   if (req.method === 'GET' && url === '/__state') return json(res, 200, st);
   if (req.method === 'POST' && url === '/__setup') { st.setupNet = true; return json(res, 200, { ok: true }); }
   if (req.method === 'POST' && url === '/__key') { st.key = (await body(req) || {}).key || null; return json(res, 200, { ok: true }); }
+  if (req.method === 'POST' && url === '/__presence') {
+    const b = await body(req) || {};
+    if ('not_saved' in b) { st.presenceNotSaved = !!b.not_saved; delete b.not_saved; }   // the next saves fail
+    Object.assign(st.presence, b);
+    return json(res, 200, st.presence);
+  }
   if (req.method === 'POST' && url === '/__update') {
     const b = await body(req) || {};
     if (b.state && !STATES.includes(b.state)) return json(res, 400, { error: 'state', states: STATES });

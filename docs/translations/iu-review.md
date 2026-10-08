@@ -306,6 +306,8 @@ anything that reads wrong.
 | `web:calStart` | Calibrating: stay quiet for 5 seconds… | ᐆᒃᑐᖅᓯᐅᖅᑐᖅ: ᓂᐸᐃᓪᓗᑎᑦ 5 s… | Uuktuqsiuqtuq: nipaillutit 5 `s`… | low |  |
 | `web:calNA` | Calibration unavailable. | ᐆᒃᑐᖅᓯᐅᕐᓂᖅ ᐊᑐᐃᓐᓇᐅᙱᑦᑐᖅ. | Uuktuqsiurniq atuinnaunngittuq. | low |  |
 | `web:calFail` | Calibration failed. | ᐆᒃᑐᖅᓯᐅᕐᓂᖅ ᑕᒻᒪᖅᑐᖅ. | Uuktuqsiurniq tammaqtuq. | low |  |
+| `web:calOk` | Background noise measured: {0} dBFS. | ᓂᐲᑦ ᐆᒃᑐᖅᓯᐅᕐᓯᒪᔪᑦ: {0} dBFS. | Nipiit uuktuqsiursimajut: {0} `dBFS`. | low | "the sounds have been measured" (uuktuqsiur- as web:calibrate); a reviewer should check |
+| `web:calNoisy` | The room wasn't quiet enough: the previous level ({0} dBFS) was kept. Try again in silence. | ᓂᐸᐃᑦᓯᐊᓪᓚᙱᑦᑐᖅ: ᓯᕗᓪᓕᖅ ({0} dBFS) ᐱᒋᔭᐅᔪᖅ. ᐆᒃᑐᖅᓯᐅᒃᑲᓐᓂᕐᓕ ᓂᐸᐃᓪᓗᑎᑦ. | Nipaitsiallanngittuq: sivulliq ({0} `dBFS`) pigijaujuq. Uuktuqsiukkannirli nipaillutit. | low | "not quiet enough: the earlier one ({0}) is kept. Measure again being quiet" built from this sheet: nipaittuq (quiet) + -nngit- (not), pigijaujut (kept, fw:T_UP_KEPT), -kanniq- (again, fw:T_TAP_AGAIN), nipaillutit (web:calStart); a reviewer should check it all |
 | `web:offLonger` | "Turn off after" must be longer than "Dim after". | "ᖃᒥᓪᓕ" ᑕᑭᓂᕈᐊᓘᔭᕆᐊᖃᖅᑐᖅ "ᑖᓂᑭᓪᓕᒋᐊᕐᓕ"-ᒥᑦ. | "Qamilli" takinirualuujariaqaqtuq "Taanikilligiarli"-mit. | low |  |
 | `web:savedDot` | Saved. | ᔭᒐᔾᔭᐃᕐᓯᒪᔪᖅ. | Jagajjairsimajuq. | medium |  |
 | `web:presetFilled` | Preset filled in. Tap Save to apply. | ᐱᕕᒃᓴᐃᑦ ᐃᓕᓯᒪᓕᖅᑐᑦ. ᔭᒐᔾᔭᐃᕐᓕ. | Piviksait ilisimaliqtut. Jagajjairli. | low |  |

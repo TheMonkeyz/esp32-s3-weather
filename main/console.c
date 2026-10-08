@@ -17,7 +17,6 @@
 #include "slide.h"
 #include "touch.h"
 #include "ui.h"
-#include "presence.h"
 #include "config.h"
 
 static const char *TAG = "test";
@@ -112,20 +111,6 @@ static void cmd_drag(int argc, char **argv)             // drag X1 Y1 X2 Y2 [ms]
     finger_path(atoi(argv[1]), atoi(argv[2]), x1, y1, argc > 5 ? ms_arg(argv[5]) : 400);
     finger_up(x1, y1);
     ESP_LOGI(TAG, "ok drag");
-}
-
-static void cmd_wake(int argc, char **argv)
-{
-    presence_wake();
-    ESP_LOGI(TAG, "ok wake");
-}
-
-static void cmd_presence(int argc, char **argv)
-{
-    presence_status_t st;
-    presence_get_status(&st);
-    ESP_LOGI(TAG, "presence state=%d brightness=%d quiet_s=%.0f mic=%d imu=%d", st.state, st.brightness,
-             st.quiet_s, st.mic_ok, st.imu_ok);
 }
 
 static void cmd_fps(int argc, char **argv)              // "fps reset", then "fps": frames since the reset
@@ -382,8 +367,7 @@ void console_init(void)
     testcon_register("press", "press X Y [ms]", cmd_press);
     testcon_register("swipe", "swipe left|right|up|down", cmd_swipe);
     testcon_register("drag", "drag X1 Y1 X2 Y2 [ms]", cmd_drag);
-    testcon_register("wake", "wake", cmd_wake);
-    testcon_register("presence", "presence", cmd_presence);
+    // (presence [calibrate N] and wake: forge_presence's, registered by presence_start())
     testcon_register("fps", "fps [reset]", cmd_fps);
 #if LV_USE_PROFILER && LV_USE_PROFILER_BUILTIN
     testcon_register("profile", "profile", cmd_profile);

@@ -4,8 +4,9 @@
 **Where the code lives (v1.14.0).** The infrastructure is espforge's (github.com/TheMonkeyz/espforge), taken at a
 release tag by the component manager (`main/idf_component.yml` → `managed_components/`): forge_core (diag, test
 console, i18n core, NVS helpers, version, png_rows, textfit, http_once, utf8), forge_net (`net.c`, `web.c`, `svc.c`,
-`tlscert.c`), forge_ota and dns_server. Their sections below describe how this display uses them; espforge's
-`docs/COMPONENTS.md` and the headers are the reference. This project's glue: `routes.c` (the page's app routes),
+`tlscert.c`), forge_ota, dns_server and, since v1.15.0, forge_presence (screen dimming; the board's microphones,
+motion sensor, touch and brightness come in through its hooks, `main.c`). Their sections below describe how this display uses them; espforge's
+`docs/COMPONENTS.md` and the headers are the reference. This project's glue: `routes.c` (the page's app routes), `audio.c` (I2S and the microphones),
 `console.c` (its console commands, "where", the "diag: display" line), `services.c` (its outside services),
 `i18n.c` (texts, Inuktitut), Kconfig `CONFIG_FORGE_*` in `sdkconfig.defaults` (names, update site). CLAUDE.md,
 "Shared with espforge", says how to change shared code.
@@ -711,9 +712,10 @@ order, and ~11 ms on the bus.
 
 ## Alert sounds (`sound.c`)
 
-- **I2S shared with the microphones:** `presence.c` opens I2S0 in both directions (`i2s_new_channel(&cc, &tx,
-  &rx)`, 16 kHz stereo 16-bit, DOUT 8, `auto_clear` so the speaker gets silence between sounds) and keeps one
-  `audio_codec_data_if_t` (`presence_audio_data_if()`) for the ES7210 (in) and the ES8311 (out). `sound.c` opens the
+- **I2S shared with the microphones:** `audio.c` opens I2S0 in both directions (`audio_init()`, from `app_main`
+  before the presence and sound tasks; `i2s_new_channel(&cc, &tx, &rx)`, 16 kHz stereo 16-bit, DOUT 8, `auto_clear`
+  so the speaker gets silence between sounds) and keeps one `audio_codec_data_if_t` (`audio_data_if()`) for the
+  ES7210 (in, `audio_mic_open()`) and the ES8311 (out). Until v1.15.0 this was in `presence.c`. `sound.c` opens the
   speaker device only while a sound plays (`esp_codec_dev_open` / `close`), so the amplifier is off otherwise. The
   microphones keep working during and after a sound (checked).
 - **Sounds:** synthesised beeps, by alert level: yellow / statement 2 beeps (1.5 kHz), orange 3 + 3 quick beeps
@@ -735,36 +737,68 @@ order, and ~11 ms on the bus.
   sound, test). `GET /api/sound`, `POST /api/sound` (any of `level`, `volume`, `quiet_from`, `quiet_to` "HH:MM",
   or `test`: true / 1–3); the page's Sound card.
 
-## Presence dimming (`presence.c`)
+## Presence dimming (espforge's `forge_presence`, since v1.15.0)
 
-- **Audio:** the ES7210 is driven through `esp_codec_dev` (I2C control on the touch controller's bus via
-  `touch_i2c_bus()`; I2S0 RX, 16 kHz, 2 channels, 16-bit, 30 dB mic gain). Every 100 ms: RMS of both channels → dBFS.
-- **Calibration:** `presence_calibrate(5)` collects 5 s of levels. The baseline is the 90th percentile, saved in NVS
-  (`presence/cfg` blob, with the rest of the settings).
+The state machine, settings, calibration, console commands and web routes are espforge's component
+`forge_presence` (`components/forge_presence`, at the tag in `main/idf_component.yml`; its `include/presence.h` is the
+reference). It started as this display's `presence.c` and knows no board: `main.c` gives it the hardware through
+`presence_hooks_t`:
+
+| Hook | Here |
+|---|---|
+| `mic_open` / `mic_read` | `audio_mic_open(30)` / `audio_mic_read()` (`audio.c`: ES7210 through `esp_codec_dev`, I2C on the touch controller's bus via `touch_i2c_bus()`, I2S0 RX, 16 kHz, 2 channels, 16-bit, 30 dB gain) |
+| `accel_open` / `accel_read` | `imu_init(touch_i2c_bus())` / `imu_read()` |
+| `touch_idle_ms` | `touch_idle_ms()` (a finger down, or lifted within 150 ms, counts as activity) |
+| `set_brightness` | `display_brightness()` under `display_lock()` (it waits for LVGL's last band, CLAUDE.md 22(c)) |
+| `settings_changed` | `ui_settings_changed()` (the page changed them: the Settings screen's picture is redrawn) |
+
+`touch.c` still calls `presence_touch()` when a finger comes down: it wakes the screen, and the touch that wakes a dark
+screen is swallowed. `presence_start(&hooks)` loads the settings, registers the console's `presence [calibrate N]` and
+`wake` and starts the task (core 0); `presence_web_routes()` adds the routes before `routes_init()` and `web_start()`.
+
+- **Level:** every 100 ms, RMS of both channels → dBFS.
+- **Calibration:** `presence_calibrate(5)` collects 5 s of levels. The baseline is their **median**, kept only when the
+  90th and 10th percentiles are within 12 dB (`PRESENCE_CAL_SPREAD_DB`); otherwise (someone spoke) the previous
+  baseline stays and the verdict is "noisy". Until v1.15.0 it was the 90th percentile: speech during the 5 s set it
+  ~30 dB above the room, and the screen never dimmed again. `GET /api/presence` reports the last verdict (`cal`:
+  `none` | `ok` | `noisy`, `cal_spread_db`); the page shows it when a calibration it saw ends.
 - **Sustained-noise score:** +0.1 per loud tick, −0.05 per quiet tick, clamped to `[0, wake_s]`. It wakes when it
   reaches `wake_s`, so short bangs don't wake it, while speech with pauses does.
-- **States:**
-  - ACTIVE: any loud tick resets the quiet timer; `dim_s` of quiet → DIM.
-  - DIM: the score reaching `wake_s` → ACTIVE. A loud tick restarts the off countdown. `dim_s + off_s` of quiet → OFF.
-  - OFF: the score reaching `wake_s` → ACTIVE.
-  - Touch: `presence_touch()` → ACTIVE; the waking touch is swallowed in `touch.c` if the screen was off.
-  - Movement (`moved`): → ACTIVE from DIM or OFF; while ACTIVE it resets the quiet timer like noise.
+- **States** (`presence_sm_step()`, host-tested in espforge):
+  - ACTIVE: any loud tick, touch or movement resets the quiet timer; `dim_s` of quiet → DIM.
+  - DIM: the score reaching `wake_s`, a touch or a movement → ACTIVE. A loud tick restarts the off countdown.
+    `dim_s + off_s` of quiet → OFF.
+  - OFF: the score reaching `wake_s`, a touch or a movement → ACTIVE.
+  - Without microphones, or with dimming off: always ACTIVE.
 - **Wake on pick-up** (`imu.c` + the presence loop): every 100 ms the accelerometer is read (QMI8658: ±2 g,
   62.5 Hz, gyroscope off). `rest` is a slow average of the acceleration vector (5 % per tick, ~2 s); movement =
   distance from it in g, so lifting or tilting counts and lying still in any position doesn't. Above `motion_thr` →
   `moved`. Measured on the board: still 0.001–0.005 g, a firm bump on the table ~0.07 g, picking it up 0.14–0.33 g.
   Sensitivity: High 0.05 g (a firm bump wakes it), Normal 0.10 g (default), Low 0.20 g (a clear lift). The first
   second of samples after boot is skipped (a 3.7 g junk reading came out before the sensor settled).
-- **Settings storage:** `presence/cfg` is a blob of `presence_cfg_t`; a blob of another size is ignored on load,
-  so **don't add fields to `presence_cfg_t`** (an update would reset everyone's screen settings). The pick-up
-  settings are separate keys: `presence/motion` (u8) and `presence/motion_mg` (u16, threshold in milli-g).
-- **Brightness:** CO5300 command `0x51`, faded in 10% steps per tick (about 1 s full ↔ off), under `display_lock()`.
-  Rendering continues while the screen is off.
-- **API:** `GET /api/presence` (config and live status: level, threshold, state, wake_progress, quiet_s, calibrating,
-  brightness, `imu_ok`, `motion_g` (recent peak, decays in ~1 s, for the page's meter), `motion_thr`,
-  `motion_wake`), `POST /api/presence` (config, including `motion_wake` and `motion_thr`), `POST /api/calibrate
-  {seconds}`. The page polls status every 700 ms
-  while visible.
+- **Limits** (`presence_clamp_cfg()`, from the page and NVS): margin 1–60 dB, wake 0.2–60 s, dim and off 1 s to
+  24 h each (NVS keeps whole seconds), brightness 5–100 %, dimmed 1–100 % (capped at the full level where it is
+  used), baseline −100–0 dBFS.
+- **Settings storage:** NVS namespace `presence`, one typed key per setting: `enabled` u8, `margin` u16 (0.1 dB),
+  `wake` u16 (0.1 s), `dim` / `off` u32 (s), `bright` / `dim_pct` u8 (%), `baseline` i16 (0.1 dBFS), `motion` u8,
+  `motion_mg` u16 (milli-g). Before v1.15.0 the first eight were one 32-byte blob `presence/cfg` (the bytes of the
+  old `presence_cfg_t`). At the first start of v1.15.0 `presence_start()` imports that blob once
+  (`presence_cfg_from_blob_v1()`, field by field at fixed offsets, clamped) into the typed keys, writing `enabled`
+  last: a power cut midway leaves it missing and the next start imports again. The blob is left in place, so a
+  rollback to v1.14.x still finds its settings. `tests/host/test_presence_blob.c` writes the old struct as declared
+  (`_Static_assert` on its size and offsets) and checks the import gives the same values.
+- **Brightness:** CO5300 command `0x51`, faded in 10% steps per tick (about 1 s full ↔ off), through the
+  `set_brightness` hook. A brightness slider being dragged (`presence_preview_brightness()`, Settings screen) is shown
+  at once, with no fade for 300 ms after the last call. Rendering continues while the screen is off.
+- **API** (`presence_web.c`): `GET /api/presence` (`ok`, config and live status: level, threshold, state,
+  wake_progress, quiet_s, calibrating, calib_left_s, `cal`, `cal_spread_db`, brightness, `imu_ok`, `motion_g` (recent
+  peak, decays in ~1 s, for the page's meter), `motion_thr`, `motion_wake`), `POST /api/presence` (config, including
+  `motion_wake` and `motion_thr`; GET's answer, `"ok":false` when NVS refused: applied but not saved), `POST
+  /api/calibrate {seconds}` (GET's answer with `"calibrating":true`, or 200 `{"ok":false,"why":"no_mic"|"busy"}`;
+  before v1.15.0 a refusal was a 400 and a failed save a 500). The page polls status every 700 ms while visible.
+- **Console:** `presence` prints `presence state=N brightness=N quiet_s=N mic=N imu=N level=… threshold=… calibrating=N
+  cal=N spread=…` (the harness reads `state=` and `brightness=`); `presence calibrate N`; `wake`. `where` adds
+  ` presence=N`.
 - **Presets & units:** firmware stores `dim_s` and `off_s` (off is *after* dim). The page shows "Turn off after" as
   total quiet time (`dim_s + off_s`) with s/min/h unit selectors and converts back on save. Presets
   (Testing/Short/Normal/Long) live only in `index.html` (`PRESETS`); loading the config picks the matching preset or

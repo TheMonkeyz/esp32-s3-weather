@@ -19,7 +19,7 @@ REPO = 'https://github.com/TheMonkeyz/espforge.git'
 
 
 def pinned_tag():
-    """forge_core's version in main/idf_component.yml (all four espforge entries share it)."""
+    """forge_core's version in main/idf_component.yml (all five espforge entries share it)."""
     text = open(os.path.join(ROOT, 'main', 'idf_component.yml'), encoding='utf-8').read()
     m = re.search(r'^\s*forge_core:\s*\n(?:\s+\w+:.*\n)*?\s+version:\s*"?([^"\s#]+)', text, re.M)
     if not m:

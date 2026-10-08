@@ -1,5 +1,6 @@
 // The display in the browser: LVGL and the firmware's own screens (ui.c, slide.c, pager.c), its forecast, air-quality
-// and alerts code (weather.c, alerts.c), its settings (config.c, i18n.c), dimming and wake on pick-up (presence.c)
+// and alerts code (weather.c, alerts.c), its settings (config.c, i18n.c), dimming and wake on pick-up (espforge's
+// forge_presence, with the board's hooks below)
 // and the settings page's routes (routes.c, served by emu_web.c), with the hardware replaced by the page
 // (emu_display.c, emu_touch.c, emu_http.c, emu_nvs.c, emu_audio.c, emu_imu.c, emu_stubs.c). This loop does what
 // main.c does once Wi-Fi is up.
@@ -21,6 +22,9 @@
 #include "radar.h"
 #include "nvs.h"
 #include "presence.h"
+#include "audio.h"
+#include "imu.h"
+#include "touch.h"
 #include "routes.h"
 #include "ota.h"
 
@@ -135,6 +139,16 @@ EMSCRIPTEN_KEEPALIVE void emu_mic(int on)
     presence_set_config(&c);
 }
 
+// forge_presence's hooks, as main.c's: the microphones through main/audio.c (emu_audio.c's esp_codec_dev), the motion
+// sensor (emu_imu.c), the finger (emu_touch.c), the canvas's brightness (emu_display.c)
+static bool mic_open(void) { return audio_mic_open(30); }
+static bool accel_open(void) { return imu_init(touch_i2c_bus()); }
+static void set_brightness(int pct) { display_brightness((uint8_t)(pct * 255 / 100)); }
+static const presence_hooks_t presence_hooks = {
+    .mic_open = mic_open, .mic_read = audio_mic_read, .accel_open = accel_open, .accel_read = imu_read,
+    .touch_idle_ms = touch_idle_ms, .set_brightness = set_brightness, .settings_changed = ui_settings_changed,
+};
+
 static uint32_t tick(void) { return (uint32_t)emscripten_get_now(); }
 
 static void run_lvgl(int ms)                       // LVGL for a while, giving the browser its turn
@@ -161,9 +175,11 @@ int main(void)
     place_from_address();
     ui_init();
     config_get_location(&shown);                   // the radar starts on the place shown
-    presence_start();                              // presence.c: brightness, dimming, wake on pick-up (emu_imu.c)
+    audio_init();                                  // main/audio.c (nothing to open in the browser: emu_audio.c)
+    presence_start(&presence_hooks);               // forge_presence: brightness, dimming, wake on pick-up and touch
     emu_mic(0);                                    // the microphone starts off: so does dimming (see emu_mic)
     sound_start();                                 // sound.c: alert sounds through Web Audio (emu_audio.c)
+    presence_web_routes();                         // /api/presence, /api/calibrate (forge_presence's presence_web.c)
     routes_init(on_location_changed);              // the settings page's routes (emu_web.c serves them)
     ota_web_routes();
     ui_message(tr(T_WEATHER), tr(T_FETCHING));
