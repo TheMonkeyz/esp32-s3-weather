@@ -1,7 +1,8 @@
 # Flash helper: waits for a "flash.request" file in this folder, flashes firmware\*.bin,
 # then logs the board's serial output. Shows each step live in this window.
 # The request file may contain the number of seconds to log (default 60).
-# "reboot.request" does the same without flashing: restarts the board and logs it
+# "reboot.request" does the same without flashing: restarts the board (through its test console, the port kept open,
+# so the boot log is whole; else esptool's reset) and logs it
 # (used to re-run the diagnostics, see docs/DIAGNOSTICS.md).
 # Stop the serial log early with "stop.request" or by pressing Q / Esc in this window.
 # Only ever flashes the files in .\firmware with .\tools\esptool.exe. Close this window to stop it.
@@ -48,6 +49,25 @@ while ($true) {
   $app = Get-Item "firmware\weather_amoled.bin" -ErrorAction SilentlyContinue
   if ($app) { Say ("Firmware: {0:N0} bytes, built {1}" -f $app.Length, $app.LastWriteTime.ToString("HH:mm:ss")) }
 
+  # ---- restart through the test console (reboot.request) ----
+  # esptool's hard reset re-enumerates the USB and the first ~2.5 s of boot log are lost; a software restart with the
+  # port open keeps them (espforge LESSONS L191, its flash_helper.ps1). esptool only when no boot follows.
+  $consoleReboot = $false
+  if ($reboot) {
+    $dev = Get-CimInstance Win32_PnPEntity -ErrorAction SilentlyContinue |
+           Where-Object { $_.PNPDeviceID -match 'VID_303A' -and $_.Name -match '\((COM\d+)\)' } | Select-Object -First 1
+    if ($dev -and $dev.Name -match '\((COM\d+)\)') {
+      $port = $Matches[1]
+      Say "Restarting through the test console on $port (the port stays open: the boot log is kept from its first line)"
+      $Host.UI.RawUI.WindowTitle = "ESP flash helper - logging serial ($secs s)"
+      & powershell -NoProfile -ExecutionPolicy Bypass -File "monitor.ps1" -Port $port -Seconds $secs -Reboot | Out-Null
+      $monExit = $LASTEXITCODE
+      if ($monExit -ne 3) { $consoleReboot = $true; $flashSecs = 0; $early = if ($monExit -eq 2) { 1 } else { 0 } }
+      else { Say "No restart through the test console: esptool's hard reset instead" "Yellow" }
+    }
+  }
+  if (-not $consoleReboot) {   # esptool: a flash, or a restart the console did not do (unindented)
+
   # ---- flash ----
   $lines = New-Object System.Collections.Generic.List[string]
   $esptoolArgs = @("--chip", "esp32s3", "-b", "460800", "--before", "default_reset", "--after", "hard_reset",
@@ -89,6 +109,8 @@ while ($true) {
   Say "Logging serial output for $secs s (saved to serial_log.txt). Press Q or Esc to stop early ..."
   & powershell -NoProfile -ExecutionPolicy Bypass -File "monitor.ps1" -Port $port -Seconds $secs | Out-Null
   $early = if ($LASTEXITCODE -eq 2) { 1 } else { 0 }
+
+  }   # (esptool)
   if ($early) { Say "Serial log stopped early" "Yellow" }
 
   # ---- summary ----

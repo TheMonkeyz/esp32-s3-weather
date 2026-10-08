@@ -4,7 +4,11 @@
 #   serial_live.txt  grows line by line (the whole log is still written to serial_log.txt at the end)
 #   serial.send      each line in it is sent to the board's test console (main/testcon.c), then the file is
 #                    deleted; the sent line also appears in the logs as "> command"
-param([string]$Port = "", [int]$Seconds = 75)
+# -Reboot: restart the board first with the test console's `reboot`, on this open port. A software restart keeps the
+# S3's USB connected, so the boot log is whole from ESP-ROM on; esptool's hard reset re-enumerates the USB and the first
+# ~2.5 s are lost (espforge LESSONS L154, L191). Exit code 3 when no boot follows within 4 s (no console, a hung
+# board): the helper then resets with esptool and runs this again. From espforge's tools/devloop/monitor.ps1.
+param([string]$Port = "", [int]$Seconds = 75, [switch]$Reboot)
 Set-Location $PSScriptRoot
 if (-not $Port -and (Test-Path flash_log.txt)) {
   $m = Select-String -Path flash_log.txt -Pattern 'Serial port (COM\d+)' | Select-Object -Last 1
@@ -12,16 +16,32 @@ if (-not $Port -and (Test-Path flash_log.txt)) {
 }
 if (-not $Port) { $Port = [System.IO.Ports.SerialPort]::GetPortNames() | Select-Object -Last 1 }
 Write-Host "Monitoring $Port ..."
-Start-Sleep -Seconds 2   # let USB re-enumerate after reset
+if (-not $Reboot) { Start-Sleep -Seconds 2 }   # let USB re-enumerate after reset
 $sp = New-Object System.IO.Ports.SerialPort $Port, 115200
 $sp.DtrEnable = $false; $sp.RtsEnable = $false; $sp.ReadTimeout = 200
 $out = New-Object System.Collections.Generic.List[string]
 for ($i = 0; $i -lt 5 -and -not $sp.IsOpen; $i++) { try { $sp.Open() } catch { Start-Sleep -Seconds 1 } }
-if (-not $sp.IsOpen) { "Could not open $Port" | Tee-Object serial_log.txt; exit 1 }
+if (-not $sp.IsOpen) { "Could not open $Port" | Tee-Object serial_log.txt; exit $(if ($Reboot) { 3 } else { 1 }) }
 if (Test-Path "serial.send") { Remove-Item "serial.send" -Force }          # stale commands from an earlier run
 $live = New-Object System.IO.StreamWriter((Join-Path $PSScriptRoot "serial_live.txt"), $false, [System.Text.Encoding]::UTF8)
 $live.AutoFlush = $true
 try { while ([Console]::KeyAvailable) { [void][Console]::ReadKey($true) } } catch {}   # ignore keys pressed before the log started
+if ($Reboot) {
+  $sp.Write("reboot`n")
+  $bootEnd = (Get-Date).AddSeconds(4); $booted = $false
+  while (-not $booted -and (Get-Date) -lt $bootEnd) {
+    try {
+      $line = $sp.ReadLine(); Write-Host $line; $out.Add($line); $live.WriteLine($line)
+      $booted = $line -match 'ESP-ROM:|rst:0x'
+    }
+    catch {}   # a timeout (no line yet), or the USB went away: not a console restart
+  }
+  if (-not $booted) {
+    try { $sp.Close() } catch {}
+    $live.Close(); Write-Host "No restart through the test console"; exit 3
+  }
+  Set-Content -Path "flash.status" -Value "logging" -Encoding ASCII   # (the helper waits for this script to end)
+}
 $end = (Get-Date).AddSeconds($Seconds)
 $stopped = $false; $nextCheck = Get-Date
 while ((Get-Date) -lt $end) {
