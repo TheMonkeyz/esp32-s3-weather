@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Build the display against an espforge checkout that isn't released yet, to test an espforge change with this app
-before tagging espforge. Nothing is committed: for the length of the build, main/idf_component.yml's four espforge
+before tagging espforge. Nothing is committed: for the length of the build, main/idf_component.yml's five espforge
 entries become `override_path:` entries pointing at the checkout (the only override ESP-IDF's component manager honours
 over a git dependency: -DEXTRA_COMPONENT_DIRS lost to the managed copy, October 5), then the file is put back exactly
 as it was, even if the build fails. The build goes to its own folder (build/forge) with its own sdkconfig. Label the
@@ -11,7 +11,7 @@ build (version.txt) as a test, e.g. v1.14.0-forge.N.
     python tools/forge_local.py --espforge D:/src/espforge --idf C:/Espressif/esp-idf
 
 Run it from a shell where ESP-IDF is set up (export.ps1 / export.sh), or pass --idf. When the espforge change is
-good: tag espforge (rc), bump the four tags in main/idf_component.yml, and build normally (managed_components then
+good: tag espforge (rc), bump the five tags in main/idf_component.yml, and build normally (managed_components then
 holds the tagged copies again).
 """
 import argparse
@@ -23,7 +23,7 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MANIFEST = os.path.join(ROOT, 'main', 'idf_component.yml')
-COMPONENTS = ('forge_core', 'forge_net', 'forge_ota', 'dns_server')
+COMPONENTS = ('forge_core', 'forge_net', 'forge_ota', 'dns_server', 'forge_presence')
 
 
 def local_manifest(text, espforge):

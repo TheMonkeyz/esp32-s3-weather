@@ -263,6 +263,8 @@ const I18N = {
   quietFor: 'Quiet for {0} (dims at {1})', wakeProg: 'Wake-up progress {0}% (needs {1} s of sound)',
   movement: 'Movement {0} g · wakes at {1} g', calStart: 'Calibrating: stay quiet for 5 seconds…',
   calNA: 'Calibration unavailable.', calFail: 'Calibration failed.',
+  calOk: 'Background noise measured: {0} dBFS.',
+  calNoisy: "The room wasn't quiet enough: the previous level ({0} dBFS) was kept. Try again in silence.",
   offLonger: '"Turn off after" must be longer than "Dim after".', savedDot: 'Saved.',
   presetFilled: 'Preset filled in. Tap Save to apply.',
   fwIdle: 'Checks for updates a minute after start-up, then every 6 hours.', fwChecking: 'Checking…',
@@ -332,6 +334,8 @@ const I18N = {
   quietFor: 'Calme depuis {0} (tamisé à {1})', wakeProg: 'Réveil : {0} % (il faut {1} s de son)',
   movement: 'Mouvement {0} g · réveil à {1} g', calStart: 'Calibration : gardez le silence 5 secondes…',
   calNA: 'Calibration non disponible.', calFail: 'La calibration a échoué.',
+  calOk: 'Bruit de fond mesuré : {0} dBFS.',
+  calNoisy: "La pièce n'était pas assez silencieuse : le niveau précédent ({0} dBFS) a été conservé. Réessayez en gardant le silence.",
   offLonger: '« Éteindre après » doit être plus long que « Tamiser après ».', savedDot: 'Enregistré.',
   presetFilled: 'Délais remplis. Touchez Enregistrer pour appliquer.',
   fwIdle: 'Vérifie les mises à jour une minute après le démarrage, puis toutes les 6 heures.', fwChecking: 'Vérification…',
@@ -461,6 +465,8 @@ const I18N = {
   calStart: 'ᐆᒃᑐᖅᓯᐅᖅᑐᖅ: ᓂᐸᐃᓪᓗᑎᑦ 5 s…',
   calNA: 'ᐆᒃᑐᖅᓯᐅᕐᓂᖅ ᐊᑐᐃᓐᓇᐅᙱᑦᑐᖅ.',
   calFail: 'ᐆᒃᑐᖅᓯᐅᕐᓂᖅ ᑕᒻᒪᖅᑐᖅ.',
+  calOk: 'ᓂᐲᑦ ᐆᒃᑐᖅᓯᐅᕐᓯᒪᔪᑦ: {0} dBFS.',
+  calNoisy: 'ᓂᐸᐃᑦᓯᐊᓪᓚᙱᑦᑐᖅ: ᓯᕗᓪᓕᖅ ({0} dBFS) ᐱᒋᔭᐅᔪᖅ. ᐆᒃᑐᖅᓯᐅᒃᑲᓐᓂᕐᓕ ᓂᐸᐃᓪᓗᑎᑦ.',
   offLonger: '"ᖃᒥᓪᓕ" ᑕᑭᓂᕈᐊᓘᔭᕆᐊᖃᖅᑐᖅ "ᑖᓂᑭᓪᓕᒋᐊᕐᓕ"-ᒥᑦ.',
   savedDot: 'ᔭᒐᔾᔭᐃᕐᓯᒪᔪᖅ.',
   presetFilled: 'ᐱᕕᒃᓴᐃᑦ ᐃᓕᓯᒪᓕᖅᑐᑦ. ᔭᒐᔾᔭᐃᕐᓕ.',
@@ -756,6 +762,7 @@ $('saveWifi').onclick = async () => {
 
 // ---- Screen & presence ----
 let presLoaded = false;
+let calSeen = false;                                  // a calibration this page saw running (its end gets a verdict)
 const PRESETS = {                                     // seconds; off = total quiet time before the screen goes dark
   testing: {dim: 10,   off: 30,    wake: 2},
   short:   {dim: 120,  off: 900,   wake: 2},
@@ -776,6 +783,13 @@ const pct = db => Math.max(0, Math.min(100, (db + 90) / 90 * 100));      // -90.
 async function pollPresence(){
   try{
     const p = await (await fetch('/api/presence')).json();
+    // A calibration this page saw end: its verdict ("noisy": someone spoke, the display kept the previous level)
+    if (calSeen && !p.calibrating) {
+      calSeen = false;
+      if (p.cal === 'ok' || p.cal === 'noisy')
+        say($('pmsg'), t(p.cal === 'ok' ? 'calOk' : 'calNoisy', Math.round(p.baseline_db)), p.cal === 'ok');
+    }
+    if (p.calibrating) calSeen = true;
     const names = {active: t('stActive'), dim: t('stDim'), off: t('stOff')};
     $('pState').textContent = p.calibrating ? t('calibrating', Math.ceil(p.calib_left_s)) : (p.mic_ok ? names[p.state] : t('noMic'));
     $('pState').className = 'st ' + (p.calibrating ? '' : p.state);
@@ -810,8 +824,12 @@ async function pollPresence(){
 }
 $('pCal').onclick = async () => {
   try{
+    // 200 either way: GET's answer with "calibrating", or {"ok":false,"why":"no_mic"|"busy"} (an older display: 400)
     const r = await fetch('/api/calibrate', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({seconds:5})});
-    say($('pmsg'), r.ok ? t('calStart') : t('calNA'), r.ok);
+    const p = r.ok ? await r.json() : {ok: false};
+    const started = p.ok !== false;
+    if (started) calSeen = true;
+    say($('pmsg'), started ? t('calStart') : t('calNA'), started);
   }catch(e){ say($('pmsg'), t('calFail'), false); }
 };
 $('pSave').onclick = async () => {
@@ -821,7 +839,7 @@ $('pSave').onclick = async () => {
                 dim_s: dim, off_s: offTotal - dim, bright_pct: +$('pBr').value, dim_pct: +$('pDimPct').value};
   try{
     const r = await fetch('/api/presence', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
-    if (!r.ok) throw 0;
+    if (!r.ok || (await r.json()).ok === false) throw 0;      // "ok":false: applied but not saved (NVS refused)
     presLoaded = false; say($('pmsg'), t('savedDot'), true);
   }catch(e){ say($('pmsg'), t('saveFailed'), false); }
 };

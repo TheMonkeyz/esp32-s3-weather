@@ -3,7 +3,7 @@
 The firmware's own screens, compiled to WebAssembly: LVGL 9.2.2 with the display's settings (`lv_kconfig.h`, generated
 from its sdkconfig), `ui.c`, `slide.c`, `pager.c`, `config.c`, `i18n.c`, the forecast, air-quality and alerts code
 (`weather.c`, `alerts.c`), the radar (`radar.c`, `png_rows.c` with miniz's tinfl as the chip's ROM has), the alert
-sounds (`sound.c`), the brightness, dimming and wake on pick-up (`presence.c`) and the settings page's routes
+sounds (`sound.c`), the brightness, dimming and wake on pick-up (espforge's `forge_presence`, with `audio.c`) and the settings page's routes
 (`routes.c`, forge_ota's `ota_web.c`), all unchanged. Only the hardware is replaced:
 
 | File | Stands in for |
@@ -13,7 +13,7 @@ sounds (`sound.c`), the brightness, dimming and wake on pick-up (`presence.c`) a
 | `emu_http.c` | `esp_http_client`: `fetch()`, awaited with ASYNCIFY (Open-Meteo, GeoMet and the alerts API allow it) |
 | `emu_nvs.c` | NVS: the settings, kept in the page's `localStorage` |
 | `emu_stubs.c` | Wi-Fi, updates (Restart reloads the page), service statuses |
-| `emu_audio.c` | the speaker and the microphones (`esp_codec_dev`): sound.c's PCM, collected between open and close, played through Web Audio at the codec volume (the first touch unlocks audio, browsers' rule); presence.c's 100 ms reads, from the browser's microphone once the visitor turns it on, else silence at the same pace |
+| `emu_audio.c` | the speaker and the microphones (`esp_codec_dev`): sound.c's PCM, collected between open and close, played through Web Audio at the codec volume (the first touch unlocks audio, browsers' rule); forge_presence's 100 ms reads (through `main/audio.c`), from the browser's microphone once the visitor turns it on, else silence at the same pace |
 | `emu_imu.c` | the motion sensor (QMI8658): a phone's accelerometer (`devicemotion`), or the page's "Pick it up" button; a computer lies still |
 | `emu_web.c` | the web server: the settings page below the emulator (`build/settings.html`, the display's `main/web/index.html` with `emu-settings.js` first in its head) queues its `/api/` requests, served here between LVGL frames by the display's own handlers; Wi-Fi scan and save answer that they need the real display |
 | `emu_tasks.c` | FreeRTOS tasks: each one an Emscripten fiber, run by the main loop between LVGL frames; a wait inside a task (`vTaskDelay`, `ulTaskNotifyTake`, a request) goes back to the main loop. radar.c's task runs as is |
@@ -87,5 +87,12 @@ Emscripten 6.0.11. The `pages` job adds it to the site; if the emulator build fa
   AMOLED off). The dimming runs only while the visitor's microphone is on (`emu_mic()`): with silence the room would
   always be "quiet" and the screen would dim for good. The sound never leaves the browser. Wake on pick-up: a phone's
   accelerometer (an iPhone asks permission, in the same tap as the microphone), or "Pick it up" (0.35 g for 0.7 s;
-  presence.c wakes above 0.10 g). A hidden tab pauses `requestAnimationFrame`, so the canvas (and its brightness)
+  forge_presence wakes above 0.10 g). A hidden tab pauses `requestAnimationFrame`, so the canvas (and its brightness)
   only updates when the page is shown.
+- Screen dimming since v1.15.0 is espforge's `forge_presence` built from the same component as the firmware
+  (`presence.c`, `presence_sm.c`, `presence_json.c`, `presence_web.c` from `$(FORGE)/forge_presence`), not a stand-in:
+  `emu_main.c` gives it the hooks `main.c` does (the microphones through `main/audio.c`, which builds here on the I2S
+  shim and `emu_audio.c`; `emu_imu.c`; `emu_touch.c`'s `touch_idle_ms`, so a touch now wakes a dimmed screen here too;
+  `display_brightness()`). The console commands it registers go nowhere (`testcon_register` is a stub in
+  `emu_stubs.c`); its settings are NVS typed keys in `localStorage` (`emu_nvs.c` gained `i16`), and a visitor's old
+  `presence/cfg` blob is imported once as on the display.

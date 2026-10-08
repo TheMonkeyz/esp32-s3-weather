@@ -40,25 +40,29 @@ extracted on October 4 (its `docs/LESSONS.md` L1-L184 generalize the bugs below,
 within hours (Easy Connect was fixed there while this display still failed with the user's phone), so since v1.14.0
 the display **takes its infrastructure from espforge**: forge_core (diag, test console, i18n core, NVS helpers,
 version, png_rows, textfit, http_once, utf8), forge_net (Wi-Fi, setup network, Easy Connect, web server, svc,
-certificate), forge_ota (updates) and dns_server, **at a release tag** (the user's choice, October 4).
+certificate), forge_ota (updates), dns_server and, since v1.15.0, forge_presence (screen dimming by presence: the
+state machine, settings, calibration, console `presence` / `wake`, `/api/presence` and `/api/calibrate`; this board's
+microphones, motion sensor, touch and brightness are its hooks in `main.c`), **at a release tag** (the user's choice,
+October 4).
 
-- **Where:** `main/idf_component.yml` pins the four at the same espforge tag; ESP-IDF's component manager fetches them
+- **Where:** `main/idf_component.yml` pins the five at the same espforge tag; ESP-IDF's component manager fetches them
   into `managed_components/` (git-ignored, like `dependencies.lock`). If `idf.py` stops on "'git init --bare' failed
   ... unable to get current working directory", set `IDF_COMPONENT_CACHE_PATH` to a folder that exists (this PC:
   `C:\Users\lmathieu\.espressif\cm_cache`). Builds outside idf.py (host tests, the emulator, CI) use
   managed_components, or `python tools/fetch_forge.py` (clones the pinned tag into `.espforge/`).
 - **What stays here:** display, touch, `slide.c` (larger than espforge's trimmed fork: port ideas, not the file), pager,
-  lvgl_mem, imu, presence, sound, ui, radar, weather, alerts, config, and the app's glue: `routes.c` (the settings
+  lvgl_mem, imu, audio (I2S0 and the ES7210: forge_presence's microphone hooks, the speaker's data interface), sound,
+  ui, radar, weather, alerts, config, and the app's glue: `routes.c` (the settings
   page's app routes), `console.c` (the display's console commands, "where", "diag: display"), `services.c` (the five
   outside services, their probe URLs, the reasons' texts), `i18n.c` (the texts, Inuktitut's descriptor). Kconfig
   `CONFIG_FORGE_*` in `sdkconfig.defaults` keep the display's names (Weather-Setup, the certificate, the User-Agent,
   the update site).
 - **A fix to shared code** is made in espforge: test it with this app first (`python tools/forge_local.py`: a build
-  against the espforge checkout, nothing committed), release an espforge rc, then bump the four tags here. Before
+  against the espforge checkout, nothing committed), release an espforge rc, then bump the five tags here. Before
   debugging Wi-Fi setup, OTA or the tools, read espforge's LESSONS for that topic.
 - **After bumping the tags, delete `dependencies.lock`** (git-ignored) before building: on October 6 the component
   manager said it re-solved, yet kept the locked commit for the new tag (v0.2.1 built v0.2.0's `forge_core`, without
-  its PNG fix). Check the build log's `NOTICE: [n/7] forge_core (<commit>)`. CI starts clean.
+  its PNG fix). Check the build log's `NOTICE: [n/8] forge_core (<commit>)`. CI starts clean.
 - **Still twins** (same code in both, nothing shares them yet): `lvgl_mem.c`, `pager.c`, `imu.c`, `display.c`,
   `touch.c`, the harness's `board.py` / `harness.py`, the flash helper. A fix in one gets ported or a task chip.
   The PowerShell helpers (`flash_helper.ps1`, `monitor.ps1 -Reboot`) restart through the test console since v1.14.4,
@@ -427,8 +431,8 @@ Windows build gets both from `main/idf_component.yml`. `components/dns_server` *
 
 ## Useful facts
 
-- **Speaker:** shares I2S0 with the microphones (presence.c opens it both ways). Render a whole sound into PSRAM
-  before playing it (generating it on the fly crackled). Hear the levels from the PC with
+- **Speaker:** shares I2S0 with the microphones (`audio.c` opens it both ways, `audio_init()` in `app_main`). Render
+  a whole sound into PSRAM before playing it (generating it on the fly crackled). Hear the levels from the PC with
   `POST /api/sound {"test":1|2|3}` (yellow / orange / red); ask the user to listen, there is no other check. The
   user wanted warning beeps, not a chime; keep them unlike Canada's official Alert Ready signal.
 - **Testing the "new alert" path without a real alert** (done October 1 with `v1.8.0-alerttest.0`, never
@@ -451,8 +455,11 @@ Windows build gets both from `main/idf_component.yml`. `components/dns_server` *
   presence log prints `motion peak X g` every 5 s and `picked up / moved (X g): wake`; the page shows a live meter.
 - **Testing dim/off/wake without waiting 10 min:** read `GET /api/presence`, `POST {"dim_s":10,"off_s":20}`, ask
   the user to stay quiet and still, test, then **post the original values back**.
-- **Don't grow `presence_cfg_t`:** it's saved as one NVS blob and a size change drops the user's settings. Add new
-  presence settings as separate NVS keys (as `motion` / `motion_mg` do).
+- **Presence settings are typed NVS keys** (namespace `presence`, since v1.15.0: forge_presence's `enabled`, `margin`,
+  `wake`, `dim`, `off`, `bright`, `dim_pct`, `baseline`, `motion`, `motion_mg`), so `presence_cfg_t` can change. The
+  old 32-byte `cfg` blob (v1.14.x and before) is imported once at the first start (`presence_cfg_from_blob_v1()`,
+  `enabled` written last as the marker) and **kept**, so a rollback to v1.14.x still reads it; don't erase it.
+  `tests/host/test_presence_blob.c` pins the old layout. A new setting is a change to espforge's forge_presence.
 
 - Diagnostics without flashing: `echo 300 > reboot.request`, wait for `flash.status` = idle, then
   `python3 tools/diag_summary.py serial_log.txt` from the device shell.

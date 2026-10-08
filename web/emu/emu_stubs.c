@@ -1,6 +1,6 @@
 // What the screens ask of the rest of the firmware, answered for the browser: online, no setup network, no updates
-// (Restart reloads the page). The microphones and the motion sensor are presence.c itself with emu_audio.c and
-// emu_imu.c; the speaker is sound.c with emu_audio.c. The service statuses are recorded as the firmware's are
+// (Restart reloads the page). The microphones and the motion sensor are forge_presence itself (emu_main.c's hooks:
+// main/audio.c on emu_audio.c, emu_imu.c); the speaker is sound.c with emu_audio.c. The service statuses are recorded as the firmware's are
 // (svc_http), for the status page.
 #include <stdio.h>
 #include <string.h>
@@ -14,6 +14,7 @@
 #include "alerts.h"
 #include "display.h"
 #include "esp_system.h"
+#include "testcon.h"
 
 const char *esp_err_to_name(esp_err_t e)
 {
@@ -118,4 +119,8 @@ void svc_probe_stale(void) {}
 const char *web_key(void) { return "browser"; }
 
 // forge_core's NVS check (config.c's saves): emu_nvs.c never fails
+// The test console (forge_core's testcon): no USB console in the browser; forge_presence registers its commands
+void testcon_register(const char *name, const char *usage, testcon_fn_t fn) { (void)name; (void)usage; (void)fn; }
+void testcon_add_where(testcon_where_fn_t fn) { (void)fn; }
+
 bool nvs_check(esp_err_t err, const char *what) { (void)what; return err == ESP_OK; }

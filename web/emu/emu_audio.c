@@ -1,9 +1,9 @@
-// The speaker and the microphones, in the browser: esp_codec_dev for sound.c and presence.c.
+// The speaker and the microphones, in the browser: esp_codec_dev for sound.c and audio.c (forge_presence's microphones).
 // Speaker: its PCM (16 kHz, 16-bit stereo, written in pieces between open and close) is collected and played through
 // Web Audio at the codec volume when the speaker is closed. Browsers allow sound only after a user gesture: index.html
 // unlocks the AudioContext on the first touch of the screen.
 // Microphones: the browser's microphone once the visitor turns it on (index.html, "Use my microphone"), resampled to
-// 16 kHz there; presence.c reads 100 ms at a time as from the ES7210. Without it, silence at the same pace.
+// 16 kHz there; forge_presence reads 100 ms at a time (audio_mic_read) as from the ES7210. Without it, silence at the same pace.
 #include <stdlib.h>
 #include <string.h>
 #include <emscripten.h>
@@ -83,7 +83,7 @@ EM_JS(int, js_mic_take, (int16_t *out, int frames), {
     return frames;
 });
 
-// As the ES7210 through I2S: returns when `len` bytes (16-bit stereo) have been heard, ~100 ms for presence.c
+// As the ES7210 through I2S: returns when `len` bytes (16-bit stereo) have been heard, ~100 ms for forge_presence
 int esp_codec_dev_read(esp_codec_dev_handle_t h, void *data, int len)
 {
     int frames = len / 4, ms = frames * 1000 / (h->rate > 0 ? h->rate : 16000);

@@ -28,7 +28,7 @@ test('wake on pick-up can be turned off', async ({ page, request }) => {
 });
 
 test('no pick-up option without a motion sensor', async ({ page, request }) => {
-  await request.post('/api/presence', { data: { imu_ok: false } });
+  await request.post('/__presence', { data: { imu_ok: false } });
   await page.goto('/');
   await expect(page.locator('#pState')).not.toHaveText('…');
   await expect(page.locator('#pMotionBox')).toBeHidden();

@@ -10,6 +10,11 @@ their own `## vX.Y.Z-rc.N` section. Those are shown only to Beta users, while th
 list everything again. (Three tags have no section: v1.3.0-rc.1; and v1.12.0-rc.1 and v1.12.1-rc.2, whose builds failed and were published
 as v1.12.0-rc.2 and v1.12.1-rc.3.)
 
+## v1.15.0-rc.1 - 2026-10-08
+- Calibrating the background noise (settings page, Screen & presence) can no longer be spoiled by someone talking: the display takes the typical level of the room, and if the room wasn't quiet enough it keeps the previous level and the page says so, asking you to try again in silence. When it works, the page shows the level it measured.
+- Screen dimming: "Dim after" and "Turn off after" now go up to 24 hours each.
+- Behind the scenes: screen dimming now comes from espforge (shared with other displays); your screen settings are kept.
+
 ## v1.14.4-rc.1 - 2026-10-07
 - Behind the scenes: built on espforge v0.3.0 (the Wi-Fi, update and settings-page parts it shares with other displays; nothing changes on the screen), and the test tools keep the display's whole start-up log when they restart it.
 

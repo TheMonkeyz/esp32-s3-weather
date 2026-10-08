@@ -189,7 +189,7 @@ npm test
 
 - `mock-server.js` serves the real page and answers `/api/*` like `web.c`, with the state in memory
   (`POST /__reset`, `GET /__state` for the tests). Started by `playwright.config.js` on port 8099. Keep it in step
-  with `web.c` when an API changes.
+  with `web.c` (and espforge's `presence_web.c` for `/api/presence` / `/api/calibrate`) when an API changes.
 - `tests/fixtures.js` answers the outside services locally, so runs are repeatable and need no internet: Leaflet
   from `node_modules/leaflet` (same version and integrity hashes as the page), a grey tile for OpenStreetMap, fixed
   answers for the city search and reverse geocoding. The `noInternet` option makes every outside request fail (a
@@ -206,6 +206,11 @@ npm test
   (`check_result`); the channel picker. The mock refuses a POST that isn't JSON (415) and an Install with nothing
   offered (409), as `web.c` / `ota.c` do. Put back the bug that hid the Install button in v1.11 (a parameter named
   `t` in `fwShow`) and 13 of its 17 tests fail (checked October 4).
+- `presence.spec.js` (from espforge's `screen.spec.js`, since v1.15.0): a calibration from "Calibrating…" to its
+  verdict (the mock ends it after 5 polls with `cal` "ok" at -66 dBFS; `POST /__presence {calibrating: false, cal:
+  'noisy'}` ends it as a noisy room: the previous level kept), no verdict for one the page didn't see, a refusal
+  (`{"ok":false,"why":"no_mic"}`), a save the display couldn't keep (`POST /__presence {not_saved: true}`: `"ok":false`),
+  and the verdicts in French and Inuktitut.
 - Every test saves a full-page screenshot in `tools/webtest/shots/`; the `review:` test saves the Places card (list
   and editor) for design review. Look at them before flashing a page change.
   Shots go through `reviewShot()` (`tests/fixtures.js`): a
@@ -427,6 +432,10 @@ wsl -d Ubuntu --cd /mnt/c/Users/<you>/ESPDEV/weather_amoled/tests/host -- make  
   Makefile downloads it once into `build/`): grey, RGB, palette + tRNS, grey + alpha, RGBA, all five row filters,
   data over two IDAT chunks, a wrapped chunk length, refused inputs. (The wrap only bit a 32-bit `size_t`: on the
   64-bit host that case guards the behaviour, not the original overflow.)
+- `test_presence_blob.c`: forge_presence's import of the settings blob `presence/cfg` that v1.14.x and before saved
+  (`presence_cfg_from_blob_v1()`): the old `presence_cfg_t` written as declared, its size (32) and offsets pinned by
+  `_Static_assert`, values back the same, junk padding ignored, out-of-range and NaN values clamped, other sizes
+  refused.
 - Not covered yet: `web.c`'s handlers.
 - CI runs them on every push (`host-tests` job, cJSON fetched at ESP-IDF's version); a release needs them to pass.
 - A fix that can be reproduced off the board gets a case here; check that the case fails on the old code

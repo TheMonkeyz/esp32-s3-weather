@@ -1,5 +1,6 @@
 // The settings page's app routes (espforge's forge_net web.c serves the page, the Wi-Fi setup routes, updates and
 // the snapshot, and guards every route: see "Who may change things" there). Moved from web.c, October 5 (v1.14.0).
+// Screen dimming's /api/presence and /api/calibrate are forge_presence's (presence_web_routes(), main.c).
 #include "routes.h"
 #include <stdio.h>
 #include <string.h>
@@ -10,7 +11,6 @@
 #include "ota.h"
 #include "config.h"
 #include "net.h"
-#include "presence.h"
 #include "display.h"
 #include "ui.h"
 #include "i18n.h"
@@ -181,82 +181,12 @@ static esp_err_t location_post(httpd_req_t *req)
     return ESP_OK;
 }
 
-static esp_err_t presence_get(httpd_req_t *req)
-{
-    presence_cfg_t c;
-    presence_status_t st;
-    presence_get_config(&c);
-    presence_get_status(&st);
-    static const char *names[] = {"active", "dim", "off"};
-    cJSON *j = cJSON_CreateObject();
-    cJSON_AddBoolToObject(j, "enabled", c.enabled);
-    cJSON_AddNumberToObject(j, "margin_db", c.margin_db);
-    cJSON_AddNumberToObject(j, "wake_s", c.wake_s);
-    cJSON_AddNumberToObject(j, "dim_s", c.dim_s);
-    cJSON_AddNumberToObject(j, "off_s", c.off_s);
-    cJSON_AddNumberToObject(j, "bright_pct", c.bright_pct);
-    cJSON_AddNumberToObject(j, "dim_pct", c.dim_pct);
-    cJSON_AddNumberToObject(j, "baseline_db", c.baseline_db);
-    cJSON_AddNumberToObject(j, "level_db", st.level_db);
-    cJSON_AddNumberToObject(j, "threshold_db", st.threshold_db);
-    cJSON_AddStringToObject(j, "state", names[st.state]);
-    cJSON_AddNumberToObject(j, "wake_progress", st.wake_progress);
-    cJSON_AddNumberToObject(j, "quiet_s", st.quiet_s);
-    cJSON_AddBoolToObject(j, "calibrating", st.calibrating);
-    cJSON_AddNumberToObject(j, "calib_left_s", st.calib_left_s);
-    cJSON_AddBoolToObject(j, "mic_ok", st.mic_ok);
-    cJSON_AddNumberToObject(j, "brightness", st.brightness);
-    cJSON_AddBoolToObject(j, "imu_ok", st.imu_ok);
-    cJSON_AddNumberToObject(j, "motion_g", st.motion_g);
-    cJSON_AddBoolToObject(j, "motion_wake", presence_motion_wake());
-    cJSON_AddNumberToObject(j, "motion_thr", st.motion_thr);
-    return web_send_json(req, j);
-}
-
-static esp_err_t presence_post(httpd_req_t *req)
-{
-    cJSON *j = web_read_json(req);
-    if (!j) return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "bad json");
-    presence_cfg_t c;
-    presence_get_config(&c);
-    cJSON *en = cJSON_GetObjectItem(j, "enabled");
-    if (cJSON_IsBool(en)) c.enabled = cJSON_IsTrue(en);
-    c.margin_db = num_or(j, "margin_db", c.margin_db);
-    c.wake_s = num_or(j, "wake_s", c.wake_s);
-    c.dim_s = num_or(j, "dim_s", c.dim_s);
-    c.off_s = num_or(j, "off_s", c.off_s);
-    c.bright_pct = (int)num_or(j, "bright_pct", c.bright_pct);
-    c.dim_pct = (int)num_or(j, "dim_pct", c.dim_pct);
-    cJSON *mw = cJSON_GetObjectItem(j, "motion_wake");
-    presence_status_t ps;
-    presence_get_status(&ps);
-    if (cJSON_IsBool(mw) || cJSON_IsNumber(cJSON_GetObjectItem(j, "motion_thr")))
-        presence_set_motion(cJSON_IsBool(mw) ? cJSON_IsTrue(mw) : presence_motion_wake(), num_or(j, "motion_thr", ps.motion_thr));
-    cJSON_Delete(j);
-    bool saved = presence_set_config(&c);
-    ui_settings_changed();
-    if (!saved) return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "not saved");
-    return presence_get(req);
-}
-
-static esp_err_t calibrate_post(httpd_req_t *req)
-{
-    cJSON *j = web_read_json(req);
-    int secs = j ? (int)num_or(j, "seconds", 5) : 5;
-    cJSON_Delete(j);
-    if (!presence_calibrate(secs)) return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "busy or no mic");
-    return presence_get(req);
-}
-
 static const web_route_t routes[] = {
     { "/api/config",    HTTP_GET,  config_get },
-    { "/api/presence",  HTTP_GET,  presence_get },
     { "/api/sound",     HTTP_GET,  sound_get },
     { "/api/location",  HTTP_POST, location_post, .keyed = true },
     { "/api/units",     HTTP_POST, units_post, .keyed = true },
     { "/api/places",    HTTP_POST, places_post, .keyed = true },
-    { "/api/presence",  HTTP_POST, presence_post, .keyed = true },
-    { "/api/calibrate", HTTP_POST, calibrate_post, .keyed = true },
     { "/api/sound",     HTTP_POST, sound_post, .keyed = true },
 };
 

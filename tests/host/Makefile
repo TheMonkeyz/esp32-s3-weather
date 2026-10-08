@@ -20,7 +20,7 @@ CFLAGS := -std=gnu11 -D_DEFAULT_SOURCE -g -O1 -Wall -Wno-unused-function -fsanit
           -fno-sanitize-recover=undefined -Ishim -I$(MAIN) -I$(CORE)/include -I$(FORGE)/forge_net/include \
           -I$(CJSON) -include shim/host.h
 COMMON := fake.c $(CJSON)/cJSON.c
-TESTS := weather alerts utf8 i18n version png textfit
+TESTS := weather alerts utf8 i18n version png textfit presence_blob
 
 all: $(TESTS:%=$(OUT)/test_%)
 	@set -e; for t in $(TESTS); do ./$(OUT)/test_$$t; done
@@ -50,5 +50,8 @@ $(OUT)/test_i18n: test_i18n.c $(MAIN)/i18n.c $(MAIN)/i18n_strings.h $(CORE)/i18n
 	$(CC) $(CFLAGS) -o $@ test_i18n.c $(CORE)/i18n.c fake.c $(CJSON)/cJSON.c -lm
 $(OUT)/test_version: test_version.c $(CORE)/version.c $(MAIN)/sound.h | $(OUT)
 	$(CC) $(CFLAGS) -o $@ test_version.c $(CORE)/version.c
+# forge_presence's import of the old presence.c settings blob (its presence_sm.c is pure C)
+$(OUT)/test_presence_blob: test_presence_blob.c $(FORGE)/forge_presence/presence_sm.c | $(OUT)
+	$(CC) $(CFLAGS) -I$(FORGE)/forge_presence/include -o $@ test_presence_blob.c $(FORGE)/forge_presence/presence_sm.c -lm
 $(OUT)/test_textfit: test_textfit.c $(CORE)/textfit.c $(MAIN)/montserrat.ttf $(MAIN)/syllabics.ttf | $(OUT)
 	$(CC) $(CFLAGS) -o $@ test_textfit.c $(CORE)/textfit.c

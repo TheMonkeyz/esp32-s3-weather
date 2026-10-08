@@ -17,6 +17,8 @@
 #include "radar.h"
 #include "web.h"
 #include "presence.h"
+#include "audio.h"
+#include "imu.h"
 #include "diag.h"
 #include "alerts.h"
 #include "ota.h"
@@ -47,6 +49,27 @@ static bool boot_button_held(void)
     }
     return true;
 }
+
+/* ---------- screen dimming by presence (espforge's forge_presence) ----------
+ * The component knows no board: this display's microphones (audio.c), motion sensor (imu.c, on touch's I2C bus), touch
+ * and brightness come in through its hooks. Called from the presence task (core 0). */
+static bool mic_open(void) { return audio_mic_open(30); }        // 30 dB gain: a room's background noise
+static bool accel_open(void) { return imu_init(touch_i2c_bus()); }
+
+static void set_brightness(int pct)
+{
+    display_lock(-1);                     // display_brightness() waits for LVGL's last band (CLAUDE.md 22(c))
+    display_brightness((uint8_t)(pct * 255 / 100));
+    display_unlock();
+}
+
+static const presence_hooks_t presence_hooks = {
+    .mic_open = mic_open, .mic_read = audio_mic_read,
+    .accel_open = accel_open, .accel_read = imu_read,
+    .touch_idle_ms = touch_idle_ms,
+    .set_brightness = set_brightness,
+    .settings_changed = ui_settings_changed,   // the page changed them: Settings redraws
+};
 
 static TaskHandle_t main_task;
 static volatile bool extras_now;             // a switch, an edit or a language change: alerts and air quality now
@@ -259,9 +282,11 @@ void app_main(void)
     config_get_units(&(units_t){0});   // the saved language, before any text is shown
     diag_mark("net init");
     diag_start(60);             // "diag:" lines in the log every 60 s (heap, frames, CPU/stack per task)
-    presence_start();           // microphones -> screen brightness (uses touch's I2C bus + NVS)
+    audio_init();               // I2S0 both ways: the microphones (presence) and the speaker (sound)
+    presence_start(&presence_hooks);   // microphones, motion, touch -> screen brightness (NVS; console presence, wake)
     sound_start();              // alert chimes (speaker shares the microphones' I2S bus)
     diag_mark("presence");
+    presence_web_routes();      // GET/POST /api/presence, POST /api/calibrate, before web_start()
     routes_init(on_location_changed);   // the settings page's routes, before web_start()
     ota_set_err_text(ota_err_text);
     ota_start(ui_ota);          // before ui_init (the status page's update-site row); checks once Wi-Fi is up; marks a

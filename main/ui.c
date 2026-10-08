@@ -2347,7 +2347,7 @@ static void place_settled(int i, void *user)
 /* ---------- Settings screen (long-press on the weather screen) ----------
  * Quick settings on the display itself: screen (dimming, pick-up, timing, brightness arc along the bottom edge),
  * units, and shortcuts (phone settings QR, Wi-Fi setup, updates, restart). Each change is saved at once through the
- * same functions as the settings page (presence.c, config.c), so the phone and the display always agree. Places,
+ * same functions as the settings page (forge_presence, config.c), so the phone and the display always agree. Places,
  * the Wi-Fi password, custom timings and sound calibration stay on the phone (typing, map, live meter). */
 
 enum { R_DIM, R_MOTION, R_TIMING, R_TEMP, R_WIND, R_CLOCK, R_LANG, R_CHIME, R_VOLUME, R_TEST, R_PHONE, R_WIFI, R_UPDATE,

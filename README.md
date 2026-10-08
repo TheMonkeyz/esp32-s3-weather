@@ -516,9 +516,9 @@ main/
   radar.c       radar screen: basemap tiles + flash cache, GeoMet frames, animation
   weather.c     Open-Meteo fetch/parse, WMO code -> text/icon
   alerts.c      Environment Canada weather alerts (MSC GeoMet OGC API)
-  routes.c      the settings page's app routes (places, units, presence, sound) and the snapshot hook
+  routes.c      the settings page's app routes (places, units, sound) and the snapshot hook
   config.c      saved location (NVS) and local-time helper (UTC offset from Open-Meteo)
-  presence.c    microphones (ES7210 over I2S) -> presence state machine -> screen brightness
+  audio.c       I2S0 both ways, ES7210 microphones (forge_presence hooks); the speaker side is sound.c
   imu.c         QMI8658 motion sensor (wake on pick-up)
   sound.c       alert beeps through the speaker (ES8311, shares I2S with the microphones)
   i18n.c        the display's texts (i18n_strings.h: English, French, Inuktitut) and the Inuktitut language
@@ -533,7 +533,8 @@ sdkconfig.defaults
 main/idf_component.yml  LVGL, the audio codec, and espforge's components at a release tag (since v1.14.0):
                 forge_core (diagnostics, test console, language core, text fit, PNG rows), forge_net (Wi-Fi, setup
                 network and captive portal, Easy Connect, the HTTPS settings server, service health, the per-device
-                certificate), forge_ota (updates over Wi-Fi, rollback), dns_server: github.com/TheMonkeyz/espforge
+                certificate), forge_ota (updates over Wi-Fi, rollback), dns_server, forge_presence (screen dimming by
+                presence, since v1.15.0): github.com/TheMonkeyz/espforge
 docs/ARCHITECTURE.md  how the pieces fit together, memory budget, known issues
 docs/DIAGNOSTICS.md   how to measure memory/CPU/render speed, reference numbers, findings
 docs/TESTING.md       how changes are tested on the board: test builds, flash helper, logs, screenshots

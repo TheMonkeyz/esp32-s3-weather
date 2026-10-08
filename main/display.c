@@ -341,7 +341,7 @@ void display_init(void)
 
 void display_brightness(uint8_t level)
 {
-    // Called with the display lock held, from any task (presence.c's runs on core 0). LVGL lets go of the lock with its
+    // Called with the display lock held, from any task (the presence task's runs on core 0). LVGL lets go of the lock with its
     // last band still on the bus: as for raw frames, no esp_lcd call until that transfer is done (display_raw_area).
     raw_phase = 7;
     for (int i = 0; i < 100 && __atomic_load_n(&lvgl_inflight, __ATOMIC_ACQUIRE) > 0; i++) vTaskDelay(1);

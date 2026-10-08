@@ -1,5 +1,5 @@
 #pragma once
-// Browser emulator: the I2S bus presence.c opens for the microphones and the speaker. Nothing to open here: the
+// Browser emulator: the I2S bus main/audio.c opens for the microphones and the speaker. Nothing to open here: the
 // microphones are the browser's (web/emu/emu_audio.c, esp_codec_dev_read) and the speaker is Web Audio.
 #include <stdbool.h>
 #include "esp_err.h"

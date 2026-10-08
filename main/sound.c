@@ -1,7 +1,7 @@
 // Alert chimes through the speaker (see sound.h).
-// The ES8311 shares the I2S bus with the microphones: presence.c opens it in both directions and hands over the
-// data interface (presence_audio_data_if()). The speaker device is opened only while a chime plays, so the
-// amplifier (GPIO 46) is off the rest of the time.
+// The ES8311 shares the I2S bus with the microphones: audio.c opens it in both directions (audio_init(), from app_main
+// before this task starts) and hands over the data interface (audio_data_if()). The speaker device is opened only
+// while a chime plays, so the amplifier (GPIO 46) is off the rest of the time.
 #include "sound.h"
 #include <math.h>
 #include <string.h>
@@ -15,7 +15,7 @@
 #include "esp_codec_dev.h"
 #include "esp_codec_dev_defaults.h"
 #include "touch.h"
-#include "presence.h"
+#include "audio.h"
 #include "config.h"
 
 static const char *TAG = "sound";
@@ -78,7 +78,7 @@ bool sound_set_config(const sound_cfg_t *in)
 // opened the bus: the page said "No speaker found" while the sounds played. Before rc.3 it only meant "I2S is up".
 static bool spk_found;
 static bool spk_open(void);
-bool sound_ok(void) { return spk_found && presence_audio_data_if() != NULL; }
+bool sound_ok(void) { return spk_found && audio_data_if() != NULL; }
 
 /* ---------- alert sounds ----------
  * Beeps whose urgency follows the alert level (not a doorbell, and not Canada's official Alert Ready signal):
@@ -133,7 +133,7 @@ static int16_t *render(int level, int *frames)
 static bool spk_open(void)
 {
     if (spk) return true;
-    const audio_codec_data_if_t *data_if = presence_audio_data_if();
+    const audio_codec_data_if_t *data_if = audio_data_if();
     if (!data_if) return false;
     audio_codec_i2c_cfg_t ccfg = { .port = 0, .addr = ES8311_ADDR, .bus_handle = touch_i2c_bus() };
     const audio_codec_ctrl_if_t *ctrl_if = audio_codec_new_i2c_ctrl(&ccfg);
@@ -173,9 +173,10 @@ static void play(int level)
 
 static void sound_task(void *arg)
 {
-    // The speaker check needs the shared I2S bus, which the presence task opens a moment after start-up: checked at
-    // sound_start() it was never there yet, and the page said "No speaker found" (v1.12.0-rc.3..rc.5)
-    for (int i = 0; i < 100 && !presence_audio_data_if(); i++) vTaskDelay(pdMS_TO_TICKS(100));
+    // The speaker check needs the shared I2S bus (audio_init()). Until v1.15.0 the presence task opened it a moment
+    // after start-up: checked at sound_start() it was never there yet, and the page said "No speaker found"
+    // (v1.12.0-rc.3..rc.5). It is open before this task now; the wait stays in case it comes up late.
+    for (int i = 0; i < 100 && !audio_data_if(); i++) vTaskDelay(pdMS_TO_TICKS(100));
     spk_found = spk_open();
     ESP_LOGI(TAG, "speaker %s", spk_found ? "ready (ES8311)" : "NOT found (no I2S bus or ES8311 codec)");
     int level;
