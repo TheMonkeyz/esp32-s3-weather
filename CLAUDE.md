@@ -61,6 +61,10 @@ certificate), forge_ota (updates) and dns_server, **at a release tag** (the user
   its PNG fix). Check the build log's `NOTICE: [n/7] forge_core (<commit>)`. CI starts clean.
 - **Still twins** (same code in both, nothing shares them yet): `lvgl_mem.c`, `pager.c`, `imu.c`, `display.c`,
   `touch.c`, the harness's `board.py` / `harness.py`, the flash helper. A fix in one gets ported or a task chip.
+- **espforge backlog** (the user's rule, 2026-10-07, for esp32-s3-rtcquebec, weather_amoled and espforge): when a
+  change could go into espforge (framework code, board support, tools, tests, docs, a lesson), add an entry to
+  espforge's `docs/BACKLOG.md` (`C:\Users\lmathieu\ESPDEV\espforge\docs\BACKLOG.md`, its format at the top) in the
+  same session, before calling the work done. Alignment sessions work through it for future projects.
 
 ## Cloud build recipe (when no local IDF)
 
