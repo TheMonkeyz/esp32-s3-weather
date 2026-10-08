@@ -61,6 +61,8 @@ certificate), forge_ota (updates) and dns_server, **at a release tag** (the user
   its PNG fix). Check the build log's `NOTICE: [n/7] forge_core (<commit>)`. CI starts clean.
 - **Still twins** (same code in both, nothing shares them yet): `lvgl_mem.c`, `pager.c`, `imu.c`, `display.c`,
   `touch.c`, the harness's `board.py` / `harness.py`, the flash helper. A fix in one gets ported or a task chip.
+  The PowerShell helpers (`flash_helper.ps1`, `monitor.ps1 -Reboot`) restart through the test console since v1.14.4,
+  as espforge's (its PR #6): a `reboot.request`'s log is whole from `ESP-ROM:`; esptool's reset only as a fallback.
 
 ## Cloud build recipe (when no local IDF)
 
