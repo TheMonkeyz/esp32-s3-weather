@@ -74,7 +74,7 @@ jobs:
           (cd build && python3 -m esptool --chip esp32s3 merge_bin -o "../dist/weather_amoled-$v-full.bin" @flash_args)
           ls -l dist
 
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
         with:
           name: firmware-${{ steps.ver.outputs.version }}
           path: dist/
@@ -93,7 +93,7 @@ jobs:
           npm ci
           npx playwright install --with-deps chromium
           npm test
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
         if: always()
         with:
           name: webtest-shots
@@ -161,7 +161,7 @@ jobs:
           # the settings page under the emulator (since v1.14.3; an older release's build has none)
           for f in settings.html emu-settings.js; do [ -f "web/emu/build/$f" ] && cp "web/emu/build/$f" emu/ || true; done
           ls -l emu
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
         with:
           name: emulator
           path: emu/
